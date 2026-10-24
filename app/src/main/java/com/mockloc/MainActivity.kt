@@ -10,6 +10,7 @@ import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ListView
 import android.widget.ScrollView
@@ -89,16 +90,24 @@ class MainActivity : Activity() {
     private fun buildUi(): View {
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         flipper = ViewFlipper(this)
-        flipper.addView(searchPage(), weightParams())
-        flipper.addView(mapPage(), weightParams())
-        flipper.addView(placesPage(), weightParams())
-        flipper.addView(statusPage(), weightParams())
+        // ViewFlipper is a FrameLayout: passing LinearLayout.LayoutParams here gets converted and
+        // the conversion keeps height=0 while dropping weight, so every page measured zero pixels
+        // tall and the app looked like a blank screen.
+        flipper.addView(searchPage(), pageParams())
+        flipper.addView(mapPage(), pageParams())
+        flipper.addView(placesPage(), pageParams())
+        flipper.addView(statusPage(), pageParams())
 
         val tabRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         TABS.forEachIndexed { index, title ->
             tabRow.addView(Button(this).apply {
                 text = title
                 isAllCaps = false
+                // Explicit colours: the OEM default button style rendered these with no visible
+                // background or text, which made a zero-height content bug look like a dead app.
+                setBackgroundColor(0xFF1F6FEB.toInt())
+                setTextColor(0xFFFFFFFF.toInt())
+                setPadding(0, 28, 0, 28)
                 setOnClickListener { flipper.displayedChild = index }
             }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         }
@@ -109,6 +118,10 @@ class MainActivity : Activity() {
 
     private fun weightParams() =
         LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
+
+    private fun pageParams() = FrameLayout.LayoutParams(
+        FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT,
+    )
 
     private fun searchPage(): View {
         val page = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
