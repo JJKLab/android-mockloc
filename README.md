@@ -64,7 +64,8 @@ python tools/mockloc.py off
 
 | 层级 | 靠什么 | 需要的权限 | 按 App 分流 | `isMock()` | 本项目 |
 |---|---|---|---|---|---|
-| 全局·系统 provider | `cmd location providers ...` | app-op（adb 或 root 都能授） | ❌ 全体 App 同一个位置 | **true**，自检可见 | ✅ `--global` |
+| 全局·App 内 provider | App 自己调 `addTestProvider`，app-op 由开发者选项授 | 无需 root，装 APK + 一次点选 | ❌ 全体 App 同一个位置 | **true**，自检可见 | ✅ `--mode app` |
+| 全局·shell 直注 | `cmd location providers ...` | adb **且** ROM 把 `MANAGE_APP_OPS_MODES` 留给 shell（本机实测不通，见 A0） | ❌ | **true** | ⚠️ `--mode adb`，仅近 AOSP ROM |
 | 按 App·进程内 hook | libxposed 改 `Location` 读数 | **root + LSPosed** | ✅ 只有列进 `TARGETS` 的 App | **false**（压根没有测试 provider） | ✅ `--no-global --target` |
 | 全局·无痕 | 在 system_server 里就地改写 `LocationResult` | root + LSPosed，且要作用域加 `system` | ❌ 全体 | false | ⚠️ 未实现，见下 |
 
@@ -82,7 +83,7 @@ python tools/mockloc.py off
 
 | 档 | 前置 | 跑什么 | 页面预期 |
 |---|---|---|---|
-| 1 无 root | 只开 USB 调试 | `python tools/mockloc.py tiers` 里档 1 那行 | `LKL gps : ... mock=True`，`注入 : 未生效` |
+| 1 无 root | 装 APK → 开发者选项「选择虚拟定位应用」选 mockloc → 授定位权限 | `--mode app set --place 东方明珠 --first` | `LKL gps : ... mock=True`，`注入 : 未生效` |
 | 2 root | 刷入 `mockloc-root.zip` | 档 2 那行（加 `--persist`） | `LKL gps : ... mock=True`，`注入 : 未生效`；**重启后再看一次应仍是假位置** |
 | 3 root+LSPosed | 装 APK + 在 LSPosed 里启用模块并把目标 App 勾进作用域 | 档 3 那行（`--no-global --target`） | `注入 : 已生效`；目标 App 里 `mock=False`，未勾选的 App 拿到真实位置 |
 
@@ -121,6 +122,32 @@ adb push mockloc-root.zip /sdcard/            # 阶段 1 的 root 模块，用 K
 ---
 
 ## 附录 A 侦察记录
+
+### A0 实机核验（OnePlus PJF110 / Android 16 / API 36 / KernelSU，2026-10-24）
+
+这台机器把两条纸面结论改写了，全部有正/负对照：
+
+| 探针 | 结果 |
+|---|---|
+| `id` | `uid=2000(shell) … context=u:r:shell:s0`（正常 shell 域） |
+| `settings put secure ml_probe 1` | ✅ **正向对照通过**（随后 delete） |
+| `dumpsys deviceidle whitelist +com.mockloc` | ✅ `Added:` 对照通过 |
+| `appops set 2000 android:mock_location allow` | ❌ `SecurityException: uid 2000 does not have android.permission.MANAGE_APP_OPS_MODES` |
+| `pm grant com.mockloc …` | ❌ `Neither user 2000 nor current process has GRANT_RUNTIME_PERMISSIONS` |
+| `cmd location providers add-test-provider gps` | ❌ `android from uid 2000 not allowed to perform MOCK_LOCATION` |
+| `su`（已在 KernelSU 里给 Shell 授权之后） | ❌ `su: inaccessible or not found`；`/data/adb/ksu/bin/su` 报 **Permission denied**（文件在，但没挂进 adb shell 的 namespace） |
+
+两个正向对照是关键：shell 并非整体无特权，而是**这款 ColorOS 系固件（dumpsys 里可见
+`com.coloros.findmyphone`）单独摘掉了 `MANAGE_APP_OPS_MODES` 与 `GRANT_RUNTIME_PERMISSIONS`**。
+AOSP 原版 `Shell/AndroidManifest.xml` 是持有它们的，所以"adb 免 root 注入"只在 AOSP/近 AOSP ROM 成立。
+
+同时那次失败把 A1 的机制**在运行时钉死了**，调用栈与源码逐帧对应：
+`AppOpsManager.noteOp → SystemAppOpsHelper.noteOp → LocationManagerService.addTestProvider:1797`。
+（我先前引的 1511–1577 是 AOSP 上游行号，OEM 构建里同一逻辑在 :1797 —— **行号不能当版本判据**。）
+
+`adb shell su` 不可用这条决定了架构：**配置下发必须走 shell 可写通道**，于是 root 模块改为读
+`/data/local/tmp/mockloc.in` 收件箱（实测 shell 可写），再由 root 侧 `sync_inbox` 镜像进 `/data/adb`。
+副作用是不装 Xposed 也能只刷模块跑档 2，不需要 PC 端拿到 root shell。
 
 ### A1. 系统到底怎么放行虚拟定位（AOSP android16-release，逐条核过）
 
@@ -235,6 +262,12 @@ cmd location providers send-extra-command <PROVIDER> <COMMAND>
 一句话：**Shizuku 是"免 root 的 app-op 分发器"，不是"免 root 的注入器"**。它的价值是让没 root 的机器也能全局假位置，
 以及让 root 机器不用装 Xposed；一旦目标是过检测或按 App 分流，就必须上 libxposed。
 
+> **实机修正（A0）**：上面第 1 步在这台 PJF110 上不成立——ColorOS 系固件把 `MANAGE_APP_OPS_MODES` 从 shell
+> 摘掉了，所以 Shizuku(ADB 启动) 同样拿不到 app-op，`cmd location` 也被 `noteOp` 拒。
+> 这类 ROM 上的"免 root 档"只剩一条路：**开发者选项「选择虚拟定位应用」由 Settings 进程写 app-op**，
+> 然后由 App 自己调 `addTestProvider` —— 即本项目的 `--mode app`（`MockService`）。
+> 结论修正为：Shizuku 能否做虚拟定位，取决于该 ROM 是否把 `MANAGE_APP_OPS_MODES` 留给 shell，**必须实测**。
+
 ## A6 LSPosed 发行版的核实（2026-10-24 实测）
 
 用户给的下载地址是 `https://lsposed.zip/`，我把它整个拉下来比对了：
@@ -282,6 +315,9 @@ CLI set --persist  ->  /data/adb/mockloc/config.prop      (root 专属，App 进
 ```
 
 键：`MOCKLOC_ENABLED / GLOBAL / PROVIDER / LAT / LNG / ACC / RADIUS / INTERVAL / TARGETS / LABEL`。
+配置入口是 **`/data/local/tmp/mockloc.in`（shell 可写的收件箱）**，root 模块的 `sync_inbox` 再把它镜像到
+`/data/adb/mockloc/config.prop`。这么设计是因为 A0 实测：KernelSU 不给 adb shell 提供 `su`，
+PC 端根本写不了 `/data/adb`——收件箱让"只刷模块、不依赖 su"也能跑通档 2。
 **`ENABLED` 和 `GLOBAL` 是两条独立的开关**，这是"按 App"与"全局"能共存的关键：
 `GLOBAL` 只被 root 模块的循环读（要不要维持系统测试 provider），`ENABLED`+`TARGETS` 只被模块读
 （在哪些 App 进程里改写读数并顺手把 mock 痕迹规避掉）。所以"某些 App 假、其余真"= `GLOBAL=false`+`TARGETS` 填包名；
@@ -355,3 +391,11 @@ FakeLoc/XposedFakeLocation 都有同样的取舍，并用"每个字段单独开�
   ④ libxposed 升到 **102.0.0**（对 102 的 `classes.jar` 重编通过，确认无 API 差异影响）；
   新增 `tiers` 与扩展 `doctor`，把"无 root / root / root+Xposed"三档做成可一条命令对照、且探针用完自清理。
   ⑤ 核实 `lsposed.zip` 发行包（见 A6）：与 GitHub v1.9.2 资产不同源、特征指向续作，签名一致性仍需在机上验。
+- **v0.3.0**（2026-10-24）CI 首次出包成功（`logic`/`apk`/`root-module` 全绿，`META-INF/xposed/` 打包守卫通过），
+  随后真机核验（见 A0）：ColorOS 系摘掉了 shell 的 `MANAGE_APP_OPS_MODES` 与 `GRANT_RUNTIME_PERMISSIONS`，
+  KernelSU 也不给 adb shell 挂 `su` ⇒ 新增 `--mode app`（`MockService` 前台服务自调 `addTestProvider`，
+  app-op 由开发者选项授，`android:permission=DUMP` 挡第三方调用），并把配置入口改成
+  `/data/local/tmp/mockloc.in` 收件箱 + root 侧 `sync_inbox` 镜像，使档 2 不再依赖 PC 端 root shell。
+  A5 的 Shizuku 结论按实机修正为"取决于该 ROM 是否把 MANAGE_APP_OPS_MODES 留给 shell"。
+  本地类型检查又抓到 3 个错（`Service.onBind` 未实现、`ProviderProperties` 不在 `android.location` 包、
+  一个不存在的 `android.os.ILooper` import），均在推 CI 前修掉。

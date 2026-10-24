@@ -2,6 +2,14 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <!-- Not grantable to us (signature-level) and not checked by LocationManagerService either;
+         the developer-options picker filters candidate apps by it, so it must be declared for the
+         no-root tier to be selectable at all. -->
+    <uses-permission android:name="android.permission.ACCESS_MOCK_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:allowBackup="false"
@@ -17,6 +25,13 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- DUMP keeps this startable from adb/shell but not from ordinary third-party apps. -->
+        <service
+            android:name=".MockService"
+            android:exported="true"
+            android:foregroundServiceType="location"
+            android:permission="android.permission.DUMP" />
     </application>
 
 </manifest>

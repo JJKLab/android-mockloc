@@ -12,7 +12,7 @@ while [ "$i" -lt 90 ]; do
   i=$((i + 1))
 done
 cmd location is-location-enabled >/dev/null 2>&1 || exit 0
-[ -f "$CFG" ] || exit 0
+[ -f "$CFG" ] || [ -f "$INBOX" ] || exit 0
 
 PROVIDER=$(cfg_get MOCKLOC_PROVIDER); PROVIDER=${PROVIDER:-gps}
 ACC=$(cfg_get MOCKLOC_ACC); ACC=${ACC:-5.0}
@@ -25,6 +25,7 @@ UP=0
 # The config is mirrored to /data/local/tmp either way, because the module needs it even when
 # the global provider is off.
 while :; do
+  sync_inbox
   if [ "$(cfg_get MOCKLOC_ENABLED)" = "true" ] && [ "$(cfg_get MOCKLOC_GLOBAL)" = "true" ]; then
     appops set 0 android:mock_location allow 2>/dev/null
     appops set 2000 android:mock_location allow 2>/dev/null

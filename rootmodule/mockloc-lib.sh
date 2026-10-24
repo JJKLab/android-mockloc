@@ -3,11 +3,26 @@
 # unless awk is actually present.
 
 CFG=/data/adb/mockloc/config.prop
+INBOX=/data/local/tmp/mockloc.in
 PUB=/data/local/tmp/mockloc.conf
+
+# The inbox is world-writable-by-shell on purpose: KernelSU does not expose su to `adb shell`, so
+# a PC must be able to hand the module a config without any root channel. The module then mirrors
+# it under /data/adb, which is where a manual on-device edit would live.
+sync_inbox() {
+  [ -f "$INBOX" ] || return 0
+  mkdir -p $(dirname "$CFG") 2>/dev/null
+  cmp -s "$INBOX" "$CFG" || cp "$INBOX" "$CFG"
+  chmod 600 "$CFG" 2>/dev/null
+}
+
+cfg_src() {
+  if [ -f "$INBOX" ]; then printf '%s' "$INBOX"; else printf '%s' "$CFG"; fi
+}
 
 # Sourcing config.prop would break on a LABEL containing spaces, so read one key at a time.
 cfg_get() {
-  sed -n "s/^$1=//p" "$CFG" 2>/dev/null | head -n 1 | tr -d '\r'
+  sed -n "s/^$1=//p" "$(cfg_src)" 2>/dev/null | head -n 1 | tr -d '\r'
 }
 
 jitter() {
@@ -36,7 +51,7 @@ publish() {
   # The Xposed module runs in an app SELinux domain and cannot read /data/adb, so mirror the
   # effective config to /data/local/tmp with the shelldatafile label. Keys match 1:1, and the
   # module does its own jitter, so the centre is what gets published.
-  cp "$CFG" "$PUB" 2>/dev/null || return 1
+  cp "$(cfg_src)" "$PUB" 2>/dev/null || return 1
   chmod 664 "$PUB"
   chcon u:object_r:shelldatafile:s0 "$PUB" 2>/dev/null
   return 0

@@ -24,6 +24,7 @@ from coords import gcj02_to_wgs84, parse_latlng  # noqa: E402
 
 PROVIDER_DEFAULT = "gps"
 SELF_PKG = "com.mockloc"
+CONFIG_INBOX = "/data/local/tmp/mockloc.in"
 CONFIG_REMOTE = "/data/adb/mockloc/config.prop"
 LOCAL_CONFIG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
 SU_CMD = os.environ.get("MOCKLOC_SU", "su -c")
@@ -176,12 +177,27 @@ def jitter(lat, lng, radius_m):
 
 
 def write_config(t, cfg):
+    """Hand the config to the root module through the shell-writable inbox: KernelSU gives adb no
+    su, so writing /data/adb directly from the PC is not an option on this device."""
     body = "\n".join(f"{k}={v}" for k, v in cfg.items())
-    t.sh(f"mkdir -p $(dirname {CONFIG_REMOTE})")
-    code, out, err = t.sh(f"printf '%s\\n' {shlex.quote(body)} > {CONFIG_REMOTE}; chmod 600 {CONFIG_REMOTE}")
+    code, out, err = t.sh(
+        f"printf '%s\\n' {shlex.quote(body)} > {CONFIG_INBOX}; chmod 664 {CONFIG_INBOX}",
+        su=t.mode == "su",
+    )
     if code != 0:
-        raise DeviceError(f"cannot write {CONFIG_REMOTE}: {(out or err)[:200]}")
-    return CONFIG_REMOTE
+        raise DeviceError(f"cannot write {CONFIG_INBOX}: {(out or err)[:200]}")
+    return CONFIG_INBOX
+
+
+def disable_persist(t):
+    for path in (CONFIG_INBOX, CONFIG_REMOTE):
+        code, _, _ = t.sh(
+            f"test -f {path} && sed -i 's/^MOCKLOC_ENABLED=.*/MOCKLOC_ENABLED=false/; "
+            f"s/^MOCKLOC_GLOBAL=.*/MOCKLOC_GLOBAL=false/' {path}"
+        )
+        if code == 0:
+            return path
+    return None
 
 
 def resolve_place(query, city, key, datum, first=False):
@@ -215,6 +231,29 @@ def resolve_place(query, city, key, datum, first=False):
     return lat, lng, chosen["name"]
 
 
+SERVICE_COMPONENT = "com.mockloc/.MockService"
+
+
+def app_start(t, provider, lat, lng, accuracy, radius, interval):
+    """Drive the in-app test provider. Needs no root and no appops: the app-op comes from the
+    developer-options picker, which Settings (a privileged process) writes."""
+    extras = (f"--es cmd start --es provider {provider} --es lat {lat:.7f} --es lng {lng:.7f} "
+              f"--es acc {accuracy:.1f} --es radius {radius:.1f} --es interval {int(interval)}")
+    code, out, err = t.sh(f"am start-foreground-service -n {SERVICE_COMPONENT} {extras}", su=False)
+    blob = (out + err).lower()
+    if code != 0 or "exception" in blob or "not found" in blob:
+        raise DeviceError(f"启动 App 内 provider 失败: {(out or err)[:220]}")
+
+
+def app_stop(t, provider):
+    t.sh(f"am start-foreground-service -n {SERVICE_COMPONENT} --es cmd stop --es provider {provider}", su=False)
+
+
+def app_readback(t):
+    code, out, err = t.sh("dumpsys location | grep -i mock | head -5", su=False)
+    return (out or "").strip()
+
+
 def cmd_set(t, args):
     if args.place:
         lat, lng, label = resolve_place(args.place, args.city or "", load_key(args.key), args.datum, args.first)
@@ -223,6 +262,20 @@ def cmd_set(t, args):
         label = f"{lat:.6f},{lng:.6f}"
     else:
         raise DeviceError("need --place or --coord")
+
+    if args.mode == "app":
+        app_start(t, args.provider, lat, lng, args.accuracy, args.radius, args.interval)
+        if isinstance(t, DryRunTarget):
+            print("[dry-run] 未真跑，回读与 app-op 状态都还没法判断")
+            return lat, lng, label
+        read = app_readback(t)
+        if "mock" in read.lower():
+            print(f"[ok] App 内 provider 已生效（app-op 来自开发者选项，不需 root）:\n{read}")
+        else:
+            raise DeviceError(
+                "App 进程里 addTestProvider 没成，dumpsys 里看不到 mock 痕迹。\n"
+                "  最大嫌疑：开发者选项里还没把 mockloc 设为「选择虚拟定位应用」。")
+        return lat, lng, label
 
     if args.global_provider:
         state = ensure_appop(t)
@@ -236,8 +289,6 @@ def cmd_set(t, args):
         print("[ok] 跳过全局 provider：只写模块配置，按 App 生效（isMock 为 false）")
 
     if args.persist:
-        if t.mode != "su":
-            raise DeviceError("--persist needs --mode su")
         path = write_config(t, {
             "MOCKLOC_ENABLED": "true",
             "MOCKLOC_GLOBAL": "true" if args.global_provider else "false",
@@ -256,6 +307,9 @@ def cmd_set(t, args):
 
 def cmd_watch(t, args):
     lat, lng, label = cmd_set(t, args)
+    if args.mode == "app":
+        print("[watch] App 内 provider 自己按 interval 循环，无需本命令常驻")
+        return
     if not args.global_provider:
         print("[watch] 按 App 模式无需常驻循环：模块每 1 秒自行重抖坐标")
         return
@@ -272,22 +326,25 @@ def cmd_watch(t, args):
 
 
 def cmd_off(t, args):
+    if args.mode == "app":
+        app_stop(t, args.provider)
+        read = app_readback(t)
+        print("[ok] App 内 provider 已停" if not read else f"[warn] dumpsys 仍有 mock 痕迹:\n{read}")
+        return
     code, out, err = t.sh(f"cmd location providers set-test-provider-enabled {args.provider} false")
     t.sh(f"cmd location providers remove-test-provider {args.provider}")
     if args.wipe:
+        t.sh(f"rm -f {CONFIG_INBOX}")
         t.sh(f"rm -f {CONFIG_REMOTE}")
-        print(f"[ok] provider 已移除，{CONFIG_REMOTE} 已删除")
+        print(f"[ok] provider 已移除，两份配置（收件箱 + /data/adb）已删除")
         return
-    # Flip the two switches instead of deleting: the module and the boot loop both read them,
-    # and the coordinates stay behind so a later `set` can reuse the place.
-    code, out, err = t.sh(
-        f"sed -i 's/^MOCKLOC_ENABLED=.*/MOCKLOC_ENABLED=false/; "
-        f"s/^MOCKLOC_GLOBAL=.*/MOCKLOC_GLOBAL=false/' {CONFIG_REMOTE} && grep -c false {CONFIG_REMOTE}"
-    )
-    if code != 0:
-        print("[warn] 设备上没有配置文件，只停了系统 provider；模块侧请自行关掉开关")
+    hit = disable_persist(t)
+    # Flip the switches instead of deleting: the module and the boot loop both read them, and the
+    # coordinates stay behind so a later `set` can reuse the place.
+    if hit:
+        print(f"[ok] provider 已移除，{hit} 已置为双关（模块与开机循环都会停）")
     else:
-        print(f"[ok] provider 已移除，配置文件已置为双关（模块与开机循环都会停）")
+        print("[warn] 设备上没找到可读的配置文件，只停了系统 provider；模块侧请自行关掉开关")
 
 
 def cmd_status(t, args):
@@ -302,15 +359,17 @@ def cmd_status(t, args):
     code, out, err = t.sh(f"dumpsys location | grep -iE 'mock|{args.provider} provider' | head -12")
     print("dumpsys       :")
     print("\n".join(f"  {ln}" for ln in (out or err).splitlines()))
-    code, out, err = t.sh(f"cat {CONFIG_REMOTE} 2>/dev/null")
-    print(f"开机配置 {CONFIG_REMOTE}:")
-    print(out or "  (无，只有 --persist 才会写)")
+    code, out, err = t.sh(f"cat {CONFIG_INBOX} 2>/dev/null || cat {CONFIG_REMOTE} 2>/dev/null")
+    print("生效配置（收件箱优先，其次 /data/adb）:")
+    print(out or "  (两处都没有，只有 --persist 才会写)")
 
 
 TIERS = [
-    ("1", "无 root（adb 或 Shizuku/Stellar 级）",
-     "全局假位置；isMock()=true，App 自检可见；重启后 provider 消失，要重新跑",
-     "set --mode adb --place 东方明珠 --first"),
+    ("1", "无 root（App 内 provider + 开发者选项授权）",
+     "全局假位置；isMock()=true；重启后要在 App 里重新起一次。注意：本机实测 ColorOS 系已把 "
+     "MANAGE_APP_OPS_MODES 从 shell 摘掉，所以旧的 `--mode adb` 直调 cmd location 在这类 ROM 上不通，"
+     "app-op 必须由开发者选项（Settings 进程）来授",
+     "--mode app set --place 东方明珠 --first"),
     ("2", "root，不装 Xposed",
      "全局假位置 + 开机自恢复；isMock()=true 依旧",
      "set --mode su --place 东方明珠 --first --persist"),
@@ -399,8 +458,14 @@ MENU = [
 
 def interactive():
     print("mockloc - 安卓虚拟定位（阶段1：系统测试 provider）")
-    t = Target(mode=input("权限模式 su/adb [su]: ").strip() or "su")
+    t = Target(mode=input("权限模式 su/adb/app [su]: ").strip() or "su")
     print(f"设备 {t.serial} :: {t.info()}")
+
+    def mk(**kw):
+        ns = build_args(**kw)
+        ns.mode = t.mode
+        return ns
+
     while True:
         print()
         for k, label, _ in MENU:
@@ -410,21 +475,21 @@ def interactive():
             if choice == "1":
                 place = input("地点名: ").strip()
                 city = input("城市(可空): ").strip()
-                cmd_set(t, ask_scope(build_args(place=place, city=city)))
+                cmd_set(t, ask_scope(mk(place=place, city=city)))
             elif choice == "2":
                 coord = input("经纬度 (lat,lng 或 lng,lat): ").strip()
                 datum = input("坐标系 wgs84/gcj02/bd09 [gcj02]: ").strip() or "gcj02"
-                cmd_set(t, ask_scope(build_args(coord=coord, datum=datum)))
+                cmd_set(t, ask_scope(mk(coord=coord, datum=datum)))
             elif choice == "3":
-                cmd_watch(t, ask_scope(build_args(watch=True)))
+                cmd_watch(t, ask_scope(mk(watch=True)))
             elif choice == "4":
-                cmd_status(t, build_args())
+                cmd_status(t, mk())
             elif choice == "5":
-                cmd_doctor(t, build_args())
+                cmd_doctor(t, mk())
             elif choice == "6":
-                cmd_off(t, build_args())
+                cmd_off(t, mk())
             elif choice == "7":
-                cmd_tiers(t, build_args())
+                cmd_tiers(t, mk())
             elif choice == "0":
                 return
         except DeviceError as exc:
@@ -452,7 +517,7 @@ def ask_scope(ns):
 def main():
     parser = argparse.ArgumentParser(description="Android mock-location CLI (phase 1)")
     parser.add_argument("--serial")
-    parser.add_argument("--mode", choices=["su", "adb"], default="su")
+    parser.add_argument("--mode", choices=["su", "adb", "app"], default="su")
     sub = parser.add_subparsers(dest="cmd")
 
     common = argparse.ArgumentParser(add_help=False)
