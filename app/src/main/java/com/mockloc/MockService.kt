@@ -48,15 +48,40 @@ class MockService : Service() {
         running = false
         handler.removeCallbacksAndMessages(null)
         val lm = getSystemService(LOCATION_SERVICE) as? LocationManager ?: return
-        runCatching {
-            lm.setTestProviderEnabled(providerName, false)
-            lm.removeTestProvider(providerName)
+        providerNames.forEach { name ->
+            runCatching {
+                lm.setTestProviderEnabled(name, false)
+                lm.removeTestProvider(name)
+            }
         }
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
 
-    private var providerName = LocationManager.GPS_PROVIDER
+    /**
+     * Mocking only `gps` leaks the truth: on the test device `network` kept reporting the real
+     * fix while `passive` mirrored the fake one. AOSP lets a test provider replace any provider of
+     * the same name, so every name an app might ask for gets covered.
+     */
+    private var providerNames = listOf(
+        LocationManager.GPS_PROVIDER,
+        LocationManager.NETWORK_PROVIDER,
+        "fused",
+    )
+
+    @Suppress("DEPRECATION")
+    private fun propertiesFor(name: String, lm: LocationManager) =
+        if (name == LocationManager.GPS_PROVIDER) {
+            lm.addTestProvider(
+                name, false, true, false, false, true, true, true,
+                android.location.Criteria.POWER_LOW, android.location.Criteria.ACCURACY_FINE,
+            )
+        } else {
+            lm.addTestProvider(
+                name, true, false, true, false, false, false, false,
+                android.location.Criteria.POWER_LOW, android.location.Criteria.ACCURACY_COARSE,
+            )
+        }
 
     // The 10-arg addTestProvider is deprecated since API 31 but still present on API 36
     // (LocationManager.java:2079); the replacement needs a Build.VERSION branch for minSdk 29 and
@@ -68,7 +93,9 @@ class MockService : Service() {
             // Without the runtime grant addTestProvider still works, but nothing downstream reads us.
             Log.w(TAG, "no location permission; provider will be invisible to apps")
         }
-        providerName = intent?.getStringExtra(EXTRA_PROVIDER) ?: LocationManager.GPS_PROVIDER
+        intent?.getStringExtra(EXTRA_PROVIDER)?.takeIf { it.isNotBlank() }?.let { providerNames = listOf(it) }
+        intent?.getStringExtra(EXTRA_PROVIDERS)?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }
+            ?.let { providerNames = it }
         val lat = intent?.getStringExtra(EXTRA_LAT)?.toDoubleOrNull() ?: return stopEverything()
         val lng = intent?.getStringExtra(EXTRA_LNG)?.toDoubleOrNull() ?: return stopEverything()
         val acc = intent?.getStringExtra(EXTRA_ACC)?.toFloatOrNull() ?: 5f
@@ -76,14 +103,12 @@ class MockService : Service() {
         val intervalMs = (intent?.getStringExtra(EXTRA_INTERVAL)?.toFloatOrNull() ?: 15f) * 1000f
 
         val lm = getSystemService(LOCATION_SERVICE) as LocationManager
-        runCatching { lm.removeTestProvider(providerName) }
-        lm.addTestProvider(
-            providerName,
-            false, false, false, false, true, true, true,
-            android.location.Criteria.POWER_LOW,
-            android.location.Criteria.ACCURACY_FINE,
-        )
-        lm.setTestProviderEnabled(providerName, true)
+        providerNames.forEach { name ->
+            runCatching { lm.removeTestProvider(name) }
+            runCatching { propertiesFor(name, lm) }
+                .onFailure { Log.e(TAG, "addTestProvider($name) failed: ${it.message}") }
+            runCatching { lm.setTestProviderEnabled(name, true) }
+        }
         running = true
 
         handler.post(object : Runnable {
@@ -97,19 +122,20 @@ class MockService : Service() {
                 } else {
                     lat to lng
                 }
-                runCatching {
-                    lm.setTestProviderLocation(providerName, buildFix(jLat, jLng, acc))
-                }.onFailure {
-                    Log.e(TAG, "setTestProviderLocation failed: ${it.message}")
-                    stopEverything()
+                providerNames.forEach { name ->
+                    runCatching {
+                        lm.setTestProviderLocation(name, buildFix(name, jLat, jLng, acc))
+                    }.onFailure {
+                        Log.e(TAG, "setTestProviderLocation($name) failed: ${it.message}")
+                    }
                 }
                 handler.postDelayed(this, intervalMs.toLong())
             }
         })
     }
 
-    private fun buildFix(lat: Double, lng: Double, acc: Float) =
-        android.location.Location(providerName).apply {
+    private fun buildFix(name: String, lat: Double, lng: Double, acc: Float) =
+        android.location.Location(name).apply {
             latitude = lat
             longitude = lng
             accuracy = acc
@@ -142,5 +168,6 @@ class MockService : Service() {
         const val EXTRA_RADIUS = "radius"
         const val EXTRA_INTERVAL = "interval"
         const val EXTRA_PROVIDER = "provider"
+        const val EXTRA_PROVIDERS = "providers"
     }
 }

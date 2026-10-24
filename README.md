@@ -149,6 +149,24 @@ AOSP 原版 `Shell/AndroidManifest.xml` 是持有它们的，所以"adb 免 root
 `/data/local/tmp/mockloc.in` 收件箱（实测 shell 可写），再由 root 侧 `sync_inbox` 镜像进 `/data/adb`。
 副作用是不装 Xposed 也能只刷模块跑档 2，不需要 PC 端拿到 root shell。
 
+**档 1 实机跑通，并抓到一个会致命的泄露。** 用旧版单 provider 注入东方明珠后，App 诊断页读到：
+
+```
+自身 appop : allow          secure mock_location : 0     ← 实锤 A1：选择器只写 app-op，不写 Settings.Secure
+LKL gps     : 31.241703,121.495284 acc=5.0  mock=true    ← 注入值，与验收过的反算一致
+LKL passive : 31.241703,121.495284 acc=5.0  mock=true    ← 框架把假位置传播进 passive
+LKL network : 24.783651,112.358044 acc=35.0 mock=false   ← 真实位置原封不动泄露
+```
+
+只顶 `gps` 是不够的：**`network` provider 还在报真位置**（广东一带）。所以默认改为同时顶
+`gps,network,fused`（`passive` 由框架自动继承）。同名替换对 `network` 是否成立也实测了：注入深圳后
+`dumpsys` 出现 `network provider [mock]` 且 `passive` 同步跟进 —— AOSP 那句 "will replace any provider
+with the same name" 对非 gps 名字同样有效。
+
+收尾也验了：`cmd stop` + `am force-stop` 之后 `dumpsys | grep -c '\[mock\]'` 归零，诊断页回到
+`network 24.783499,112.358101 mock=false`（与注入前差约 17 m，说明是活的网络定位在刷新，不是缓存）。
+**test provider 随注册进程死亡而被系统回收**，这条是"关掉就恢复真实 GPS"的机制保证。
+
 ### A1. 系统到底怎么放行虚拟定位（AOSP android16-release，逐条核过）
 
 - **闸门是 app-op，不是权限**。`LocationManagerService.java:1511-1577` 只做

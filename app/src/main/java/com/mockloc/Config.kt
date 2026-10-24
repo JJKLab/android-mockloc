@@ -42,6 +42,13 @@ object Config {
     var provider: String = LocationManager.GPS_PROVIDER
         private set
 
+    /** Every provider name the global layer should cover; `network` left real leaks the truth. */
+    @Volatile
+    var providers: List<String> = listOf(
+        LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER, "fused",
+    )
+        private set
+
     /** Whether the root module is also keeping a system-wide test provider alive. */
     @Volatile
     var global: Boolean = false
@@ -99,7 +106,9 @@ object Config {
         var nextLng = 0.0
         var nextRadius = 0.0
         var nextAccuracy = 5f
-        var nextProvider = LocationManager.GPS_PROVIDER
+        var nextProviders = listOf(
+            LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER, "fused",
+        )
         var nextLabel = ""
         var nextTargets = emptySet<String>()
         var nextGlobal = false
@@ -115,7 +124,8 @@ object Config {
                 "MOCKLOC_LNG" -> nextLng = value.toDoubleOrNull() ?: nextLng
                 "MOCKLOC_RADIUS" -> nextRadius = value.toDoubleOrNull() ?: nextRadius
                 "MOCKLOC_ACC" -> nextAccuracy = value.toFloatOrNull() ?: nextAccuracy
-                "MOCKLOC_PROVIDER" -> if (value.isNotEmpty()) nextProvider = value
+                "MOCKLOC_PROVIDERS" -> value.split(',').map { it.trim() }.filter { it.isNotEmpty() }
+                    .takeIf { it.isNotEmpty() }?.let { nextProviders = it }
                 "MOCKLOC_LABEL" -> nextLabel = value
                 "MOCKLOC_TARGETS" -> nextTargets = value.split(',').map { it.trim() }.filter { it.isNotEmpty() }.toSet()
             }
@@ -125,7 +135,8 @@ object Config {
         centerLng = nextLng
         radius = nextRadius
         accuracy = nextAccuracy
-        provider = nextProvider
+        providers = nextProviders
+        provider = nextProviders.first()
         global = nextGlobal
         label = nextLabel
         targets = nextTargets

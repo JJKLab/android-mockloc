@@ -14,7 +14,7 @@ done
 cmd location is-location-enabled >/dev/null 2>&1 || exit 0
 [ -f "$CFG" ] || [ -f "$INBOX" ] || exit 0
 
-PROVIDER=$(cfg_get MOCKLOC_PROVIDER); PROVIDER=${PROVIDER:-gps}
+PROVIDERS=$(cfg_get MOCKLOC_PROVIDERS); PROVIDERS=${PROVIDERS:-gps,network,fused}
 ACC=$(cfg_get MOCKLOC_ACC); ACC=${ACC:-5.0}
 INTERVAL=$(cfg_get MOCKLOC_INTERVAL); INTERVAL=${INTERVAL:-15}
 UP=0
@@ -30,18 +30,24 @@ while :; do
     appops set 0 android:mock_location allow 2>/dev/null
     appops set 2000 android:mock_location allow 2>/dev/null
     cmd location set-location-enabled true
-    if [ "$UP" != 1 ]; then
-      cmd location providers add-test-provider "$PROVIDER"
-      cmd location providers set-test-provider-enabled "$PROVIDER" true
-      UP=1
-    fi
     set -- $(jitter "$(cfg_get MOCKLOC_LAT)" "$(cfg_get MOCKLOC_LNG)" "$(cfg_get MOCKLOC_RADIUS)")
-    apply_once "$PROVIDER" "$1" "$2" "$ACC"
+    JLAT=$1
+    JLNG=$2
+    for p in $(printf '%s' "$PROVIDERS" | tr ',' ' '); do
+      if [ "$UP" != 1 ]; then
+        cmd location providers add-test-provider "$p"
+        cmd location providers set-test-provider-enabled "$p" true
+      fi
+      apply_once "$p" "$JLAT" "$JLNG" "$ACC"
+    done
+    UP=1
   elif [ "$UP" = 1 ]; then
-    cmd location providers set-test-provider-enabled "$PROVIDER" false
-    cmd location providers remove-test-provider "$PROVIDER"
+    for p in $(printf '%s' "$PROVIDERS" | tr ',' ' '); do
+      cmd location providers set-test-provider-enabled "$p" false
+      cmd location providers remove-test-provider "$p"
+    done
     UP=0
-    echo "mockloc: global provider torn down" >> /data/adb/mockloc/service.log
+    echo "mockloc: global providers torn down" >> /data/adb/mockloc/service.log
   fi
   publish
   sleep "$INTERVAL"

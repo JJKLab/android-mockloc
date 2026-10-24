@@ -11,7 +11,7 @@ if [ ! -f /data/adb/mockloc/config.prop ]; then
   cat > /data/adb/mockloc/config.prop <<'EOF'
 MOCKLOC_ENABLED=false
 MOCKLOC_GLOBAL=true
-MOCKLOC_PROVIDER=gps
+MOCKLOC_PROVIDERS=gps,network,fused
 MOCKLOC_LAT=0
 MOCKLOC_LNG=0
 MOCKLOC_ACC=5.0

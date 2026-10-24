@@ -23,6 +23,16 @@ import amap  # noqa: E402
 from coords import gcj02_to_wgs84, parse_latlng  # noqa: E402
 
 PROVIDER_DEFAULT = "gps"
+PROVIDERS_DEFAULT = "gps,network,fused"
+
+
+def provider_list(args):
+    """--provider pins one name (for experiments); otherwise the full list gets mocked, because
+    on the test device leaving `network` real leaked the true position while gps/passive lied."""
+    single = getattr(args, "provider", None)
+    if single:
+        return [single]
+    return [p.strip() for p in (getattr(args, "providers", "") or "").split(",") if p.strip()]
 SELF_PKG = "com.mockloc"
 CONFIG_INBOX = "/data/local/tmp/mockloc.in"
 CONFIG_REMOTE = "/data/adb/mockloc/config.prop"
@@ -234,10 +244,11 @@ def resolve_place(query, city, key, datum, first=False):
 SERVICE_COMPONENT = "com.mockloc/.MockService"
 
 
-def app_start(t, provider, lat, lng, accuracy, radius, interval):
+def app_start(t, providers, lat, lng, accuracy, radius, interval):
     """Drive the in-app test provider. Needs no root and no appops: the app-op comes from the
     developer-options picker, which Settings (a privileged process) writes."""
-    extras = (f"--es cmd start --es provider {provider} --es lat {lat:.7f} --es lng {lng:.7f} "
+    extras = (f"--es cmd start --es providers {','.join(providers)} "
+              f"--es lat {lat:.7f} --es lng {lng:.7f} "
               f"--es acc {accuracy:.1f} --es radius {radius:.1f} --es interval {int(interval)}")
     code, out, err = t.sh(f"am start-foreground-service -n {SERVICE_COMPONENT} {extras}", su=False)
     blob = (out + err).lower()
@@ -245,8 +256,9 @@ def app_start(t, provider, lat, lng, accuracy, radius, interval):
         raise DeviceError(f"启动 App 内 provider 失败: {(out or err)[:220]}")
 
 
-def app_stop(t, provider):
-    t.sh(f"am start-foreground-service -n {SERVICE_COMPONENT} --es cmd stop --es provider {provider}", su=False)
+def app_stop(t, providers):
+    t.sh(f"am start-foreground-service -n {SERVICE_COMPONENT} --es cmd stop "
+         f"--es providers {','.join(providers)}", su=False)
 
 
 def app_readback(t):
@@ -263,8 +275,10 @@ def cmd_set(t, args):
     else:
         raise DeviceError("need --place or --coord")
 
+    providers = provider_list(args)
+
     if args.mode == "app":
-        app_start(t, args.provider, lat, lng, args.accuracy, args.radius, args.interval)
+        app_start(t, providers, lat, lng, args.accuracy, args.radius, args.interval)
         if isinstance(t, DryRunTarget):
             print("[dry-run] 未真跑，回读与 app-op 状态都还没法判断")
             return lat, lng, label
@@ -280,9 +294,10 @@ def cmd_set(t, args):
     if args.global_provider:
         state = ensure_appop(t)
         ensure_master_switch(t)
-        ensure_provider(t, args.provider)
-        stamp = inject(t, args.provider, lat, lng, args.accuracy)
-        print(f"[ok] 全局 provider: appop={state} provider={args.provider} ts={stamp}")
+        for name in providers:
+            ensure_provider(t, name)
+            inject(t, name, lat, lng, args.accuracy)
+        print(f"[ok] 全局 provider: appop={state} providers={providers}")
     elif not args.persist:
         raise DeviceError("--no-global 只是不建 provider；要么加 --persist 交给模块按 App 处理，要么去掉 --no-global")
     else:
@@ -292,7 +307,7 @@ def cmd_set(t, args):
         path = write_config(t, {
             "MOCKLOC_ENABLED": "true",
             "MOCKLOC_GLOBAL": "true" if args.global_provider else "false",
-            "MOCKLOC_PROVIDER": args.provider,
+            "MOCKLOC_PROVIDERS": ",".join(providers),
             "MOCKLOC_LAT": f"{lat:.7f}",
             "MOCKLOC_LNG": f"{lng:.7f}",
             "MOCKLOC_ACC": f"{args.accuracy:.1f}",
@@ -326,13 +341,15 @@ def cmd_watch(t, args):
 
 
 def cmd_off(t, args):
+    providers = provider_list(args)
     if args.mode == "app":
-        app_stop(t, args.provider)
+        app_stop(t, providers)
         read = app_readback(t)
         print("[ok] App 内 provider 已停" if not read else f"[warn] dumpsys 仍有 mock 痕迹:\n{read}")
         return
-    code, out, err = t.sh(f"cmd location providers set-test-provider-enabled {args.provider} false")
-    t.sh(f"cmd location providers remove-test-provider {args.provider}")
+    for name in providers:
+        t.sh(f"cmd location providers set-test-provider-enabled {name} false")
+        t.sh(f"cmd location providers remove-test-provider {name}")
     if args.wipe:
         t.sh(f"rm -f {CONFIG_INBOX}")
         t.sh(f"rm -f {CONFIG_REMOTE}")
@@ -356,7 +373,8 @@ def cmd_status(t, args):
     print(f"appop(0/root) : {out or err}")
     code, out, err = t.sh("settings get secure mock_location")
     print(f"secure flag   : {out or err}")
-    code, out, err = t.sh(f"dumpsys location | grep -iE 'mock|{args.provider} provider' | head -12")
+    pattern = "|".join(provider_list(args))
+    code, out, err = t.sh(f"dumpsys location | grep -iE 'mock|({pattern}) provider' | head -14")
     print("dumpsys       :")
     print("\n".join(f"  {ln}" for ln in (out or err).splitlines()))
     code, out, err = t.sh(f"cat {CONFIG_INBOX} 2>/dev/null || cat {CONFIG_REMOTE} 2>/dev/null")
@@ -402,14 +420,15 @@ def cmd_doctor(t, args):
     if isinstance(t, DryRunTarget):
         print("[dry-run] 下面所有命令只打印不执行，可用性结论一律按通过处理——真机请去掉 --dry-run\n")
     print("逐项自检（每项都是一次真调用，不是读配置）")
+    probe_provider = provider_list(args)[0]
     checks = [
         ("adb 在线", lambda: t.serial),
         ("系统版本", t.info),
         ("su 可用", lambda: t.sh("id", su=True)[1]),
         ("location 服务", lambda: t.sh("cmd location is-location-enabled")[1]),
         ("appop 可授", lambda: ensure_appop(t)),
-        ("测试 provider 可建", lambda: ensure_provider(t, args.provider)),
-        ("注入可用", lambda: inject(t, args.provider, 31.230416, 121.473701, 5.0)),
+        ("测试 provider 可建", lambda: ensure_provider(t, probe_provider)),
+        ("注入可用", lambda: inject(t, probe_provider, 31.230416, 121.473701, 5.0)),
     ]
     tier_ok = {}
     for name, fn in checks:
@@ -427,7 +446,7 @@ def cmd_doctor(t, args):
 
     print("\n三档可用性")
     # Tier 1 needs only the shell uid, so re-probe it without su rather than inferring.
-    ok1, detail1 = probe(t, f"appops set 2000 android:mock_location allow && cmd location providers add-test-provider {args.provider}", su=False)
+    ok1, detail1 = probe(t, f"appops set 2000 android:mock_location allow && cmd location providers add-test-provider {probe_provider}", su=False)
     print(f"  档1 无root      : {'可用' if ok1 else '不可用'} {'' if ok1 else detail1}")
     print(f"  档2 root        : {'可用' if tier_ok.get('su') and tier_ok.get('provider') else '不可用'}")
     ok_apk, d_apk = probe(t, f"pm path {SELF_PKG}", su=False)
@@ -438,8 +457,8 @@ def cmd_doctor(t, args):
         print(f"      模块 APK : {d_apk}")
 
     # Probing creates a provider; leaving it behind would silently spoof the whole phone.
-    t.sh(f"cmd location providers set-test-provider-enabled {args.provider} false")
-    t.sh(f"cmd location providers remove-test-provider {args.provider}")
+    t.sh(f"cmd location providers set-test-provider-enabled {probe_provider} false")
+    t.sh(f"cmd location providers remove-test-provider {probe_provider}")
     print("\n已清理探针建的测试 provider（真实 GPS 恢复）。")
     print("注意：档1/档2 给到 App 的定位 isMock()=true；要抹掉痕迹必须走档3。")
 
@@ -498,7 +517,8 @@ def interactive():
 
 def build_args(place=None, city=None, coord=None, datum="gcj02", watch=False):
     return argparse.Namespace(
-        place=place, city=city, coord=coord, datum=datum, key=None, provider=PROVIDER_DEFAULT,
+        place=place, city=city, coord=coord, datum=datum, key=None, provider=None,
+        providers=PROVIDERS_DEFAULT,
         accuracy=5.0, persist=True, dry_run=False, radius=(20.0 if watch else 0.0),
         interval=15.0, first=False, target=[], global_provider=True, wipe=False,
     )
@@ -521,7 +541,9 @@ def main():
     sub = parser.add_subparsers(dest="cmd")
 
     common = argparse.ArgumentParser(add_help=False)
-    common.add_argument("--provider", default=PROVIDER_DEFAULT)
+    common.add_argument("--provider", default=None, help="只操作这一个 provider（实验用）")
+    common.add_argument("--providers", default=PROVIDERS_DEFAULT,
+                        help="逗号分隔，默认同时顶掉 gps/network/fused")
     common.add_argument("--accuracy", type=float, default=5.0)
     common.add_argument("--dry-run", action="store_true", help="print the device commands, send nothing")
     common.add_argument("--global", dest="global_provider", action=argparse.BooleanOptionalAction,
@@ -567,7 +589,7 @@ def main():
     ns = args
     for name, value in (("radius", 0.0), ("interval", 15.0), ("persist", False),
                         ("dry_run", False), ("mode", "su"), ("serial", None), ("target", []),
-                        ("global_provider", True), ("wipe", False)):
+                        ("global_provider", True), ("wipe", False), ("providers", PROVIDERS_DEFAULT)):
         if not hasattr(ns, name):
             setattr(ns, name, value)
     t = DryRunTarget(ns.mode) if ns.dry_run else Target(ns.serial, ns.mode)
