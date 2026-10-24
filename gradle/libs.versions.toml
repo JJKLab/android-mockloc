@@ -2,9 +2,11 @@
 agp = "8.7.0"
 kotlin = "2.2.10"
 libxposed = "102.0.0"
+osmdroid = "6.1.20"
 
 [libraries]
 libxposed-api = { group = "io.github.libxposed", name = "api", version.ref = "libxposed" }
+osmdroid-android = { group = "org.osmdroid", name = "osmdroid-android", version.ref = "osmdroid" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

@@ -51,5 +51,6 @@ android {
 }
 
 dependencies {
+    implementation(libs.osmdroid.android)
     compileOnly(libs.libxposed.api)
 }

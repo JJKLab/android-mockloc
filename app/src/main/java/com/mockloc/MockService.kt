@@ -157,7 +157,7 @@ class MockService : Service() {
             .build()
     }
 
-    private companion object {
+    companion object {
         const val TAG = "[MockService]"
         const val CHAN = "mockloc"
         const val NOTIF_ID = 42

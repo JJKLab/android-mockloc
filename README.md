@@ -1,8 +1,9 @@
 # mockloc — 安卓系统级虚拟定位（root / KernelSU）
 
-给已 root（KernelSU / APatch / Magisk）的安卓机做虚拟定位。**阶段 1 已可用**（CLI + root 模块，坐标层有数值验收）；
-**阶段 2 已过本地类型检查**（4 个 Kotlin 文件对 android.jar API36 + libxposed 102 零错误），
-待 CI 打包与真机验证——它是"按 App 生效 + 抹掉 `isMock` 痕迹"的那一层。
+给已 root（KernelSU / APatch / Magisk）的安卓机做虚拟定位。**档 1（无 root）已真机跑通**，
+并且抓到了"只顶 gps 不顶 network 会泄露真实位置"这个致命缺陷并已修（见 A0）。
+**阶段 3 的 App（搜索 / 地图点选 / 收藏）已实现并本地编译通过**（18 个 class 零告警），待 CI 出包与真机走查。
+阶段 2 的 libxposed 模块（按 App 生效 + 抹掉 `isMock` 痕迹）代码就绪，需装 LSPosed 后才能验。
 
 它和"开发者选项里选个虚拟位置 App"的区别：开发者选项只是把 app-op `android:mock_location` 设为 allow，
 底层走的还是同一套测试 provider，所有 App 都能通过 `Location.isMock()` 看出来。这里阶段 1 用同一套系统能力但
@@ -120,12 +121,35 @@ aar 拉下来解出 `classes.jar` 后，本仓库 4 个 Kotlin 文件在它上�
 ## 4. 装到手机
 
 ```powershell
-adb install app-debug.apk                     # 阶段 2 的模块 + 诊断页
-adb push mockloc-root.zip /sdcard/            # 阶段 1 的 root 模块，用 KernelSU/APatch 刷入
+adb install mockloc-debug.apk                 # 模块 + App（四页：搜索/地图/收藏/状态）
+adb push mockloc-root.zip /sdcard/            # root 模块，用 KernelSU/APatch 刷入
 ```
 
-阶段 2 装完后打开 mockloc，页面第一行会显示"注入：已生效/未生效"——这是判断 LSPosed 到底有没有把模块
-加载进进程的唯一可靠办法（没生效不会报错，只会安静地什么都不做）。
+### App 里怎么用（阶段 3）
+
+四个页签，对应你要的三种输入 + 一个判据：
+
+| 页 | 干什么 | 坐标处理 |
+|---|---|---|
+| 搜索 | 填一次高德 Web服务 key（存本机私有 prefs）→ 输地点 → 点结果即注入 | 高德给 GCJ-02 → 自动反算 WGS-84 |
+| 地图 | osmdroid + 高德瓦片，点任意位置 → 注入 / 收藏 | 瓦片是 GCJ-02 地理参考 → 点选值同样反算；屏上两行都显示，注入用 WGS 那行 |
+| 收藏 | 点=注入，长按=删除 | 存的就是 WGS-84，不再转换 |
+| 状态 | `selfCheck`、各 provider 回读、停止注入 | 这是唯一能看出"注入到底生效没"的地方 |
+
+注入走的是**档 1 的应用内 provider**（`MockService` 前台服务），所以不装 Xposed、不 root 也能用；
+装了 LSPosed 并勾作用域后，档 3 的按 App 无痕路径会叠加在上面。
+
+### 为什么 UI 是 View 而不是 Compose
+
+不是口味问题，是**可验证性**：Compose 代码需要 Compose 编译器插件，本项目的本地检查手段
+（`kotlinc` + android.jar）编不了它，等于把整个 UI 层交给盲编。用 View 之后，`MainActivity` 连同
+osmdroid 的全部调用都能在本机真编译 —— 这一轮就是这样抓到 tab 按钮被加进竖向容器、
+`MapEventsOverlay` 用了废弃构造、`Marker.position` 属性化赋值不成立等若干处。
+
+osmdroid 的真实 API 也不是靠记忆写的：`tools/classdump.py` 直接解析 jar 里的 `.class`
+（本机只有 JRE、没有 `javap`），把 `XYTileSource`/`MapEventsOverlay`/`Projection.fromPixels`/
+`Marker`/`MapController` 的构造与方法签名读出来再照着写。顺带确认 osmdroid 6.1.20 **零传递依赖**、
+AAR 元数据 `minCompileSdk=1`，加它不给 CI 添风险。
 
 ---
 
@@ -366,7 +390,13 @@ PC 端根本写不了 `/data/adb`——收件箱让"只刷模块、不依赖 su"
 | `app/.../Config.kt` | App 进程侧配置快照，1s TTL，读不到文件时把原因留在 `lastError` |
 | `app/.../SpoofLogic.kt` | 两个 hook 后端共用的决策层，防止行为漂移 |
 | `app/.../ModuleEntry.kt` | libxposed 入口，注册在 `META-INF/xposed/java_init.list` |
-| `app/.../MainActivity.kt` | 诊断页：`selfCheck` 是否被改写 + 各 provider 回读值 |
+| `app/.../MainActivity.kt` | 四页 View：搜索 / 地图点选 / 收藏 / 状态（`selfCheck` + 各 provider 回读） |
+| `app/.../CoordTransform.kt` | `coords.py` 的 Kotlin 移植，与 Python 版对同一批锚点数值一致（477.87 m） |
+| `app/.../AmapSearch.kt` | 高德 REST（`HttpURLConnection` + `org.json`，零三方依赖） |
+| `app/.../AmapTiles.kt` | 高德瓦片源（GCJ-02 地理参考的 Web Mercator） |
+| `app/.../Places.kt` | 收藏点，JSON 存私有 prefs（不落 world-readable 镜像） |
+| `tools/classdump.py` | 解析 `.class` 拿真实方法签名（本机只有 JRE，没 `javap`） |
+| `tools/kotlin/CoordCheck.kt` | 可运行的 Kotlin 数值验收，不进 APK |
 
 模块注册只走 libxposed 现代 API 一条路（按 [libxposed/api](https://github.com/libxposed/api) 的约定：
 不需要 `assets/xposed_init`，也不需要 manifest 里的 `xposedmodule` meta-data）。
@@ -402,6 +432,12 @@ FakeLoc/XposedFakeLocation 都有同样的取舍，并用"每个字段单独开�
    以及它的 `manager.apk` 签名是否与历史可信版本一致（A6 里那两个自证动作）。
 9. `doctor` 的档 1 探针：确认 shell uid 单独授权 app-op 后 `cmd location` 真的不报 SecurityException
    ——这是"无 root 也能全局"这整条结论的唯一直接证据。
+   **已实测：本机不通**（ColorOS 摘了 `MANAGE_APP_OPS_MODES`），见 A0；免 root 档改走 App 内 provider。
+10. **高德瓦片能不能显示**：`AmapTiles` 用 `{x}{y}{z}` 占位符式 URL，osmdroid 6.1.20 的
+    `TileSourcePolicy` 是否替换占位符要靠真机看瓦片出没出来；不出就改成拼接式 URL。签名与投影都对，唯一变量是它。
+11. Android 16 上从 Activity 前台 `startForegroundService` + `foregroundServiceType=location` 是否放行；
+    未授 `POST_NOTIFICATIONS` 时通知不显示、服务是否仍在跑。
+12. 真 key 下 App 内搜索的正向返回（REST 层目前只验过 `10001` 错误路径）。
 
 ## 附录 D 版本历史
 
@@ -425,3 +461,10 @@ FakeLoc/XposedFakeLocation 都有同样的取舍，并用"每个字段单独开�
   A5 的 Shizuku 结论按实机修正为"取决于该 ROM 是否把 MANAGE_APP_OPS_MODES 留给 shell"。
   本地类型检查又抓到 3 个错（`Service.onBind` 未实现、`ProviderProperties` 不在 `android.location` 包、
   一个不存在的 `android.os.ILooper` import），均在推 CI 前修掉。
+- **v0.4.0**（2026-10-24）阶段 3 App：四页 View（搜索 / 地图点选 / 收藏 / 状态）。
+  选 View 不选 Compose 是为了可验证性——Compose 需要编译器插件，本项目的本地手段编不了它，
+  等于把整个 UI 交给盲编；改成本地可编后，一轮就抓到 tab 容器方向错、`MapEventsOverlay` 废弃构造、
+  `Marker.position` 属性化赋值三处。osmdroid 的 API 用 `tools/classdump.py` 从 `.class` 里读真实签名
+  （本机只有 JRE 没有 `javap`），并确认 6.1.20 零传递依赖、`minCompileSdk=1`。
+  `CoordTransform.kt` 与 `coords.py` 对同一批锚点跑出**逐位一致**的结果（477.87 m / 4.77e-07），
+  两套实现互验。新增 INTERNET 权限与 `AmapTiles` 高德瓦片源。
