@@ -13,3 +13,7 @@ tools/config.json
 
 __pycache__/
 *.pyc
+
+# CI signing identity: kept local, paste the .b64 content into the repo secret
+.local-debug.keystore
+.local-debug.keystore.b64

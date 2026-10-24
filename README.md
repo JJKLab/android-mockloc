@@ -96,6 +96,14 @@ python tools/mockloc.py off
 
 ## 3. 编译（本机无安卓环境，全部交给 GitHub Actions）
 
+**一次性设置（不做也能编，但每次签名都变）**：Actions 默认让 AGP 在 runner 上现生成 debug keystore，
+于是每个构建签名不同 → 装新包必须先 `adb uninstall com.mockloc`，而**卸载会清掉开发者选项给的
+mock_location app-op**，又得重点一次。破解办法是把仓库 secret `DEBUG_KEYSTORE_BASE64` 设成本地
+`.local-debug.keystore.b64` 的内容（该文件不入版本库，自己 `keytool -genkeypair` 生成）：
+仓库 → Settings → Secrets and variables → Actions → New repository secret。
+没设时 CI 只发 `::warning::`，不会中断构建。`versionName` 会带上 commit 短 SHA，
+`adb shell dumpsys package com.mockloc | grep versionName` 就能确认手机上装的是哪一版。
+
 `.github/workflows/build.yml` 三个 job：
 
 1. `logic` — 跑 `tools/tests/test_coords.py`，坐标层不对就直接卡住后面两个 job。

@@ -40,6 +40,20 @@ jobs:
         with:
           gradle-version: "8.9"
 
+      # Without this AGP mints a fresh debug keystore on every runner, so each build has a
+      # different signature and reinstalling means uninstall + re-granting the mock app-op.
+      - name: Restore stable debug keystore
+        env:
+          DEBUG_KEYSTORE_BASE64: ${{ secrets.DEBUG_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$DEBUG_KEYSTORE_BASE64" ]; then
+            echo "::warning::DEBUG_KEYSTORE_BASE64 not set - this build's signature will differ from the previous one, so install needs an uninstall first."
+          else
+            mkdir -p "$HOME/.android"
+            echo "$DEBUG_KEYSTORE_BASE64" | base64 -d > "$HOME/.android/debug.keystore"
+            echo "debug keystore restored"
+          fi
+
       - name: Build debug APK
         run: gradle --no-daemon :app:assembleDebug -PgitSha="${GITHUB_SHA:0:7}"
 
