@@ -199,6 +199,17 @@ with the same name" 对非 gps 名字同样有效。
 `network 24.783499,112.358101 mock=false`（与注入前差约 17 m，说明是活的网络定位在刷新，不是缓存）。
 **test provider 随注册进程死亡而被系统回收**，这条是"关掉就恢复真实 GPS"的机制保证。
 
+**框架层 mock 的边界（实测，不是推测）。** 注入生效期间 `dumpsys location` 里 `gps/network/fused`
+三个 provider 全是 `[mock]`，我们 App 自己的状态页读回三行一致坐标；**但高德地图首页仍显示「清远市」**
+（真实位置，与之前 network 泄露那组 `24.78,112.36` 吻合），而 `dumpsys location` 明确记录
+`com.autonavi.minimap` 与 `com.tencent.mm` 都注册了 gps 客户端——它们拿到了喂入却不用。
+这类 App 自带定位引擎（WiFi 列表 → 自家服务器算坐标），要么不吃 `LocationManager`，要么因
+`mock=true` 主动丢弃后回落到网络定位。**这就是本项目开头那句"开发者选项的虚拟定位很多软件不认可"的机制。**
+
+推论（推翻我第一轮给的选项）：只做"框架层 hook"不足以让高德/微信类 App 改位置，必须再加
+**地图 SDK hook 层**（`com.amap.api.location.AMapLocation` 等，参考 A3 里 FakeLoc 的 `MapSdkHooks.kt`），
+而这一层依赖 LSPosed——本机目前未装（`pm list packages | grep -c lsposed` = 0）。
+
 ### A1. 系统到底怎么放行虚拟定位（AOSP android16-release，逐条核过）
 
 - **闸门是 app-op，不是权限**。`LocationManagerService.java:1511-1577` 只做
@@ -468,3 +479,9 @@ FakeLoc/XposedFakeLocation 都有同样的取舍，并用"每个字段单独开�
   （本机只有 JRE 没有 `javap`），并确认 6.1.20 零传递依赖、`minCompileSdk=1`。
   `CoordTransform.kt` 与 `coords.py` 对同一批锚点跑出**逐位一致**的结果（477.87 m / 4.77e-07），
   两套实现互验。新增 INTERNET 权限与 `AmapTiles` 高德瓦片源。
+- **v0.4.1**（2026-10-24）真机走查阶段 3：inset 与瓦片两个渲染问题修完（见 A0 与 `AmapTiles` 注释），
+  注入链路端到端验通（点选 → 反算 → 三 provider 全 `[mock]`）。
+  新发现并记录框架层 mock 的能力边界：**高德地图在注入生效期间仍显示真实城市「清远市」**，
+  尽管它确实注册了 gps 客户端（见 A0 末段）——要覆盖这类自带定位引擎的 App，必须加地图 SDK hook 层。
+  状态页文案也改了：原来一行"注入: 未生效"把「LSPosed 模块未加载」和「定位没注入」混为一谈，
+  现在拆成 `系统注入` / `无痕模块` 两行，并直接列出四个 provider 的读回值。

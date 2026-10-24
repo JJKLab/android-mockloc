@@ -326,27 +326,30 @@ class MainActivity : Activity() {
     private fun refreshStatus() {
         val last = prefs.getString(KEY_LAST, "无")
         val label = prefs.getString(KEY_LAST_LABEL, "")
+        val fixes = readback()
         statusText.text = buildString {
-            appendLine("注入 : ${if (selfCheck()) "已生效(LSPosed)" else "未生效(未装/未启用模块)"}")
+            appendLine("系统注入 : ${if (fixes.any { "mock=true" in it }) "生效中" else "未注入"}")
+            appendLine("无痕模块 : ${if (selfCheck()) "已加载" else "未加载（需 LSPosed）"}")
             appendLine("最近 : $label $last")
-            appendLine("服务 : 前台 provider 由 MockService 维持")
             appendLine("----")
-            appendLine(readback())
+            fixes.forEach { appendLine(it) }
+            appendLine("----")
+            appendLine("注：高德/腾讯系 App 用自己的定位引擎，不吃这条注入，需 SDK hook 层")
         }
     }
 
     // Both accessors are shown on purpose: older apps still call the deprecated one, and the whole
     // point of this screen is to see which flag a target app would be reading.
     @Suppress("DEPRECATION")
-    private fun readback(): String = buildString {
+    private fun readback(): List<String> {
         val lm = getSystemService(LOCATION_SERVICE) as? android.location.LocationManager
-        listOf("gps", "fused", "network", "passive").forEach { name ->
+        return listOf("gps", "fused", "network", "passive").map { name ->
             val line = runCatching {
                 val loc = lm?.getLastKnownLocation(name)
                 if (loc == null) "null"
                 else "${"%.6f".format(loc.latitude)},${"%.6f".format(loc.longitude)} acc=${loc.accuracy} mock=${loc.isFromMockProvider}"
             }.getOrElse { "需授权（${it.javaClass.simpleName}）" }
-            appendLine("$name : $line")
+            "$name : $line"
         }
     }
 
