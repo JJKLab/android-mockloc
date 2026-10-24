@@ -60,7 +60,9 @@ class MainActivity : Activity() {
         map.setTileSource(AmapTiles())
         map.setMultiTouchControls(true)
         map.controller.setZoom(11.0)
-        centerOn(31.2304, 121.4737)
+        // setCenter before the first layout is dropped by osmdroid, which leaves the view parked
+        // at 0,0 in the Gulf of Guinea.
+        map.post { centerOn(31.2304, 121.4737) }
         map.getOverlays().add(
             MapEventsOverlay(object : MapEventsReceiver {
                 override fun singleTapConfirmedHelper(p: GeoPoint): Boolean {
@@ -88,7 +90,12 @@ class MainActivity : Activity() {
     // ---------------------------------------------------------------- ui
 
     private fun buildUi(): View {
-        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            // targetSdk 35+ forces edge-to-edge on Android 15/16: without this the tab row is
+            // drawn underneath the status bar and the app looks like it has no navigation at all.
+            fitsSystemWindows = true
+        }
         flipper = ViewFlipper(this)
         // ViewFlipper is a FrameLayout: passing LinearLayout.LayoutParams here gets converted and
         // the conversion keeps height=0 while dropping weight, so every page measured zero pixels
