@@ -485,3 +485,24 @@ FakeLoc/XposedFakeLocation 都有同样的取舍，并用"每个字段单独开�
   尽管它确实注册了 gps 客户端（见 A0 末段）——要覆盖这类自带定位引擎的 App，必须加地图 SDK hook 层。
   状态页文案也改了：原来一行"注入: 未生效"把「LSPosed 模块未加载」和「定位没注入」混为一谈，
   现在拆成 `系统注入` / `无痕模块` 两行，并直接列出四个 provider 的读回值。
+
+### A7 目标 App 到底吃什么定位（从 APK 的 DEX 里抠出来的，不是猜的）
+
+`tools/dexprobe.py` 直接在设备上拉两个 App 的 base.apk 搜 DEX 字符串：
+
+| App | 公开定位 SDK | 实际用的东西 | `isMock` 痕迹 |
+|---|---|---|---|
+| 高德地图 `com.autonavi.minimap` (172 MB, 8 dex) | **无**（`com/amap/api/location` 命中 0） | 自家引擎 `com/amap/location/api/ILocationService`、`com/amap/location/type/location/Location`、`INetworkLocationListener`、`VALocationResult` | `isMock` 17 次、`isFromMockProvider` 1 次 |
+| 微信 `com.tencent.mm` (219 MB, 18 dex) | **有** `com/tencent/map/geolocation`（20 次）、`TencentLocation`（28 次） | 腾讯定位 SDK + `com/tencent/mm/plugin/location/model/LocationInfo` | `isMock` 11 次 |
+
+推论与打法：
+
+1. **给高德地图 hook `AMapLocation` 是错的**——它压根没有这个类。FakeLoc 的 `MapSdkHooks.kt` 覆盖的是
+   `com.amap.api.location.*` / `com.baidu.location.*` / `com.tencent.map.geolocation.*` 这三家**公开 SDK**，
+   对第三方 App 有效，对高德地图本体无效。
+2. 微信可以直接走公开 SDK 路径（类名已由 DEX 证实存在）。
+3. 高德地图这类自带引擎的，通用打法是**饿死它的网络定位输入**：在目标进程里 hook
+   `WifiManager.getScanResults/getConnectionInfo` 与 `TelephonyManager.getAllCellInfo/getCellLocation`
+   返回空，逼它回落到 GPS —— 而 GPS 已经被我们 mock。FakeLoc 的 `SourceLockHooks.kt` 正是用这招
+   治"地图跳一下又飘回去"。这比猜私有类名可靠，也不需要知道混淆后的名字。
+4. 两者都读 `isMock`，所以这一层必须和档 3（libxposed 抹痕迹）一起做，单靠系统 mock 无效——已实测。
