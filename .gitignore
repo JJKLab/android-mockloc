@@ -1,0 +1,15 @@
+.gradle/
+build/
+local.properties
+*.apk
+*.zip
+!gradle/wrapper/*.jar
+refs/
+.toolchain/
+tools/config.json
+.idea/
+*.iml
+.DS_Store
+
+__pycache__/
+*.pyc

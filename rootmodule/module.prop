@@ -1,0 +1,6 @@
+id=mockloc
+name=mockloc (system test provider)
+version=v0.1.0
+versionCode=1
+author=mockloc
+description=Boot-time mock location via cmd location. Pairs with the com.mockloc Xposed module.
