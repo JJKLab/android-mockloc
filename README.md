@@ -23,6 +23,14 @@
 key 放这儿（三选一，优先级从高到低）：`--key`、环境变量 `AMAP_KEY`、`tools/config.json` 里写
 `{"amap_key":"..."}`（该文件已 gitignore，不会被提交）。
 
+**这三处只服务于 PC 上的 CLI**。APK 侧的 key 输入框是阶段 3 的活，且有一条不能破的不变量：
+**key 永远不进 `/data/local/tmp/mockloc.conf`**。那个镜像文件被 root 模块 `chmod 664 + chcon shelldatafile`
+是为了让 App 进程读得到，代价是机上**任何** App 都能读它——key 写进去等于把配额送给所有装机应用，
+而且控制台看不出是谁刷的。手机侧只允许两个位置：App 私有 prefs，或 root-only 的 `/data/adb/`。
+代码层面 `write_config()` 只接受显式字段白名单，结构上就没有写 key 的口子。
+阶段 3 落地后，唯一日常填写处改为 App 设置页，CLI 优先 `su -c cat` 那个私有 prefs，读不到才退回上面三个入口
+（留兜底是因为脚本/cron 必须非交互）。
+
 ## 2. 用法
 
 不带参数就是问答式菜单，不用记命令：
