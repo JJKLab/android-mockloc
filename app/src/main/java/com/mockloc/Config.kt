@@ -42,6 +42,11 @@ object Config {
     var provider: String = LocationManager.GPS_PROVIDER
         private set
 
+    /** Whether the root module is also keeping a system-wide test provider alive. */
+    @Volatile
+    var global: Boolean = false
+        private set
+
     @Volatile
     var label: String = ""
         private set
@@ -97,6 +102,7 @@ object Config {
         var nextProvider = LocationManager.GPS_PROVIDER
         var nextLabel = ""
         var nextTargets = emptySet<String>()
+        var nextGlobal = false
         text.lineSequence().forEach { line ->
             val idx = line.indexOf('=')
             if (idx <= 0) return@forEach
@@ -104,6 +110,7 @@ object Config {
             val value = line.substring(idx + 1).trim()
             when (key) {
                 "MOCKLOC_ENABLED" -> nextEnabled = value == "true" || value == "1"
+                "MOCKLOC_GLOBAL" -> nextGlobal = value == "true" || value == "1"
                 "MOCKLOC_LAT" -> nextLat = value.toDoubleOrNull() ?: nextLat
                 "MOCKLOC_LNG" -> nextLng = value.toDoubleOrNull() ?: nextLng
                 "MOCKLOC_RADIUS" -> nextRadius = value.toDoubleOrNull() ?: nextRadius
@@ -119,6 +126,7 @@ object Config {
         radius = nextRadius
         accuracy = nextAccuracy
         provider = nextProvider
+        global = nextGlobal
         label = nextLabel
         targets = nextTargets
     }

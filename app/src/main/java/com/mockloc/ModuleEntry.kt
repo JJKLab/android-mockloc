@@ -7,11 +7,14 @@ import io.github.libxposed.api.XposedModule
 import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
 
 /**
- * libxposed (modern) entry. Installed by LSPosed 1.9+ / libxposed frameworks.
+ * libxposed entry (see https://github.com/libxposed/api).
  *
- * Phase 2 deliberately stays inside the target app process: no test provider, no app-op, and
- * therefore no mock bit at all. Only `android` (system_server) is skipped - that hook set is a
- * separate step, and getting it wrong takes system_server down with it.
+ * This hook set is what makes per-app spoofing possible: it runs inside each scoped app only,
+ * so unlisted apps keep their real fix and the listed ones read fake coordinates off genuine
+ * Location objects - no test provider, hence no mock bit to detect.
+ *
+ * `android` (system_server) is deliberately skipped. Rewriting locations there would make the
+ * spoof global *and* flag-free, but a mistake in that process takes system_server down.
  */
 class ModuleEntry : XposedModule() {
 

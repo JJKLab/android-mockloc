@@ -23,6 +23,7 @@ import amap  # noqa: E402
 from coords import gcj02_to_wgs84, parse_latlng  # noqa: E402
 
 PROVIDER_DEFAULT = "gps"
+SELF_PKG = "com.mockloc"
 CONFIG_REMOTE = "/data/adb/mockloc/config.prop"
 LOCAL_CONFIG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
 SU_CMD = os.environ.get("MOCKLOC_SU", "su -c")
@@ -86,9 +87,9 @@ class DryRunTarget:
     """Prints the exact shell commands instead of sending them, so the wiring is reviewable offline."""
 
     serial = "dry-run"
-    mode = "su"
 
-    def __init__(self):
+    def __init__(self, mode="su"):
+        self.mode = mode
         self.sent = []
 
     def info(self):
@@ -223,16 +224,23 @@ def cmd_set(t, args):
     else:
         raise DeviceError("need --place or --coord")
 
-    state = ensure_appop(t)
-    ensure_master_switch(t)
-    ensure_provider(t, args.provider)
-    stamp = inject(t, args.provider, lat, lng, args.accuracy)
-    print(f"[ok] appop={state} provider={args.provider} ts={stamp}")
+    if args.global_provider:
+        state = ensure_appop(t)
+        ensure_master_switch(t)
+        ensure_provider(t, args.provider)
+        stamp = inject(t, args.provider, lat, lng, args.accuracy)
+        print(f"[ok] 全局 provider: appop={state} provider={args.provider} ts={stamp}")
+    elif not args.persist:
+        raise DeviceError("--no-global 只是不建 provider；要么加 --persist 交给模块按 App 处理，要么去掉 --no-global")
+    else:
+        print("[ok] 跳过全局 provider：只写模块配置，按 App 生效（isMock 为 false）")
+
     if args.persist:
         if t.mode != "su":
             raise DeviceError("--persist needs --mode su")
         path = write_config(t, {
             "MOCKLOC_ENABLED": "true",
+            "MOCKLOC_GLOBAL": "true" if args.global_provider else "false",
             "MOCKLOC_PROVIDER": args.provider,
             "MOCKLOC_LAT": f"{lat:.7f}",
             "MOCKLOC_LNG": f"{lng:.7f}",
@@ -248,6 +256,9 @@ def cmd_set(t, args):
 
 def cmd_watch(t, args):
     lat, lng, label = cmd_set(t, args)
+    if not args.global_provider:
+        print("[watch] 按 App 模式无需常驻循环：模块每 1 秒自行重抖坐标")
+        return
     if args.dry_run:
         return
     print(f"[watch] {label} 半径 {args.radius:.0f}m 每 {args.interval:.0f}s 刷新，Ctrl-C 停")
@@ -263,11 +274,20 @@ def cmd_watch(t, args):
 def cmd_off(t, args):
     code, out, err = t.sh(f"cmd location providers set-test-provider-enabled {args.provider} false")
     t.sh(f"cmd location providers remove-test-provider {args.provider}")
-    if args.persist and t.mode == "su":
+    if args.wipe:
         t.sh(f"rm -f {CONFIG_REMOTE}")
-    print(f"[ok] {args.provider} 测试 provider 已移除（真实 GPS 恢复）")
-    print("     app-op android:mock_location 仍是 allow，那不影响真实定位；要收权跑 "
-          "`adb shell appops set 2000 android:mock_location deny`")
+        print(f"[ok] provider 已移除，{CONFIG_REMOTE} 已删除")
+        return
+    # Flip the two switches instead of deleting: the module and the boot loop both read them,
+    # and the coordinates stay behind so a later `set` can reuse the place.
+    code, out, err = t.sh(
+        f"sed -i 's/^MOCKLOC_ENABLED=.*/MOCKLOC_ENABLED=false/; "
+        f"s/^MOCKLOC_GLOBAL=.*/MOCKLOC_GLOBAL=false/' {CONFIG_REMOTE} && grep -c false {CONFIG_REMOTE}"
+    )
+    if code != 0:
+        print("[warn] 设备上没有配置文件，只停了系统 provider；模块侧请自行关掉开关")
+    else:
+        print(f"[ok] provider 已移除，配置文件已置为双关（模块与开机循环都会停）")
 
 
 def cmd_status(t, args):
@@ -282,27 +302,87 @@ def cmd_status(t, args):
     code, out, err = t.sh(f"dumpsys location | grep -iE 'mock|{args.provider} provider' | head -12")
     print("dumpsys       :")
     print("\n".join(f"  {ln}" for ln in (out or err).splitlines()))
+    code, out, err = t.sh(f"cat {CONFIG_REMOTE} 2>/dev/null")
+    print(f"开机配置 {CONFIG_REMOTE}:")
+    print(out or "  (无，只有 --persist 才会写)")
+
+
+TIERS = [
+    ("1", "无 root（adb 或 Shizuku/Stellar 级）",
+     "全局假位置；isMock()=true，App 自检可见；重启后 provider 消失，要重新跑",
+     "set --mode adb --place 东方明珠 --first"),
+    ("2", "root，不装 Xposed",
+     "全局假位置 + 开机自恢复；isMock()=true 依旧",
+     "set --mode su --place 东方明珠 --first --persist"),
+    ("3", "root + LSPosed 模块",
+     "只有列进 TARGETS 的 App 拿到假位置，其余 App 真实；没有测试 provider，所以 isMock()=false",
+     "set --mode su --no-global --place 东方明珠 --first --target com.example.app --persist"),
+]
+
+
+def probe(t, cmd, su):
+    try:
+        code, out, err = t.sh(cmd, su=su)
+        return code == 0, (out or err).splitlines()[0][:70] if (out or err) else ""
+    except DeviceError as exc:
+        return False, str(exc)[:70]
+
+
+def cmd_tiers(t, args):
+    print(f"设备 {t.serial} :: {t.info()}\n")
+    for num, name, effect, cmd in TIERS:
+        print(f"档 {num}  {name}")
+        print(f"   效果 : {effect}")
+        print(f"   命令 : python tools/mockloc.py {cmd}")
+    print("\n判据：三档都装同一个 mockloc.apk，跑完档打开页面看两行——")
+    print("  LKL gps : ... mock=False/True   是 App 实际读到的痕迹")
+    print("  注入 : 已生效/未生效            只有档 3 会是已生效")
 
 
 def cmd_doctor(t, args):
+    if isinstance(t, DryRunTarget):
+        print("[dry-run] 下面所有命令只打印不执行，可用性结论一律按通过处理——真机请去掉 --dry-run\n")
     print("逐项自检（每项都是一次真调用，不是读配置）")
     checks = [
         ("adb 在线", lambda: t.serial),
         ("系统版本", t.info),
-        ("su 可用", lambda: t.sh("id", su=True)[1] if t.mode == "su" else "skipped (mode=adb)"),
+        ("su 可用", lambda: t.sh("id", su=True)[1]),
         ("location 服务", lambda: t.sh("cmd location is-location-enabled")[1]),
         ("appop 可授", lambda: ensure_appop(t)),
         ("测试 provider 可建", lambda: ensure_provider(t, args.provider)),
         ("注入可用", lambda: inject(t, args.provider, 31.230416, 121.473701, 5.0)),
     ]
+    tier_ok = {}
     for name, fn in checks:
         try:
             print(f"  PASS  {name}: {fn()}")
+            if name == "su 可用":
+                tier_ok["su"] = True
+            if name in ("appop 可授", "测试 provider 可建", "注入可用"):
+                tier_ok["provider"] = True
         except Exception as exc:
             print(f"  FAIL  {name}: {exc}")
+            tier_ok.setdefault("su", False)
+            tier_ok.setdefault("provider", False)
             break
-    print("\n注意：这条链路给到 App 的定位 isMock()=true，App 侧自检能看出来。")
-    print("过检测要靠阶段 2 的 libxposed 模块（把 mock bit 抹掉 + 在 system_server 里就地改写）。")
+
+    print("\n三档可用性")
+    # Tier 1 needs only the shell uid, so re-probe it without su rather than inferring.
+    ok1, detail1 = probe(t, f"appops set 2000 android:mock_location allow && cmd location providers add-test-provider {args.provider}", su=False)
+    print(f"  档1 无root      : {'可用' if ok1 else '不可用'} {'' if ok1 else detail1}")
+    print(f"  档2 root        : {'可用' if tier_ok.get('su') and tier_ok.get('provider') else '不可用'}")
+    ok_apk, d_apk = probe(t, f"pm path {SELF_PKG}", su=False)
+    ok_lspd, _ = probe(t, "ls /data/adb/lspd", su=True)
+    print(f"  档3 LSPosed+模块: {'可用' if ok_apk and ok_lspd else '需手工确认'}"
+          f"{'  (模块 APK 未装)' if not ok_apk else ''}{'  (没找到 /data/adb/lspd)' if not ok_lspd else ''}")
+    if d_apk:
+        print(f"      模块 APK : {d_apk}")
+
+    # Probing creates a provider; leaving it behind would silently spoof the whole phone.
+    t.sh(f"cmd location providers set-test-provider-enabled {args.provider} false")
+    t.sh(f"cmd location providers remove-test-provider {args.provider}")
+    print("\n已清理探针建的测试 provider（真实 GPS 恢复）。")
+    print("注意：档1/档2 给到 App 的定位 isMock()=true；要抹掉痕迹必须走档3。")
 
 
 MENU = [
@@ -310,8 +390,9 @@ MENU = [
     ("2", "输入经纬度注入", "set --coord"),
     ("3", "持续刷新（防时间戳过期）", "watch"),
     ("4", "查看当前状态", "status"),
-    ("5", "逐项自检", "doctor"),
+    ("5", "逐项自检 + 三档可用性", "doctor"),
     ("6", "关闭并恢复真实 GPS", "off"),
+    ("7", "对照三档方案与命令", "tiers"),
     ("0", "退出", ""),
 ]
 
@@ -329,19 +410,21 @@ def interactive():
             if choice == "1":
                 place = input("地点名: ").strip()
                 city = input("城市(可空): ").strip()
-                cmd_set(t, build_args(place=place, city=city))
+                cmd_set(t, ask_scope(build_args(place=place, city=city)))
             elif choice == "2":
                 coord = input("经纬度 (lat,lng 或 lng,lat): ").strip()
                 datum = input("坐标系 wgs84/gcj02/bd09 [gcj02]: ").strip() or "gcj02"
-                cmd_set(t, build_args(coord=coord, datum=datum))
+                cmd_set(t, ask_scope(build_args(coord=coord, datum=datum)))
             elif choice == "3":
-                cmd_watch(t, build_args(watch=True))
+                cmd_watch(t, ask_scope(build_args(watch=True)))
             elif choice == "4":
                 cmd_status(t, build_args())
             elif choice == "5":
                 cmd_doctor(t, build_args())
             elif choice == "6":
                 cmd_off(t, build_args())
+            elif choice == "7":
+                cmd_tiers(t, build_args())
             elif choice == "0":
                 return
         except DeviceError as exc:
@@ -352,8 +435,18 @@ def build_args(place=None, city=None, coord=None, datum="gcj02", watch=False):
     return argparse.Namespace(
         place=place, city=city, coord=coord, datum=datum, key=None, provider=PROVIDER_DEFAULT,
         accuracy=5.0, persist=True, dry_run=False, radius=(20.0 if watch else 0.0),
-        interval=15.0, first=False, target=[],
+        interval=15.0, first=False, target=[], global_provider=True, wipe=False,
     )
+
+
+def ask_scope(ns):
+    """Menu path only: decide the two layers without remembering that GLOBAL and TARGETS are separate."""
+    ns.global_provider = (input("全局虚拟定位(建系统测试 provider)? y/n [y]: ").strip() or "y").lower() != "n"
+    raw = input("只对这些包名生效(逗号分隔, 空=作用域内全部 App): ").strip()
+    ns.target = [p.strip() for p in raw.split(",") if p.strip()] if raw else []
+    if not ns.global_provider and not ns.target:
+        print("[提示] 既不建全局 provider 又没填包名，模块会按 LSPosed 作用域里的全部 App 生效")
+    return ns
 
 
 def main():
@@ -366,6 +459,8 @@ def main():
     common.add_argument("--provider", default=PROVIDER_DEFAULT)
     common.add_argument("--accuracy", type=float, default=5.0)
     common.add_argument("--dry-run", action="store_true", help="print the device commands, send nothing")
+    common.add_argument("--global", dest="global_provider", action=argparse.BooleanOptionalAction,
+                        default=True, help="--no-global: only the Xposed module path, no system provider")
 
     p_set = sub.add_parser("set", parents=[common], help="resolve + inject once")
     p_set.add_argument("--place")
@@ -392,10 +487,11 @@ def main():
     p_watch.add_argument("--target", action="append", default=[], metavar="PKG")
     p_watch.add_argument("--persist", action="store_true")
 
-    p_off = sub.add_parser("off", parents=[common], help="remove the test provider")
-    p_off.add_argument("--persist", action="store_true", help="also delete the boot config")
+    p_off = sub.add_parser("off", parents=[common], help="remove the test provider and switch both layers off")
+    p_off.add_argument("--wipe", action="store_true", help="also delete the persisted config")
 
     sub.add_parser("status", parents=[common])
+    sub.add_parser("tiers", parents=[common], help="print the three privilege tiers and their commands")
     p_doc = sub.add_parser("doctor", parents=[common])
 
     args = parser.parse_args()
@@ -405,10 +501,11 @@ def main():
 
     ns = args
     for name, value in (("radius", 0.0), ("interval", 15.0), ("persist", False),
-                        ("dry_run", False), ("mode", "su"), ("serial", None), ("target", [])):
+                        ("dry_run", False), ("mode", "su"), ("serial", None), ("target", []),
+                        ("global_provider", True), ("wipe", False)):
         if not hasattr(ns, name):
             setattr(ns, name, value)
-    t = DryRunTarget() if ns.dry_run else Target(ns.serial, ns.mode)
+    t = DryRunTarget(ns.mode) if ns.dry_run else Target(ns.serial, ns.mode)
     try:
         if args.cmd == "set":
             cmd_set(t, ns)
@@ -418,6 +515,8 @@ def main():
             cmd_off(t, ns)
         elif args.cmd == "status":
             cmd_status(t, ns)
+        elif args.cmd == "tiers":
+            cmd_tiers(t, ns)
         elif args.cmd == "doctor":
             cmd_doctor(t, ns)
     except DeviceError as exc:

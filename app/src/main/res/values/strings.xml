@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">mockloc</string>
+    <string name="module_desc">按 App 伪造定位读数（框架层，不建测试 provider，故 isMock 为 false）。需在 LSPosed 里选目标应用。</string>
+</resources>

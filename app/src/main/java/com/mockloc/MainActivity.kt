@@ -31,7 +31,7 @@ class MainActivity : Activity() {
         appendLine("----")
         Config.refresh()
         appendLine("配置 : ${Config.DEFAULT_PATH}")
-        appendLine("开关 : ${Config.enabled}")
+        appendLine("开关 : ${Config.enabled}   全局 provider: ${Config.global}")
         appendLine("错误 : ${Config.lastError ?: "无"}")
         if (Config.enabled) {
             appendLine("中心 : ${fmt(Config.centerLat)},${fmt(Config.centerLng)}")

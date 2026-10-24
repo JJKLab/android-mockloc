@@ -1,12 +1,10 @@
 [versions]
 agp = "8.7.0"
 kotlin = "2.2.10"
-libxposed = "101.0.1"
-xposedLegacy = "82"
+libxposed = "102.0.0"
 
 [libraries]
 libxposed-api = { group = "io.github.libxposed", name = "api", version.ref = "libxposed" }
-xposed-legacy = { group = "de.robv.android.xposed", name = "api", version.ref = "xposedLegacy" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

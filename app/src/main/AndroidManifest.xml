@@ -5,23 +5,13 @@
 
     <application
         android:allowBackup="false"
-        android:label="mockloc">
-
-        <!-- Legacy Xposed/LSPosed module registration. -->
-        <meta-data
-            android:name="xposedmodule"
-            android:value="true" />
-        <meta-data
-            android:name="xposeddescription"
-            android:value="mockloc: per-app location spoofing (framework layer)" />
-        <meta-data
-            android:name="xposedminversion"
-            android:value="82" />
+        android:description="@string/module_desc"
+        android:label="@string/app_name">
 
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:label="mockloc">
+            android:label="@string/app_name">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

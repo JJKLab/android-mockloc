@@ -49,5 +49,4 @@ android {
 
 dependencies {
     compileOnly(libs.libxposed.api)
-    compileOnly(libs.xposed.legacy)
 }

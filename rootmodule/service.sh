@@ -14,31 +14,34 @@ done
 cmd location is-location-enabled >/dev/null 2>&1 || exit 0
 [ -f "$CFG" ] || exit 0
 
-[ "$(cfg_get MOCKLOC_ENABLED)" = "true" ] || exit 0
-
 PROVIDER=$(cfg_get MOCKLOC_PROVIDER); PROVIDER=${PROVIDER:-gps}
 ACC=$(cfg_get MOCKLOC_ACC); ACC=${ACC:-5.0}
 INTERVAL=$(cfg_get MOCKLOC_INTERVAL); INTERVAL=${INTERVAL:-15}
+UP=0
 
-appops set 0 android:mock_location allow 2>/dev/null
-appops set 2000 android:mock_location allow 2>/dev/null
-cmd location set-location-enabled true
-cmd location providers add-test-provider "$PROVIDER"
-cmd location providers set-test-provider-enabled "$PROVIDER" true
-
+# Two independent layers, so "global" and "per-app" can coexist:
+#   MOCKLOC_GLOBAL  -> this loop maintains the system test provider (every app, isMock()=true)
+#   MOCKLOC_ENABLED -> the Xposed module spoofs TARGETS in-process (isMock()=false)
+# The config is mirrored to /data/local/tmp either way, because the module needs it even when
+# the global provider is off.
 while :; do
-  # Re-read every cycle: `mockloc.py set --persist` then needs no reboot, only one interval.
-  if [ "$(cfg_get MOCKLOC_ENABLED)" != "true" ]; then
+  if [ "$(cfg_get MOCKLOC_ENABLED)" = "true" ] && [ "$(cfg_get MOCKLOC_GLOBAL)" = "true" ]; then
+    appops set 0 android:mock_location allow 2>/dev/null
+    appops set 2000 android:mock_location allow 2>/dev/null
+    cmd location set-location-enabled true
+    if [ "$UP" != 1 ]; then
+      cmd location providers add-test-provider "$PROVIDER"
+      cmd location providers set-test-provider-enabled "$PROVIDER" true
+      UP=1
+    fi
+    set -- $(jitter "$(cfg_get MOCKLOC_LAT)" "$(cfg_get MOCKLOC_LNG)" "$(cfg_get MOCKLOC_RADIUS)")
+    apply_once "$PROVIDER" "$1" "$2" "$ACC"
+  elif [ "$UP" = 1 ]; then
     cmd location providers set-test-provider-enabled "$PROVIDER" false
     cmd location providers remove-test-provider "$PROVIDER"
-    publish
-    exit 0
+    UP=0
+    echo "mockloc: global provider torn down" >> /data/adb/mockloc/service.log
   fi
-  LAT=$(cfg_get MOCKLOC_LAT)
-  LNG=$(cfg_get MOCKLOC_LNG)
-  RADIUS=$(cfg_get MOCKLOC_RADIUS)
-  set -- $(jitter "$LAT" "$LNG" "$RADIUS")
-  apply_once "$PROVIDER" "$1" "$2" "$ACC"
   publish
   sleep "$INTERVAL"
 done &
