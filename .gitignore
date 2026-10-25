@@ -17,3 +17,6 @@ __pycache__/
 # CI signing identity: kept local, paste the .b64 content into the repo secret
 .local-debug.keystore
 .local-debug.keystore.b64
+
+# 第三方 APK 的重打包工作区（原包/改包/解码产物，一律不入库）
+repack/
