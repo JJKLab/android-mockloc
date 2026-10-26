@@ -351,7 +351,9 @@ class MainActivity : Activity() {
                 notes.forEach { appendLine("  $it") }
             }
             appendLine("----")
-            appendLine("注：高德/腾讯系 App 用自己的定位引擎，不吃这条注入，需 SDK hook 层")
+            // Deliberately not claiming anything about other apps: this page only measures what
+            // *this* process reads. Whether a target app honours the fix is a separate test.
+            appendLine("注：以上只反映本 App 读到的值。目标 App 认不认，要在它里面主动发起一次定位请求、看返回坐标")
         }
     }
 
