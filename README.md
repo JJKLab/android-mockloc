@@ -259,6 +259,17 @@ requestCellInfoUpdate / registerTelephonyCallback`、Connectivity 层、BLE，�
 把 `de.robv.android.xposed` / `io.github.libxposed` / `org.lsposed` 这些帧抹掉。风控 SDK 找 hook 的第一入口就是异常栈。
 本机它当前报"LSPosed 模块未激活"，所以"成熟工具能不能挪走高德"这个市场验证**还没做**。
 
+**0.4.3 第一次上机就抓到三处"仪器本身坏了"**（这正是 `Diagnostics` 要可见的理由——三处都是它自己报出来的）：
+
+| 报出来的话 | 实情 | 修法 |
+|---|---|---|
+| `自检跳过：拿不到 Application` | `onPackageReady` 触发时进程还在绑定 Application，`ActivityThread.currentApplication()` 是 null | `SelfTest.schedule()` 改到主线程 1.5s/4s/10s 三次重试 |
+| `AppOpsManager#checkOperation/noteOperation/startOperation 不存在` | 我照 API 文档写的名字这版运行时里没有；公开面是 `checkOp / checkOpNoThrow / noteOp / noteOpNoThrow / startOp / startOpNoThrow`（`checkOperation` 那组是 @hide/systemapi） | 换成 classdump 出来的真实名字 |
+| 探针调用方打成 `k2.intercept:8` | 那是 hook 链自己的分发帧，不是 App 的调用点 | 过滤名单补 `xposed`/`Hooker`/`androidx`/`kotlinx`/`art.`，并一次给最多 3 帧 |
+
+顺带一条正向观察：探针在微信冷启动 18 秒内只录到 `开发者设置 getInt/getString`，没有任何
+`定位读取/WiFi输入/基站输入` —— 它的定位 SDK 是**用到才起**的，所以探针必须在真正打开位置功能时跑才有意义。
+
 **我在这次核验里犯的两次方法错误，记下来防重犯**：① 用 `awk '$2==pid'` 过滤 logcat（pid 是第 3 列），
 把"高德主进程没挂上"当成了结论；② 按 `我的位置` 用了上一次布局的坐标，点的是空白处，却去解读那张图。
 两次都让一个不成立的结论差点进文档。**同一个界面重进后要先 `uiautomator dump` 重新取坐标**。
@@ -698,3 +709,7 @@ FakeLoc/XposedFakeLocation 都有同样的取舍，并用"每个字段单独开�
   ⑧ 逆向 LocationSpoofer 之后补的两件事（见 A8）：`SelfTest.kt`（模块勾不进自己的作用域，只能在被 hook
   的进程里自读自证）与 `AppOpsManager.{checkOperation,noteOperation,startOperation,…}` 的
   `android:mock_location` 放行——只钩 `Settings.Secure` 会漏掉直接问 ops 服务的那条路。
+- **v0.4.4**（2026-10-26）修 0.4.3 上机自报的三处仪器故障（A0.1 末表）：`SelfTest` 改为主线程延迟重试
+  （`onPackageReady` 时 `currentApplication()` 还是 null）、AppOps 钩子换成 classdump 出来的真实方法名
+  （`checkOp` 家族，`checkOperation` 那组这版运行时没有）、探针调用方过滤补 hook 框架帧并一次给 3 帧。
+  判别性测试就位：系统 mock 留上海、模块配置指北京，两边值不同，`自检(进程内读回)` 一行即可判死改写有没有咬住。

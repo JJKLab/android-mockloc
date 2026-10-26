@@ -26,6 +26,13 @@ class Probe(
     private val kit = HookKit(module, tag)
     private val hits = ConcurrentHashMap<String, Int>()
 
+    private companion object {
+        val SKIP_PREFIXES = listOf(
+            "android.", "androidx.", "java.", "javax.", "kotlin.", "kotlinx.", "dalvik.",
+            "libcore.", "com.android.", "com.mockloc.", "art.",
+        )
+    }
+
     fun init() {
         watch("定位读取", LocationManager::class.java.name,
             "getLastKnownLocation", "getCurrentLocation", "requestLocationUpdates", "getProviders")
@@ -52,12 +59,21 @@ class Probe(
         }
     }
 
-    /** The first frame that is neither the framework, the VM, nor this module. */
+    /**
+     * Up to three frames that belong to neither the framework, the VM, nor a hook layer.
+     *
+     * One frame was not enough to tell an app call site from the hook chain's own dispatch: the
+     * first version printed `k2.intercept:8`, which is a callback frame, not the caller. Anything
+     * named after Xposed/LSPosed/libxposed is the plumbing and has to be skipped too.
+     */
     private fun caller(): String {
-        return Thread.currentThread().stackTrace.firstOrNull { frame ->
+        val frames = Thread.currentThread().stackTrace.filter { frame ->
             val c = frame.className
-            listOf("android.", "java.", "kotlin.", "dalvik.", "com.android.", "com.mockloc.", "libcore.")
-                .none { c.startsWith(it) }
-        }?.let { "${it.className.substringAfterLast('.')}.${it.methodName}:${it.lineNumber}" } ?: "未知调用方"
+            SKIP_PREFIXES.none { c.startsWith(it) } && !c.contains("xposed", true) && !c.contains("Hooker")
+        }
+        if (frames.isEmpty()) return "未知调用方"
+        return frames.take(3).joinToString(" <- ") {
+            "${it.className.substringAfterLast('.')}.${it.methodName}:${it.lineNumber}"
+        }
     }
 }

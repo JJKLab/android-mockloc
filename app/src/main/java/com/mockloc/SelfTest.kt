@@ -3,6 +3,8 @@ package com.mockloc
 import android.app.Application
 import android.content.Context
 import android.location.LocationManager
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 
 /**
@@ -25,14 +27,32 @@ object SelfTest {
         LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER, "fused",
     )
 
-    fun run(pkg: String, note: (String) -> Unit) {
+    /**
+     * `onPackageReady` fires while the process is still binding the application, and
+     * `ActivityThread.currentApplication()` is null at that moment - the first version of this
+     * check only ever logged "拿不到 Application". Retrying on the main looper lets the attempt
+     * land after the Application exists without hooking anything just to observe it.
+     */
+    private val attempts = longArrayOf(1500L, 4000L, 10000L)
+
+    fun schedule(pkg: String, note: (String) -> Unit) {
+        val handler = Handler(Looper.getMainLooper())
+        attempts.forEachIndexed { index, delay ->
+            handler.postDelayed({
+                if (!run(pkg, note)) {
+                    if (index == attempts.lastIndex) note("$pkg 自检跳过：拿不到 Application/LocationManager")
+                }
+            }, delay)
+        }
+    }
+
+    /** True when the read-back happened; false means the process is not ready yet. */
+    private fun run(pkg: String, note: (String) -> Unit): Boolean {
         val app = runCatching {
             Class.forName("android.app.ActivityThread").getMethod("currentApplication").invoke(null)
-        }.getOrNull() as? Application ?: return note("$pkg 自检跳过：拿不到 Application")
+        }.getOrNull() as? Application ?: return false
 
-        val lm = app.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
-            ?: return note("$pkg 自检跳过：拿不到 LocationManager")
-
+        val lm = app.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return false
         val fixes = probeProviders.joinToString(" ") { name ->
             val loc = runCatching { lm.getLastKnownLocation(name) }.getOrNull()
             "$name=" + (loc?.let { "${fmt(it.latitude)},${fmt(it.longitude)} mock=${mock(it)}" } ?: "null")
@@ -44,6 +64,7 @@ object SelfTest {
         }.getOrNull()
 
         note("$pkg 自检(进程内读回) $fixes | providers=$providers gpsEnabled=$enabled mockSetting=$setting")
+        return true
     }
 
     private fun fmt(value: Double) = "%.4f".format(value)

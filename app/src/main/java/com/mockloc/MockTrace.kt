@@ -187,6 +187,10 @@ class MockTrace(
     /**
      * An app can ask the ops service directly instead of reading the Settings string, so the
      * Settings hook alone leaves that door open. MODE_ALLOWED is 0.
+     *
+     * These are the names this build actually declares - `checkOperation` and friends are the
+     * @hide/systemapi spelling and produce "不存在" notes here, which is how the first version of
+     * this hook was caught doing nothing.
      */
     private fun hookAppOps() {
         val opsClass = kit.findClass(classLoader, AppOpsManager::class.java.name) ?: return
@@ -194,7 +198,7 @@ class MockTrace(
             val op = chain.args.firstOrNull() as? String
             if (active() && op == MOCK_LOCATION_OP) 0 else chain.proceed()
         }
-        listOf("checkOperation", "noteOperation", "startOperation", "startOpNoThrow", "checkOpNoThrow")
+        listOf("checkOp", "checkOpNoThrow", "noteOp", "noteOpNoThrow", "startOp", "startOpNoThrow")
             .forEach { name -> kit.install(kit.methodsOf(opsClass, name), allowed) }
     }
 
