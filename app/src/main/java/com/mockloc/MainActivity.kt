@@ -339,6 +339,7 @@ class MainActivity : Activity() {
             appendLine("模块开关 : ${onOff(Config.enabled)} 全局=${onOff(Config.global)}")
             appendLine("作用包名 : ${if (Config.targets.isEmpty()) "LSPosed 作用域内全部" else Config.targets.joinToString()}")
             appendLine("伪造卫星 : ${onOff(Config.gnssSpoof)}  致盲WiFi/基站 : ${onOff(Config.blindWifi)}/${onOff(Config.blindCell)}")
+            appendLine("API 探针 : ${onOff(Config.probe)}（开时目标 App 的定位调用会进 logcat）")
             appendLine("配置来源 : ${Config.DEFAULT_PATH}")
             appendLine(
                 if (Config.lastError == null) "读取正常（写入于 ${Config.lastLoadedAgo}ms 前）"

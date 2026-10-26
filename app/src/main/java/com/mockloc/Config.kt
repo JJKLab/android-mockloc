@@ -77,6 +77,11 @@ object Config {
     var blindCell: Boolean = false
         private set
 
+    /** Log which positioning APIs the target app really calls; changes nothing (see Probe.kt). */
+    @Volatile
+    var probe: Boolean = false
+        private set
+
     @Volatile
     var lastError: String? = null
         private set
@@ -129,6 +134,7 @@ object Config {
         var nextGnss = true
         var nextBlindWifi = false
         var nextBlindCell = false
+        var nextProbe = false
         text.lineSequence().forEach { line ->
             val idx = line.indexOf('=')
             if (idx <= 0) return@forEach
@@ -149,6 +155,7 @@ object Config {
                 "MOCKLOC_GNSS" -> nextGnss = value != "false" && value != "0"
                 "MOCKLOC_BLIND_WIFI" -> nextBlindWifi = value == "true" || value == "1"
                 "MOCKLOC_BLIND_CELL" -> nextBlindCell = value == "true" || value == "1"
+                "MOCKLOC_PROBE" -> nextProbe = value == "true" || value == "1"
             }
         }
         enabled = nextEnabled
@@ -164,6 +171,7 @@ object Config {
         gnssSpoof = nextGnss
         blindWifi = nextBlindWifi
         blindCell = nextBlindCell
+        probe = nextProbe
     }
 
     fun shouldSpoof(packageName: String?): Boolean {

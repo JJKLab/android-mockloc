@@ -197,6 +197,15 @@ class Sensors(
         kit.install(kit.methodsOf(wifiClass, "getScanResults")) { chain ->
             if (active()) emptyList<Any>() else chain.proceed()
         }
+        // The connected AP alone is enough for a server-side lookup, so blanking only the scan list
+        // leaves the answer intact - that is the hole the first blinding test fell into.
+        // Empty strings rather than null: requestConnectionInfo() and friends hand back a WifiInfo
+        // object and the SDKs dereference it without checking.
+        val infoClass = kit.findClass(classLoader, "android.net.wifi.WifiInfo") ?: return
+        val blank = { chain: XposedInterface.Chain -> if (active()) "" else chain.proceed() }
+        listOf("getBSSID", "getSSID", "getMacAddress").forEach { name ->
+            kit.install(kit.methodsOf(infoClass, name), blank)
+        }
     }
 
     private fun hookCell() {
@@ -206,6 +215,29 @@ class Sensors(
         }
         kit.install(kit.methodsOf(telephonyClass, "getAllCellInfo")) { chain ->
             if (active()) emptyList<Any>() else chain.proceed()
+        }
+        hookCellInfoUpdate(telephonyClass)
+    }
+
+    /**
+     * API 30 moved the tower list behind a callback; the pull getters above are the deprecated path,
+     * so blinding only those leaves an app that calls this one holding the real cell info.
+     */
+    private fun hookCellInfoUpdate(telephonyClass: Class<*>) {
+        val callbackClass =
+            kit.findClass(classLoader, "android.telephony.TelephonyManager\$CellInfoCallback") ?: return
+        kit.install(kit.methodsOf(telephonyClass, "requestCellInfoUpdate")) { chain ->
+            if (!active()) return@install chain.proceed()
+            val callback = chain.args.firstOrNull { callbackClass.isInstance(it) }
+                ?: return@install chain.proceed()
+            val deliver = Runnable {
+                runCatching {
+                    callbackClass.getMethod("onCellInfo", List::class.java).invoke(callback, emptyList<Any>())
+                }.onFailure { Diagnostics.note("$tag: 递交空基站列表失败: ${it.javaClass.simpleName}") }
+            }
+            val executor = chain.args.firstOrNull { it is Executor } as? Executor
+            if (executor != null) executor.execute(deliver) else handler.post(deliver)
+            null
         }
     }
 

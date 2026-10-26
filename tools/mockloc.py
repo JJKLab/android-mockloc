@@ -318,6 +318,7 @@ def cmd_set(t, args):
             "MOCKLOC_GNSS": "true" if args.gnss_spoof else "false",
             "MOCKLOC_BLIND_WIFI": "true" if args.blind_wifi else "false",
             "MOCKLOC_BLIND_CELL": "true" if args.blind_cell else "false",
+            "MOCKLOC_PROBE": "true" if args.probe else "false",
         })
         print(f"[ok] 开机自恢复配置已写入 {path}（root 模块会读它）")
     return lat, lng, label
@@ -524,7 +525,7 @@ def build_args(place=None, city=None, coord=None, datum="gcj02", watch=False):
         providers=PROVIDERS_DEFAULT,
         accuracy=5.0, persist=True, dry_run=False, radius=(20.0 if watch else 0.0),
         interval=15.0, first=False, target=[], global_provider=True, wipe=False,
-        gnss_spoof=True, blind_wifi=False, blind_cell=False,
+        gnss_spoof=True, blind_wifi=False, blind_cell=False, probe=False,
     )
 
 
@@ -540,6 +541,8 @@ def ask_scope(ns):
         # installed once per process, so changing this needs the target app to be restarted.
         if (input("致盲 WiFi/基站扫描结果(网络定位SDK喂服务器的输入)? y/n [n]: ").strip() or "n").lower() == "y":
             ns.blind_wifi = ns.blind_cell = True
+        if (input("开 API 探针(只记录不改值，结果进 logcat)? y/n [n]: ").strip() or "n").lower() == "y":
+            ns.probe = True
     return ns
 
 
@@ -563,6 +566,8 @@ def main():
                         help="清空 getScanResults；会破坏目标 App 自己的 WiFi 功能")
     common.add_argument("--blind-cell", action=argparse.BooleanOptionalAction, default=False,
                         help="清空基站信息；同上")
+    common.add_argument("--probe", action=argparse.BooleanOptionalAction, default=False,
+                        help="只记录不改值：目标 App 调了哪些定位 API、从它自己哪个类调的（进 logcat）")
 
     p_set = sub.add_parser("set", parents=[common], help="resolve + inject once")
     p_set.add_argument("--place")

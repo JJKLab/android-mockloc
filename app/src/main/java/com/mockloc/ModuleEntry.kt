@@ -47,6 +47,7 @@ class ModuleEntry : XposedModule() {
         Config.refresh()
         val kit = HookKit(this, tag)
         val locationClass = kit.findClass(param.classLoader, Location::class.java.name) ?: return
+        if (Config.probe) Probe(this, param.classLoader).init()
         installCoordinates(kit, locationClass, param.classLoader, pkg)
         MockTrace(this, param.classLoader, pkg).init()
         Sensors(this, param.classLoader, pkg).init()
@@ -54,7 +55,7 @@ class ModuleEntry : XposedModule() {
             Log.INFO, tag,
             "$pkg: providers=${Config.providers} global=${Config.global} " +
                 "gnss=${Config.gnssSpoof} blind=${Config.blindWifi}/${Config.blindCell} " +
-                "notes=${Diagnostics.snapshot().size}"
+                "probe=${Config.probe} notes=${Diagnostics.snapshot().size}"
         )
     }
 

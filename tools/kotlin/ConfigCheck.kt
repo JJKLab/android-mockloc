@@ -35,6 +35,7 @@ private val sample = """
     MOCKLOC_GNSS=true
     MOCKLOC_BLIND_WIFI=true
     MOCKLOC_BLIND_CELL=false
+    MOCKLOC_PROBE=true
 """.trimIndent()
 
 // Exactly what an older build of the CLI writes: no anti-detection keys at all.
@@ -75,6 +76,7 @@ fun main() {
     check("gnssSpoof", Config.gnssSpoof, true)
     check("blindWifi", Config.blindWifi, true)
     check("blindCell", Config.blindCell, false)
+    check("probe", Config.probe, true)
     check("lastError", Config.lastError, null)
 
     // shouldSpoof is the gate every hook consults per call.
@@ -91,13 +93,16 @@ fun main() {
     check("legacy targets empty=all", Config.shouldSpoof("any.pkg"), true)
     check("legacy gnss default", Config.gnssSpoof, true)
     check("legacy blindWifi default", Config.blindWifi, false)
+    check("legacy probe default", Config.probe, false)
 
     Thread.sleep(1100)
     file.writeText(sample.replace("MOCKLOC_GNSS=true", "MOCKLOC_GNSS=false")
-        .replace("MOCKLOC_BLIND_CELL=false", "MOCKLOC_BLIND_CELL=1"))
+        .replace("MOCKLOC_BLIND_CELL=false", "MOCKLOC_BLIND_CELL=1")
+        .replace("MOCKLOC_PROBE=true", "MOCKLOC_PROBE=0"))
     Config.refresh()
     check("gnss off", Config.gnssSpoof, false)
     check("blindCell as 1", Config.blindCell, true)
+    check("probe as 0", Config.probe, false)
 
     // Deleting the file is how `off --wipe` stops a spoof; the module notices on the next
     // refresh past the 1s stat window, not instantly.
