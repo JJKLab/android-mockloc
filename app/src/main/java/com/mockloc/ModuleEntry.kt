@@ -51,6 +51,7 @@ class ModuleEntry : XposedModule() {
         installCoordinates(kit, locationClass, param.classLoader, pkg)
         MockTrace(this, param.classLoader, pkg).init()
         Sensors(this, param.classLoader, pkg).init()
+        SelfTest.run(pkg) { message -> log(Log.INFO, tag, message) }
         log(
             Log.INFO, tag,
             "$pkg: providers=${Config.providers} global=${Config.global} " +

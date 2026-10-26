@@ -241,6 +241,24 @@ KernelSU 给 Shell 授权后 `adb shell su -c id` = `uid=0 ... context=u:r:ksu:s
 | **高德、微信在四层叠加下仍显示真实位置**（连州，街道级） | 档1/档2 的 mock provider + 档3 改写 + 致盲 `getScanResults/getAllCellInfo/getCellLocation` 全开，并确认系统把 mock 定位投给了高德（`locations = 1`） |
 | 原因不是"它不扫 WiFi"，而是**我们盲得不够** | `su -c appops get --uid com.tencent.mm` 与 `...minimap`：两者的 `WIFI_SCAN` 都是 `allow; time=+3m/4m ago` —— 正在测的时候它们确实扫了。已连 AP 的 BSSID 走 `getConnectionInfo`，我们当时**没钩**；基站走 `requestCellInfoUpdate`，也没钩 |
 
+**普通 App 确实吃到假位置（正向对照）。** ColorOS 天气（不在作用域、没被 hook）显示「閔行區」——它走 GPS 定位，
+而机器真实在连州、IP 也在广东，所以这个上海区县只能来自 mock 出来的坐标。档 2 的系统层投递有效。
+
+**高德是"读了但不用"。** 按一次"我的位置"前后对比 `appops get --uid`：`FINE_LOCATION time=+496ms`（读了）与
+`WIFI_SCAN time=+2.7s`（同一时刻又扫了 WiFi）同时刷新。由于此刻系统 mock 与模块配置是同一个点，
+"它仍显示连州"只能解释为**它拿到了 `LocationManager` 的值却不用**。关掉 WiFi 后蓝点不退化、纹丝不动，
+最一致的解释是它回落到基站——而 Android 12+ 的基站读取走 `requestCellInfoUpdate`，正是 v0.4.3 补的那个洞。
+
+**参考实现的现状。** 你装的 LocationSpoofer，其仓库 [HuangZhuoRui/LocationSpoofer](https://github.com/HuangZhuoRui/LocationSpoofer)
+现在**只剩 README**：改名 AwesomeDroid、旧版停止维护、转向面向开发者的 Android 模拟器，`git log --all` 里从来没有源码。
+所以可参考的是它自己打进 logcat 的钩子清单：FusedLocationProvider、GnssStatus、WiFi 环境、
+`getAllCellInfo / getCellLocation / getNeighboringCellInfo / getNetworkOperator(Name) / getNetworkType /
+getDataNetworkType / getPhoneType / getServiceState(ForSlot) / getSignalStrength / listen /
+requestCellInfoUpdate / registerTelephonyCallback`、Connectivity 层、BLE，外加 Tencent/百度/Google 三家地图 SDK 的类查找。
+它还做了一件我们完全没有的事：**调用栈清洗**——钩 `Throwable.getStackTrace` / `Thread.getStackTrace`，
+把 `de.robv.android.xposed` / `io.github.libxposed` / `org.lsposed` 这些帧抹掉。风控 SDK 找 hook 的第一入口就是异常栈。
+本机它当前报"LSPosed 模块未激活"，所以"成熟工具能不能挪走高德"这个市场验证**还没做**。
+
 **我在这次核验里犯的两次方法错误，记下来防重犯**：① 用 `awk '$2==pid'` 过滤 logcat（pid 是第 3 列），
 把"高德主进程没挂上"当成了结论；② 按 `我的位置` 用了上一次布局的坐标，点的是空白处，却去解读那张图。
 两次都让一个不成立的结论差点进文档。**同一个界面重进后要先 `uiautomator dump` 重新取坐标**。
@@ -414,6 +432,57 @@ cmd location providers send-extra-command <PROVIDER> <COMMAND>
    治"地图跳一下又飘回去"。这比猜私有类名可靠，也不需要知道混淆后的名字。
 4. 两者都读 `isMock`，所以这一层必须和档 3（libxposed 抹痕迹）一起做，单靠系统 mock 无效——已实测。
 
+### A8 LocationSpoofer 逆向结果（2026-10-26，只取事实不取代码）
+
+**为什么逆向它**：它是本机唯一"在同一台 Android 16 + KernelSU + libxposed 上跑通过"的同类实现，
+而作者已把仓库改成 AwesomeDroid、旧版归档（`git log --all` 里从来没有源码），且服务端已关 ⇒ 只能从
+你手机上那个 APK 读。
+
+**许可边界（先说死）**：它的 LICENSE 是 **GPL-3.0**。所以本节只记"它钩哪些 API、分几层、为什么"这类
+**事实与思路**，不把它的代码搬进本仓库——那会让 mockloc 变成衍生作品并被迫换证。
+
+**方法**（全程本机可复现）：
+
+```bash
+adb shell "pm path com.vincenthzr.locationspoofer"          # 拿到 base.apk 路径
+adb shell "su -c 'cp <path> /data/local/tmp/lsp-base.apk; chmod 664 …'" && adb pull …
+java -jar repack/apktool.jar d -r -f base.apk -o smali      # -r：只出 smali，不解资源
+grep -hoE '"[^"]{4,60}"' hooks/System*HookerKt.smali | sort -u   # 钩子目标都是字符串常量
+```
+
+**模块注册面**：`META-INF/xposed/module.prop` = `minApiVersion=100 / targetApiVersion=102 /
+autoHotReload=true`（比我们多一项热重载）；`java_init.list` 指向 `xposed/LocationHooker`；
+**另有一份静态 scope 列表**（9 个包名：微信、学习通 ×2、钉钉、美团、百度地图、高德地图、腾讯地图、GMS）。
+
+**它的分层（215 个 smali 文件，按包名列出来就是架构表）**：
+
+| 层 | 类 | 钩的东西（字符串常量抠出来的） |
+|---|---|---|
+| 1 目标 App 自家 SDK | `AMapHooker` `TencentMapHooker` `BaiduMapHooker` `GoogleAndAddressHooker` | `com.amap.api.location.{AMapLocation,AMapLocationClient,AMapLocationListener,AMapLocationQualityReport}`、`com.tencent.map.geolocation.{TencentLocation,TencentLocationManager,TencentLocationImpl,内部 Impl,Listener}`、`com.baidu.location.{BDLocation,BDLocationListener,BDAbstractLocationListener,LocationClient}`、`com.baidu.mapapi.map.MyLocationData`、`com.google.android.gms.location.{FusedLocationProviderClient,LocationCallback}`、`com.qualcomm.location`/`atfwd` |
+| 2 回调投递点 | `SystemLocationServiceHooker` | `ILocationListener` 的 `acceptLocationChange` / `deliverOnLocationChanged`，外加 `PendingIntent` 路径 ⇒ 在**投递那一刻**改一次对象，覆盖所有 listener 变体 |
+| 3 binder 服务侧 | `SystemWifiServiceHooker` `SystemTelephonyServiceHooker` `SystemBluetoothServiceHooker` | `ServiceManager.getService("phone")` → `PhoneInterfaceManager.{getAllCellInfo,getCellLocation,requestCellInfoUpdate}`；WiFi 在 `BinderProxy` 上钩 |
+| 4 权限/ops 自证 | `SystemAppOpsHooker` `AntiDetectionHooker` | `AppOpsManager.{checkOperation,noteOperation,checkAudioOperation}`、`Settings$Secure.getString`、`ApplicationPackageManager`/`ContextImpl`/`ContextWrapper` 的权限查询、`hasSystemFeature` |
+| 5 环境**伪造** | `network/CellInfoListBuilder` `CellStateAndSignalBuilder` `BluetoothScanRecordBuilder` `BluetoothScanDispatcher` | 造出基站列表/信号/蓝牙广播与 SSID+BSSID，MAC 用 `02:%02x…`（本地管理位）、SSID 用 `<unknown ssid>` ⇒ **不是返回空**：真机上永远能看到周围 AP 与基站，返回空本身就是异常 |
+| 6 GNSS 原始流 | `GnssStatusHooker` `GnssFastMockEngine` `GnssNmea` `NmeaSpoofing` `GnssSatelliteCatalog` | `registerGnssMeasurementsCallback`、`registerGnssNavigationMessageCallback`、`registerGnssStatusCallback`，以及遗留 `addGpsStatusListener/getGpsStatus/getSatellites` |
+| 7 运动一致性 | `SensorStepHooker` `SystemAccelHooker` `SystemGaitWaveform` `utils/SpoofedMotion` | 加速度计与步数要和"人在移动"自洽 |
+| 8 诊断 | `diagnostics/HookStatus` | 字段有 `class/components/config/errors/found/load_kind/…` ⇒ 与我们的 `Diagnostics` 同一思路（失败要可见） |
+
+**两条否定结论（比肯定结论更值钱）**：
+
+1. **它也没钩高德地图本体的引擎。** `AMapHooker` 打的是公开 SDK `com.amap.api.location.*`，
+   而 A7 已用 DEX 证明高德地图**不含**这个包。所以它对高德地图本体只能靠第 3/5/6 层——
+   也就是说"想让高德地图挪位置"这件事，成熟工具同样没有捷径，只有伪造射频输入与 GNSS 原始流。
+2. **它 README 声称的"调用栈清洗"在这个 APK 里不存在。** 全 smali 树里没有任何
+   `"getStackTrace"` 常量、也没有钩 `Thread`/`Throwable` 的地方 ⇒ 文档超前于实现，别照着做。
+
+**据此排的本项目待办（按性价比）**：
+① 便宜且直接补无痕面：`AppOpsManager.checkOperation/noteOperation` 的 `OPSTR_MOCK_LOCATION`、
+`PackageManager` 权限/已装包自证；② `registerGnssMeasurementsCallback` /
+`registerGnssNavigationMessageCallback` 的注册吞掉（我们目前只处理了 GnssStatus）；
+③ 第 2 层投递点改写（`ILocationListener`），比逐个钩 getter 更兜底；
+④ 第 5 层从"返回空"改成"造一份自洽的 AP/基站列表"；⑤ 第 6 层 GNSS 测量/NMEA 流是大工程，
+也是唯一可能真正挪动高德地图本体的层。`module.prop` 可加 `autoHotReload=true`。
+
 ## 附录 B 代码解析
 
 ### B1. 配置契约（三层共用同一组键）
@@ -463,6 +532,7 @@ PC 端根本写不了 `/data/adb`——收件箱让"只刷模块、不依赖 su"
 | `app/.../MockTrace.kt` | 抹掉系统测试 provider 留下的痕迹（mock 位、extras、`Settings.Secure`、provider 列表、Parcel 路径）|
 | `app/.../Sensors.kt` | 一致性层：伪 `GnssStatus`（含每秒回调）、可选致盲 WiFi/基站 |
 | `app/.../Probe.kt` | `--probe` 打开时的定位 API 调用记录（只记不改值），用来把"该钩什么"变成读日志 |
+| `app/.../SelfTest.kt` | 在**被 hook 的进程里**读回一次 LKL/providers/`mock_location` 并打日志——模块勾不进自己的作用域，这是唯一能证明"改写咬住了"的仪器 |
 | `app/.../MainActivity.kt` | 四页 View：搜索 / 地图点选 / 收藏 / 状态（`selfCheck` + 各 provider 回读） |
 | `app/.../CoordTransform.kt` | `coords.py` 的 Kotlin 移植，与 Python 版对同一批锚点数值一致（477.87 m） |
 | `app/.../AmapSearch.kt` | 高德 REST（`HttpURLConnection` + `org.json`，零三方依赖） |
@@ -625,3 +695,6 @@ FakeLoc/XposedFakeLocation 都有同样的取舍，并用"每个字段单独开�
   `MOCKLOC_PROBE`/`--probe`，只记不改值地打印目标 App 调了哪些定位 API、从它自己哪个类调的。
   状态页加 `API 探针` 一行；`ConfigCheck` 长到 29 项断言。本地类型检查又抓到一个真错
   （`firstOrNull { it is Executor }` 不会智能转型，必须 `as? Executor`）。
+  ⑧ 逆向 LocationSpoofer 之后补的两件事（见 A8）：`SelfTest.kt`（模块勾不进自己的作用域，只能在被 hook
+  的进程里自读自证）与 `AppOpsManager.{checkOperation,noteOperation,startOperation,…}` 的
+  `android:mock_location` 放行——只钩 `Settings.Secure` 会漏掉直接问 ops 服务的那条路。

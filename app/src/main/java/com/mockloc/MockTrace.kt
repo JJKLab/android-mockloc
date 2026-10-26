@@ -1,5 +1,6 @@
 package com.mockloc
 
+import android.app.AppOpsManager
 import android.content.ContentResolver
 import android.location.Criteria
 import android.location.Location
@@ -39,6 +40,7 @@ class MockTrace(
         hookParcelPath(locationClass)
         hookConsumerDelivery(lmClass)
         hookSecureSetting()
+        hookAppOps()
         hookProviderLists(lmClass)
     }
 
@@ -182,6 +184,20 @@ class MockTrace(
         }
     }
 
+    /**
+     * An app can ask the ops service directly instead of reading the Settings string, so the
+     * Settings hook alone leaves that door open. MODE_ALLOWED is 0.
+     */
+    private fun hookAppOps() {
+        val opsClass = kit.findClass(classLoader, AppOpsManager::class.java.name) ?: return
+        val allowed = { chain: XposedInterface.Chain ->
+            val op = chain.args.firstOrNull() as? String
+            if (active() && op == MOCK_LOCATION_OP) 0 else chain.proceed()
+        }
+        listOf("checkOperation", "noteOperation", "startOperation", "startOpNoThrow", "checkOpNoThrow")
+            .forEach { name -> kit.install(kit.methodsOf(opsClass, name), allowed) }
+    }
+
     private var mockField: Field? = null
     private var maskField: Field? = null
     private var fieldsResolved = false
@@ -221,6 +237,7 @@ class MockTrace(
         val STANDARD_PROVIDERS = setOf("gps", "network", "passive", "fused")
         val MOCK_EXTRA_KEYS = listOf("mockLocation", "mock_location", "android.location.extra.MOCK_LOCATION")
         const val MOCK_LOCATION_SETTING = "mock_location"
+        const val MOCK_LOCATION_OP = "android:mock_location"
         const val HAS_MOCK_PROVIDER_MASK = 1 shl 4
     }
 }
