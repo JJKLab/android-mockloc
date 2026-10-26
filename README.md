@@ -529,6 +529,62 @@ autoHotReload=true`（比我们多一项热重载）；`java_init.list` 指向 `
 ④ 第 5 层从"返回空"改成"造一份自洽的 AP/基站列表"；⑤ 第 6 层 GNSS 测量/NMEA 流是大工程，
 也是唯一可能真正挪动高德地图本体的层。`module.prop` 可加 `autoHotReload=true`。
 
+### A9 GNSS 原始测量与 NMEA 注入层（v0.4.7，取证 → 可行性 → 设计）
+
+**为什么要加这层**：高德地图在 `Location` 已被改写的前提下仍显示真实位置，而 `dumpsys location` 给出
+它的另一条输入：`measureListener: 4`、`GNSS measurement events = 652`。也就是说它读的是**原始卫星测量**，
+不是框架算好的位置。
+
+**可行性取证（不靠记忆，逐条查）**：
+
+| 问题 | 结论 | 依据 |
+|---|---|---|
+| 能不能自造 `GnssMeasurement`？ | **能** | AOSP 源码里 `public GnssMeasurement()` 与 `setSvid/setState/setCn0DbHz/setReceivedSvTimeNanos/...` **都是 public，只是 `@hide`**（`location/java/android/location/GnssMeasurement.java:266,334-`）⇒ 不在 android.jar 里，但在运行时里，而本模块的 hidden-API 豁免已实测生效 |
+| `GnssClock` 呢？ | 同样能 | `GnssClock():69` + `setTimeNanos/setFullBiasNanos/setBiasNanos/setDriftNanosPerSecond/setLeapSecond/...` 全 public |
+| 事件怎么组装？ | 有公开 Builder | `GnssMeasurementsEvent.Builder()`、`setClock`、`setMeasurements(Collection)`、`build()`（`GnssMeasurementsEvent.java:248-354`） |
+| NMEA 呢？ | **最简单** | 回调载荷就是字符串（`OnNmeaMessageListener.onNmeaMessage(String, long)`，旧版 `GpsStatus.NmeaListener.onNmeaReceived(long, String)` **参数顺序相反**），我们完全可以自己写句子 |
+| 编译期能不能引用这些类型？ | **不能** | 它们都是 @hide ⇒ 全部改成按名字反射，`GnssStream.kt` 里没有任何一处直接 `new` 框架类型 |
+
+**自洽性设计**（这是"可验证"的关键，不是把字段填满就行）：
+
+1. **一份星历三处共用**：新增 `Sky.SATS`（7 颗 GPS，svid/高度角/方位角/C-N0 固定），
+   `GnssStatus` 的 12 个 getter、`GnssStream` 的测量事件、NMEA 的 GSV/GSA 卫星数**都从它取数**。
+   交叉核对这三处是半成品伪装最常见的暴露点。
+2. **斜距是算出来的不是编的**：`pathMeters(e) = sqrt((R+h)² − R²cos²e) − R·sin e`，
+   R=6371 km、h=20 200 km（GPS 轨道半径），`receivedSvTimeNanos = t_rx − path/c` ⇒
+   任何按高度角反查伪距（20 200–26 400 km、传播 67–88 ms）的消费者都能对上。
+3. **时钟稳定**：`fullBiasNanos` 由 GPS 纪元（1980-01-06）偏移算出并在进程内固定，
+   `leapSecond=18`，`bias/drift=0` 带小不确定度——每秒重启时钟本身就是特征。
+4. **静止一致性**：`pseudorangeRate=0` + `ADR=0` 且 `ADR_STATE=USE|LOCKED` + RMC 速度/航向 0.0
+   ⇒ 多普勒、累积距离、地面速度三者都指向"没动"。
+5. **状态位**：`state = CODE_LOCK|BIT_SYNC|SUBFRAME_SYNC|TOW_DECODED|2ND_CODE_LOCK`，
+   `multipath=NOT_DETECTED`，`carrierFrequency=1.57542e9`（L1），C/N0 与 `GnssStatus` 逐颗对应。
+6. **NMEA 带真校验和**：`$GPGGA/$GPRMC/$GPGSA/$GPGLL/$GPGST`，XOR 校验，经纬度转 `ddmm.mmmm,hemi`。
+7. **降级不静默**：只有**真的造出一个事件**才吞掉 `registerGnssMeasurementsCallback`；造不出来就保留
+   真实注册并记一条 `Diagnostics`（否则 App 会从"有矛盾数据"变成"完全没数据"，更糟）。NMEA 无此顾虑。
+8. **可外部验证**：`--probe` 打开时打印一个周期的样例句子，可以直接喂给任意 NMEA 解析器验格式与校验和。
+
+**已知不严谨处（写清楚，不含糊过去）**：真实静止接收机的多普勒并不为 0（卫星在动，±500 m/s 量级），
+我们取 0 是为了与"速度 0、ADR 不增长"自洽——**能通过"是否静止"的一致性检查，但过不了严格的最小二乘
+定位解算**。要严格自洽需要真解一组伪距（选星 + 迭代），那是下一步；本层目标是让"读 GNSS 判断有没有
+真卫星/在不在动"这类检查给出我们要的答案。
+
+### A10 回归测试结论（机型 OnePlus PJF110 / 一加 Ace 3V，Android 16 / API 36，KernelSU + Stellar(libxposed 102)）
+
+| 场景 | 结论 | 判据与失败原因 |
+|---|---|---|
+| 档 1 App 内 provider（无 root） | **通过** | `--mode app set` 返回生效；`dumpsys location` 三 provider `identity=10304/com.mockloc`；状态页四行 `mock=true` 一致。**前置**：开发者选项「选择虚拟定位应用」必须是 mockloc，且**重装会清掉** |
+| 档 2 root 建系统 provider | **通过** | `--mode su set` → `gps/network/fused` 三个 `[mock]`，`identity=0/android[LocationService]`。**注意**：provider 会随注册进程回收，本轮两次发现 `providers=0`，测前须重新注入；开机自恢复（刷 zip）**仍未验** |
+| 档 3 进程内坐标替换 | **通过** | `SelfTest` 在 7 个进程读回 `39.9087,116.3975 mock=false`，系统侧同时是 `31.24,121.50 mock=true`（判别性设计，见 A0.1） |
+| 档 3 mock 痕迹清除 | **通过** | 同上：同一进程里 `isFromMockProvider` 读回 false，而 `dumpsys` 说是 true |
+| 腾讯定位 SDK 层 | **通过（用户实机确认）** | `[Tencent]: 接管 TencentLocationManager 的 5 个请求方法`；用户经文件传输助手发出的定位卡片显示**北京** |
+| 微信 | **通过** | 同上（腾讯 SDK 层） |
+| 高德地图 | **未通过 → v0.4.7 针对它加了 GNSS 层** | 原因已定位：它不吃 `Location`（`measureListener: 4`、`GNSS measurement events = 652`），且关掉整个 WiFi 后蓝点不退化 ⇒ 位置来自自家引擎/缓存。新层是否解决**待装机验证** |
+| 系统天气（对照仪器） | 读取**通过**、显示**不变** | 进程内读回北京，界面仍"上海市"——它的城市来自存量列表，那次下拉刷新探针一条读取都没录到。**教训：显示值 ≠ 读取值** |
+| 高德瓦片 / 点选 / 收藏 | **通过** | 真机出图；点选双坐标偏移 ~450 m 与坐标层实测一致；收藏→列表→注入链路通 |
+| CI 三 job | **通过** | `logic`/`apk`/`root-module` 连续出包 0.4.3→0.4.6（`hiddenapibypass` 钉 6.1 之后） |
+| 反检测面 | **部分通过** | 生效：`isMock`/`isFromMockProvider`/setter 源头堵/extras/provider 列表/`Settings.Secure`/GnssStatus 12 getter/伪卫星回调。已过期：`readFromParcel`（API 36 无此方法）。**未做**：调用栈清洗、`getProviders` 的 Criteria 之外变体、`PackageManager` 隐藏管理器 |
+
 ## 附录 B 代码解析
 
 ### B1. 配置契约（三层共用同一组键）
@@ -578,6 +634,8 @@ PC 端根本写不了 `/data/adb`——收件箱让"只刷模块、不依赖 su"
 | `app/.../MockTrace.kt` | 抹掉系统测试 provider 留下的痕迹（mock 位、extras、`Settings.Secure`、provider 列表、Parcel 路径）|
 | `app/.../Sensors.kt` | 一致性层：伪 `GnssStatus`（含每秒回调）、可选致盲 WiFi/基站 |
 | `app/.../Probe.kt` | `--probe` 打开时的定位 API 调用记录（只记不改值），用来把"该钩什么"变成读日志 |
+| `app/.../GnssStream.kt` | GNSS 原始测量 + NMEA 注入（全反射造对象，字段自洽见 A9）|
+| `app/.../Sky.kt`（在 GnssStream.kt 内） | 唯一星历表：GnssStatus / 测量流 / NMEA 三处共用，含斜距几何 |
 | `app/.../TencentSdk.kt` | 微信内嵌腾讯定位 SDK 那一层的替换（它不吃 `LocationManager`，见 A0.1）：`TencentLocationImpl` 的经纬度/精度/`isMock` + 地址文字 |
 | `app/.../SelfTest.kt` | 在**被 hook 的进程里**读回一次 LKL/providers/`mock_location` 并打日志——模块勾不进自己的作用域，这是唯一能证明"改写咬住了"的仪器 |
 | `app/.../MainActivity.kt` | 四页 View：搜索 / 地图点选 / 收藏 / 状态（`selfCheck` + 各 provider 回读） |
@@ -757,3 +815,59 @@ FakeLoc/XposedFakeLocation 都有同样的取舍，并用"每个字段单独开�
   且**没有 `TencentLocationImpl`**（A7 那张表的"子串计数"被更正为"不等于类定义"）。改成只依赖接口的接管
   （钩 `TencentLocationManager` 所有带 listener 参数的方法 + `Proxy` 换掉回调里的 `TencentLocation`），
   方法名与签名都不再需要猜；SDK 不存在时安静跳过。类型检查抓到 `String.ifEmpty` 与 `Any?` 转发两处类型错。
+- **v0.4.7**（2026-10-26）按 A9 的取证加 **GNSS 原始测量 + NMEA 注入层**（`GnssStream.kt` / `Sky`）：
+  全反射造 `GnssClock`/`GnssMeasurement`/`GnssMeasurementsEvent.Builder`（AOSP 里是 public-but-@hide），
+  一份星历供 `GnssStatus`/测量流/NMEA 三处共用，斜距由地球半径+GPS 轨道半径按高度角算出，
+  时钟偏置固定、多普勒与 ADR 与"静止"自洽，NMEA 五句带真 XOR 校验和；造不出事件就保留真实注册并记账。
+  同时把 `Sensors` 的卫星数值改成从 `Sky` 取（原来各处按 index 现算，与测量流会不一致）。
+  另加回归结论表 A10 与技术复盘附录 E。
+
+## 附录 E 技术复盘（2026-10-26）
+
+### 采用的技术路径
+
+三档分层，各自独立可验：**档 1** 应用内 `addTestProvider`（app-op 由开发者选项授，免 root）；
+**档 2** root 建系统测试 provider（`cmd location`，开机自恢复交给 KernelSU 模块）；**档 3** libxposed
+在被 hook 进程内替换坐标 + 抹痕迹 + 补一致性证据。档 3 再按"目标 App 从哪读"逐层下沉：
+`Location` getter → `LocationManager` 拉取口 → mock 痕迹（标志位/extras/Settings/AppOps）→
+`GnssStatus` → 腾讯定位 SDK → GNSS 原始测量与 NMEA。
+
+**关键判断是"每一层都要有能自证的仪器"**：`Diagnostics` 台账（失败必须可见）、`SelfTest`
+（在被 hook 的进程里读回一次）、`Probe`（只记不改值地打印目标 App 调了什么）、
+`ConfigCheck`（在 JVM 上吃 CLI 的原样输出）。没有这四样，本项目会一直在"看起来生效"和"真的生效"之间打转。
+
+### 借鉴的开源逻辑（只取思路，注明来源；LocationSpoofer 是 GPL-3.0，绝不搬代码）
+
+- **AnyWhere**（`cxOrz/AnyWhere`，`HideMockHook.java`）：反检测清单的起点——标志位读写两端都堵、
+  extras 删键、`Settings.Secure`、provider 列表清理、GnssStatus 伪造并吞注册、WiFi/基站致盲。
+  它的**教训**同样重要：空 catch 让 hook 在新系统上静默失效（`readFromParcel` 就是），照抄等于继承一个未知。
+- **FakeLoc / XposedFakeLocation**（`noobexon1/XposedFakeLocation` 等）：按 App 分流 + 公开地图 SDK
+  （高德/百度/腾讯公开接口）的 hook 时机；以及"AGP 8.x + Gradle + JDK 21"这套能出正式版的构建组合。
+- **LocationSpoofer**（`HuangZhuoRui/LocationSpoofer`，**GPL-3.0**，源码已撤、服务端已关）：
+  逆向其 APK 得到八层地图（见 A8），本项目据此补了 `AppOpsManager` 的 ops 自证、
+  腾讯 SDK 接管、GNSS/NMEA 注入三块，并借到"星历要共用一份"与"环境要伪造而非清空"两个设计原则。
+- **AOSP 源码**（`frameworks/base/location`）：`GnssMeasurement/GnssClock` 的 public-but-@hide 构造与
+  setter、`GnssMeasurementsEvent.Builder`、`LocationManager` 的 mock 与测试 provider 语义——
+  可行性判断全部以此为准，不信二手教程。
+
+### 未解决的问题
+
+1. **高德地图本体仍未通过**：v0.4.7 的 GNSS/NMEA 注入是冲它去的，但**尚未装机验证**；它也可能
+   主要依赖自家服务器 + 缓存，那样单靠卫星侧还不够，得再叠"环境伪造"。
+2. **多普勒不严谨**：静止场景取 `pseudorangeRate=0` 能过"在不在动"的检查，**过不了最小二乘定位解算**；
+   要严格自洽需真解一组伪距。
+3. **调用栈清洗没做**：LocationSpoofer 文档声称有、实现里没有；风控 SDK 读异常栈找 `libxposed` 帧
+   是真实存在的检测面，我们目前完全暴露。
+4. **`PackageManager` 侧未处理**：目标 App 可以枚举已装包发现管理器/模块本体。
+5. **档 2 开机存活未验**（`mockloc-root.zip` 没刷过），且 `publish()` 里的 `chcon` 在这类 ROM 上
+   永远静默失败（本机 shell 无 `chcon`），而实测证明**不 chcon 也能读**，这句是留是删待定。
+6. **高德 Web服务 key 未申请**：搜索页正向返回仍未验。
+
+### 后续优化方向（按性价比）
+
+① 装机验 v0.4.7 的 GNSS/NMEA 是否让高德地图挪动（判据：蓝点 + `--probe` 样例句子）；
+② 若不动，做"环境伪造"（AP/基站列表要有内容而不是空，返回空本身就是异常）；
+③ 补调用栈清洗与 `PackageManager` 隐藏；④ 伪距解算让多普勒严谨；
+⑤ 把 `--probe` 的调用面从"定位/WiFi/基站"扩到"GNSS/NMEA/传感器"，让下一步永远有证据；
+⑥ 配置通道改用 libxposed 的 `getRemotePreferences`（LocationSpoofer 就是这么做的），
+摆脱 world-readable 的 `/data/local/tmp` 文件。

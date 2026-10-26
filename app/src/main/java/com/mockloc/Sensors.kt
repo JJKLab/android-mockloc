@@ -45,45 +45,47 @@ class Sensors(
      * Every getter here is declared `float` in the framework, so the replacements have to box a
      * Float and not a Double - a wrong box type is a ClassCastException inside the target app.
      */
+    /**
+     * Every getter here is declared `float` in the framework, so the replacements have to box a
+     * Float and not a Double - a wrong box type is a ClassCastException inside the target app.
+     *
+     * The numbers come from Sky, the same catalog the measurement and NMEA streams use, so the
+     * three surfaces cannot disagree about which satellites are visible or how strong they are.
+     */
     private fun hookGnssStatusGetters() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) return
         val statusClass = kit.findClass(classLoader, GnssStatus::class.java.name) ?: return
-        val index = { chain: XposedInterface.Chain -> (chain.args[0] as Int) }
 
         kit.install(kit.methodsOf(statusClass, "getSatelliteCount")) { chain ->
-            if (active()) FAKE_SATELLITES else chain.proceed()
+            if (active()) Sky.SATS.size else chain.proceed()
         }
-        kit.install(kit.methodsOf(statusClass, "getSvid", Int::class.javaPrimitiveType!!)) { chain ->
-            if (active()) index(chain) + 1 else chain.proceed()
+        // An out-of-range index must fall through rather than throw inside the target app.
+        fun <T : Any> answer(value: (Sky.Sat) -> T): (XposedInterface.Chain) -> Any? = { chain ->
+            val index = chain.args.firstOrNull() as? Int
+            val sat = index?.let { Sky.SATS.getOrNull(it) }
+            if (active() && sat != null) value(sat) else chain.proceed()
         }
-        kit.install(kit.methodsOf(statusClass, "getConstellationType", Int::class.javaPrimitiveType!!)) { chain ->
-            if (active()) CONSTELLATION_GPS else chain.proceed()
-        }
-        kit.install(kit.methodsOf(statusClass, "getCn0DbHz", Int::class.javaPrimitiveType!!)) { chain ->
-            if (active()) FAKE_CN0 else chain.proceed()
-        }
-        kit.install(kit.methodsOf(statusClass, "getBasebandCn0DbHz", Int::class.javaPrimitiveType!!)) { chain ->
-            if (active()) FAKE_BASEBAND else chain.proceed()
-        }
-        kit.install(kit.methodsOf(statusClass, "getElevationDegrees", Int::class.javaPrimitiveType!!)) { chain ->
-            if (active()) FAKE_ELEVATION else chain.proceed()
-        }
-        kit.install(kit.methodsOf(statusClass, "getAzimuthDegrees", Int::class.javaPrimitiveType!!)) { chain ->
-            if (active()) ((index(chain) * FAKE_AZ_SPREAD) % 360).toFloat() else chain.proceed()
-        }
-        kit.install(kit.methodsOf(statusClass, "usedInFix", Int::class.javaPrimitiveType!!)) { chain ->
-            if (active()) true else chain.proceed()
-        }
-        // The names are hasEphemerisData/hasAlmanacData; the shorter forms AnyWhere hooks do not exist.
+        kit.install(kit.methodsOf(statusClass, "getSvid", Int::class.javaPrimitiveType!!),
+            answer { it.svid })
+        kit.install(kit.methodsOf(statusClass, "getConstellationType", Int::class.javaPrimitiveType!!),
+            answer { CONSTELLATION_GPS })
+        kit.install(kit.methodsOf(statusClass, "getCn0DbHz", Int::class.javaPrimitiveType!!),
+            answer { it.cn0DbHz })
+        kit.install(kit.methodsOf(statusClass, "getBasebandCn0DbHz", Int::class.javaPrimitiveType!!),
+            answer { it.cn0DbHz - 4f })
+        kit.install(kit.methodsOf(statusClass, "getElevationDegrees", Int::class.javaPrimitiveType!!),
+            answer { it.elevationDeg.toFloat() })
+        kit.install(kit.methodsOf(statusClass, "getAzimuthDegrees", Int::class.javaPrimitiveType!!),
+            answer { it.azimuthDeg.toFloat() })
+        kit.install(kit.methodsOf(statusClass, "usedInFix", Int::class.javaPrimitiveType!!),
+            answer { true })
         listOf("hasEphemerisData", "hasAlmanacData", "hasCarrierFrequencyHz", "hasBasebandCn0DbHz")
             .forEach { name ->
-                kit.install(kit.methodsOf(statusClass, name, Int::class.javaPrimitiveType!!)) { chain ->
-                    if (active()) true else chain.proceed()
-                }
+                kit.install(kit.methodsOf(statusClass, name, Int::class.javaPrimitiveType!!),
+                    answer { true })
             }
-        kit.install(kit.methodsOf(statusClass, "getCarrierFrequencyHz", Int::class.javaPrimitiveType!!)) { chain ->
-            if (active()) FAKE_L1 else chain.proceed() // GPS L1
-        }
+        kit.install(kit.methodsOf(statusClass, "getCarrierFrequencyHz", Int::class.javaPrimitiveType!!),
+            answer { FAKE_L1 })
 
         startStatusFeed()
     }
@@ -154,10 +156,10 @@ class Sensors(
 
         return runCatching {
             ctor.isAccessible = true
-            val builder = if (ctor.parameterCount == 0) ctor.newInstance() else ctor.newInstance(FAKE_SATELLITES)
+            val builder = if (ctor.parameterCount == 0) ctor.newInstance() else ctor.newInstance(Sky.SATS.size)
             add.isAccessible = true
-            for (i in 0 until FAKE_SATELLITES) {
-                val args = satelliteArgs(add.parameterCount, i) ?: return null
+            for (i in Sky.SATS.indices) {
+                val args = satelliteArgs(add.parameterCount, Sky.SATS[i]) ?: return null
                 add.invoke(builder, *args)
             }
             build.isAccessible = true
@@ -170,27 +172,29 @@ class Sensors(
     /**
      * addSatellite() changed shape twice: API 26 was 8 params with svid first, API 30 moved
      * constellationType first and appended the carrier pair, API 33 appended the baseband pair.
-     * Only the parameter count identifies the shape, so each one is spelled out.
+     * Only the parameter count identifies the shape, so each one is spelled out. Values come from
+     * Sky so this status agrees with the measurement and NMEA streams.
      */
-    private fun satelliteArgs(parameterCount: Int, index: Int): Array<Any?>? {
-        val svid = index + 1
-        val azimuth = ((index * FAKE_AZ_SPREAD) % 360).toFloat()
+    private fun satelliteArgs(parameterCount: Int, sat: Sky.Sat): Array<Any?>? {
+        val cn0 = sat.cn0DbHz
+        val elevation = sat.elevationDeg.toFloat()
+        val azimuth = sat.azimuthDeg.toFloat()
+        val baseband = cn0 - 4f
         return when (parameterCount) {
-            8 -> arrayOf(svid, CONSTELLATION_GPS, FAKE_CN0, FAKE_ELEVATION, azimuth, true, true, true)
+            8 -> arrayOf(sat.svid, CONSTELLATION_GPS, cn0, elevation, azimuth, true, true, true)
             10 -> arrayOf(
-                CONSTELLATION_GPS, svid, FAKE_CN0, FAKE_ELEVATION, azimuth,
+                CONSTELLATION_GPS, sat.svid, cn0, elevation, azimuth,
                 true, true, true, true, FAKE_L1,
             )
             12 -> arrayOf(
-                CONSTELLATION_GPS, svid, FAKE_CN0, FAKE_ELEVATION, azimuth,
-                true, true, true, true, FAKE_L1, true, FAKE_BASEBAND,
+                CONSTELLATION_GPS, sat.svid, cn0, elevation, azimuth,
+                true, true, true, true, FAKE_L1, true, baseband,
             )
             else -> null.also {
                 Diagnostics.note("$tag: addSatellite() 有 $parameterCount 个参数，这一版没对上")
             }
         }
     }
-
 
     private fun hookWifi() {
         val wifiClass = kit.findClass(classLoader, WifiManager::class.java.name) ?: return
@@ -242,12 +246,7 @@ class Sensors(
     }
 
     private companion object {
-        const val FAKE_SATELLITES = 7
         const val CONSTELLATION_GPS = 1   // GnssStatus.CONSTELLATION_GPS
-        const val FAKE_CN0 = 35f          // dB-Hz: a healthy sky, but not suspiciously perfect
-        const val FAKE_BASEBAND = 30f     // slightly below the antenna C/N0, as a real chip reports
-        const val FAKE_ELEVATION = 45f    // degrees
-        const val FAKE_AZ_SPREAD = 47     // degrees, multiplied by index so the view is not radial
         const val FAKE_L1 = 1.57542e9f    // GPS L1 carrier, Hz
         const val FEED_INTERVAL_MS = 1000L
     }

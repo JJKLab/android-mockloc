@@ -51,6 +51,7 @@ class ModuleEntry : XposedModule() {
         installCoordinates(kit, locationClass, param.classLoader, pkg)
         MockTrace(this, param.classLoader, pkg).init()
         Sensors(this, param.classLoader, pkg).init()
+        GnssStream(this, param.classLoader, pkg).init()
         TencentSdk(this, param.classLoader, pkg).init()
         SelfTest.schedule(pkg) { message -> log(Log.INFO, tag, message) }
         log(
