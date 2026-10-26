@@ -2,8 +2,10 @@
 
 给已 root（KernelSU / APatch / Magisk）的安卓机做虚拟定位。**档 1（无 root）已真机跑通**，
 并且抓到了"只顶 gps 不顶 network 会泄露真实位置"这个致命缺陷并已修（见 A0）。
-**阶段 3 的 App（搜索 / 地图点选 / 收藏）已实现并本地编译通过**（18 个 class 零告警），待 CI 出包与真机走查。
-阶段 2 的 libxposed 模块（按 App 生效 + 抹掉 `isMock` 痕迹）代码就绪，需装 LSPosed 后才能验。
+**阶段 3 的 App（搜索 / 地图点选 / 收藏）已实现并本地编译通过**，待 CI 出包与真机走查。
+阶段 2 的 libxposed 模块按 AnyWhere 的实机验证清单补完了反检测面（抹 mock 痕迹 / 伪卫星 / 可选致盲 WiFi 与基站，
+见 B4），全部 Kotlin 源码对 API 36 真 `android.jar` + libxposed 102 `classes.jar` 本地类型检查零错误，
+但**仍需装 LSPosed 才能验行为**。
 
 它和"开发者选项里选个虚拟位置 App"的区别：开发者选项只是把 app-op `android:mock_location` 设为 allow，
 底层走的还是同一套测试 provider，所有 App 都能通过 `Location.isMock()` 看出来。这里阶段 1 用同一套系统能力但
@@ -84,9 +86,9 @@ python tools/mockloc.py off
 
 | 档 | 前置 | 跑什么 | 页面预期 |
 |---|---|---|---|
-| 1 无 root | 装 APK → 开发者选项「选择虚拟定位应用」选 mockloc → 授定位权限 | `--mode app set --place 东方明珠 --first` | `LKL gps : ... mock=True`，`注入 : 未生效` |
-| 2 root | 刷入 `mockloc-root.zip` | 档 2 那行（加 `--persist`） | `LKL gps : ... mock=True`，`注入 : 未生效`；**重启后再看一次应仍是假位置** |
-| 3 root+LSPosed | 装 APK + 在 LSPosed 里启用模块并把目标 App 勾进作用域 | 档 3 那行（`--no-global --target`） | `注入 : 已生效`；目标 App 里 `mock=False`，未勾选的 App 拿到真实位置 |
+| 1 无 root | 装 APK → 开发者选项「选择虚拟定位应用」选 mockloc → 授定位权限 | `--mode app set --place 东方明珠 --first` | `系统注入 : 生效中`、`LKL gps : ... mock=true`；`无痕模块 : 未加载` |
+| 2 root | 刷入 `mockloc-root.zip` | 档 2 那行（加 `--persist`） | 同上，且**重启后再看一次应仍是假位置** |
+| 3 root+LSPosed | 装 APK + 在 LSPosed 里启用模块并把目标 App 勾进作用域 | 档 3 那行（`--no-global --target`） | `无痕模块 : 已加载`；目标 App 里 `mock=false`，未勾选的 App 拿到真实位置 |
 
 先跑 `python tools/mockloc.py doctor`：它会把三档在这台机器上的可用性逐个实测出来
 （su 能不能用、shell uid 能否建 provider、模块 APK 与 `/data/adb/lspd` 是否存在），
@@ -134,7 +136,7 @@ adb push mockloc-root.zip /sdcard/            # root 模块，用 KernelSU/APatc
 | 搜索 | 填一次高德 Web服务 key（存本机私有 prefs）→ 输地点 → 点结果即注入 | 高德给 GCJ-02 → 自动反算 WGS-84 |
 | 地图 | osmdroid + 高德瓦片，点任意位置 → 注入 / 收藏 | 瓦片是 GCJ-02 地理参考 → 点选值同样反算；屏上两行都显示，注入用 WGS 那行 |
 | 收藏 | 点=注入，长按=删除 | 存的就是 WGS-84，不再转换 |
-| 状态 | `selfCheck`、各 provider 回读、停止注入 | 这是唯一能看出"注入到底生效没"的地方 |
+| 状态 | `系统注入` / `无痕模块` 两行判据、四 provider 回读、模块配置回读（开关/作用包名/三个反检测档位/读没读到）、停止注入 | 这是唯一能看出"注入到底生效没"的地方；配置一栏显示的就是别的进程里模块下一次要读的内容 |
 
 注入走的是**档 1 的应用内 provider**（`MockService` 前台服务），所以不装 Xposed、不 root 也能用；
 装了 LSPosed 并勾作用域后，档 3 的按 App 无痕路径会叠加在上面。
@@ -199,16 +201,16 @@ with the same name" 对非 gps 名字同样有效。
 `network 24.783499,112.358101 mock=false`（与注入前差约 17 m，说明是活的网络定位在刷新，不是缓存）。
 **test provider 随注册进程死亡而被系统回收**，这条是"关掉就恢复真实 GPS"的机制保证。
 
-**框架层 mock 的边界（实测，不是推测）。** 注入生效期间 `dumpsys location` 里 `gps/network/fused`
-三个 provider 全是 `[mock]`，我们 App 自己的状态页读回三行一致坐标；**但高德地图首页仍显示「清远市」**
-（真实位置，与之前 network 泄露那组 `24.78,112.36` 吻合），而 `dumpsys location` 明确记录
-`com.autonavi.minimap` 与 `com.tencent.mm` 都注册了 gps 客户端——它们拿到了喂入却不用。
-这类 App 自带定位引擎（WiFi 列表 → 自家服务器算坐标），要么不吃 `LocationManager`，要么因
-`mock=true` 主动丢弃后回落到网络定位。**这就是本项目开头那句"开发者选项的虚拟定位很多软件不认可"的机制。**
+**框架层 mock 的边界（实测部分与撤回部分要分开看）。** 注入生效期间 `dumpsys location` 里 `gps/network/fused`
+三个 provider 全是 `[mock]`，我们 App 自己的状态页读回三行一致坐标；`dumpsys location` 也明确记录
+`com.autonavi.minimap` 与 `com.tencent.mm` 都注册了 gps 客户端。
 
-推论（推翻我第一轮给的选项）：只做"框架层 hook"不足以让高德/微信类 App 改位置，必须再加
-**地图 SDK hook 层**（`com.amap.api.location.AMapLocation` 等，参考 A3 里 FakeLoc 的 `MapSdkHooks.kt`），
-而这一层依赖 LSPosed——本机目前未装（`pm list packages | grep -c lsposed` = 0）。
+当时我据"高德地图首页仍显示真实城市「清远市」"断定这类 App 不吃框架层 mock，并推出一整条"必须加地图 SDK hook 层"
+的计划 —— **这条推断已撤回，错在方法**：首页城市是缓存/定位历史，不是一次新的定位请求，拿它当证据等于没测。
+用户实机反馈也相反（开发者选项的虚拟定位，高德是认的，微信不认）。正确判据见 C18：注入后**主动触发一次新定位
+请求**，读它返回的坐标。不受这条撤回影响、仍然成立的是两条有 DEX 证据的事实：① 两个 App 都读 `isMock`（A7 的计数），
+所以无痕只能走档 3；② 高德地图**不含公开定位 SDK 类**，所以给它 hook `AMapLocation` 是错的（A7 第 1 条），
+可行打法是饿死它的网络定位输入（A7 第 3 条），而不是猜它混淆后的私有类名。
 
 ### A1. 系统到底怎么放行虚拟定位（AOSP android16-release，逐条核过）
 
@@ -356,11 +358,28 @@ cmd location providers send-extra-command <PROVIDER> <COMMAND>
 对本项目的影响：框架必须实现 libxposed 现代 API，模块才会被列出；这个 2026-10 的构建正是实现 102 的那一支，
 所以本项目按 102 编译、`minApiVersion` 仍写 100 以放宽加载。
 
+### A7 目标 App 到底吃什么定位（从 APK 的 DEX 里抠出来的，不是猜的）
+
+`tools/dexprobe.py` 直接在设备上拉两个 App 的 base.apk 搜 DEX 字符串：
+
+| App | 公开定位 SDK | 实际用的东西 | `isMock` 痕迹 |
+|---|---|---|---|
+| 高德地图 `com.autonavi.minimap` (172 MB, 8 dex) | **无**（`com/amap/api/location` 命中 0） | 自家引擎 `com/amap/location/api/ILocationService`、`com/amap/location/type/location/Location`、`INetworkLocationListener`、`VALocationResult` | `isMock` 17 次、`isFromMockProvider` 1 次 |
+| 微信 `com.tencent.mm` (219 MB, 18 dex) | **有** `com/tencent/map/geolocation`（20 次）、`TencentLocation`（28 次） | 腾讯定位 SDK + `com/tencent/mm/plugin/location/model/LocationInfo` | `isMock` 11 次 |
+
+推论与打法：
+
+1. **给高德地图 hook `AMapLocation` 是错的**——它压根没有这个类。FakeLoc 的 `MapSdkHooks.kt` 覆盖的是
+   `com.amap.api.location.*` / `com.baidu.location.*` / `com.tencent.map.geolocation.*` 这三家**公开 SDK**，
+   对第三方 App 有效，对高德地图本体无效。
+2. 微信可以直接走公开 SDK 路径（类名已由 DEX 证实存在）。
+3. 高德地图这类自带引擎的，通用打法是**饿死它的网络定位输入**：在目标进程里 hook
+   `WifiManager.getScanResults/getConnectionInfo` 与 `TelephonyManager.getAllCellInfo/getCellLocation`
+   返回空，逼它回落到 GPS —— 而 GPS 已经被我们 mock。FakeLoc 的 `SourceLockHooks.kt` 正是用这招
+   治"地图跳一下又飘回去"。这比猜私有类名可靠，也不需要知道混淆后的名字。
+4. 两者都读 `isMock`，所以这一层必须和档 3（libxposed 抹痕迹）一起做，单靠系统 mock 无效——已实测。
+
 ## 附录 B 代码解析
-
-
-
-
 
 ### B1. 配置契约（三层共用同一组键）
 
@@ -375,7 +394,11 @@ CLI set --persist  ->  /data/adb/mockloc/config.prop      (root 专属，App 进
                        app/.../Config.kt      ->  SpoofLogic  ->  hooks
 ```
 
-键：`MOCKLOC_ENABLED / GLOBAL / PROVIDER / LAT / LNG / ACC / RADIUS / INTERVAL / TARGETS / LABEL`。
+键：`MOCKLOC_ENABLED / GLOBAL / PROVIDERS / LAT / LNG / ACC / RADIUS / INTERVAL / TARGETS / LABEL
+/ GNSS / BLIND_WIFI / BLIND_CELL`。
+后三个是档 3 的反检测开关，**只在进程 attach 时读一次**（挂钩本身是按进程装的，改完要把目标 App 重启才生效）；
+`GNSS` 默认开，`BLIND_WIFI/BLIND_CELL` 默认关——致盲会真的破坏目标 App 自己的 WiFi/基站功能，不能默认打开。
+缺键按默认值处理，所以旧配置在新模块上行为不变（`tools/kotlin/ConfigCheck.kt` 把这条契约钉住了）。
 配置入口是 **`/data/local/tmp/mockloc.in`（shell 可写的收件箱）**，root 模块的 `sync_inbox` 再把它镜像到
 `/data/adb/mockloc/config.prop`。这么设计是因为 A0 实测：KernelSU 不给 adb shell 提供 `su`，
 PC 端根本写不了 `/data/adb`——收件箱让"只刷模块、不依赖 su"也能跑通档 2。
@@ -400,7 +423,10 @@ PC 端根本写不了 `/data/adb`——收件箱让"只刷模块、不依赖 su"
 | `rootmodule/mockloc-lib.sh` | `cfg_get` / `jitter`(awk) / `apply_once` / `publish` |
 | `app/.../Config.kt` | App 进程侧配置快照，1s TTL，读不到文件时把原因留在 `lastError` |
 | `app/.../SpoofLogic.kt` | 两个 hook 后端共用的决策层，防止行为漂移 |
-| `app/.../ModuleEntry.kt` | libxposed 入口，注册在 `META-INF/xposed/java_init.list` |
+| `app/.../ModuleEntry.kt` | libxposed 入口：只负责**坐标本身**（`getLatitude/getLongitude` + `getLastKnownLocation`）|
+| `app/.../HookKit.kt` | 挂钩管线：按名查类/方法、批量安装、`Chain.withArg`；外加 `Diagnostics` 失败台账 |
+| `app/.../MockTrace.kt` | 抹掉系统测试 provider 留下的痕迹（mock 位、extras、`Settings.Secure`、provider 列表、Parcel 路径）|
+| `app/.../Sensors.kt` | 一致性层：伪 `GnssStatus`（含每秒回调）、可选致盲 WiFi/基站 |
 | `app/.../MainActivity.kt` | 四页 View：搜索 / 地图点选 / 收藏 / 状态（`selfCheck` + 各 provider 回读） |
 | `app/.../CoordTransform.kt` | `coords.py` 的 Kotlin 移植，与 Python 版对同一批锚点数值一致（477.87 m） |
 | `app/.../AmapSearch.kt` | 高德 REST（`HttpURLConnection` + `org.json`，零三方依赖） |
@@ -408,6 +434,7 @@ PC 端根本写不了 `/data/adb`——收件箱让"只刷模块、不依赖 su"
 | `app/.../Places.kt` | 收藏点，JSON 存私有 prefs（不落 world-readable 镜像） |
 | `tools/classdump.py` | 解析 `.class` 拿真实方法签名（本机只有 JRE，没 `javap`） |
 | `tools/kotlin/CoordCheck.kt` | 可运行的 Kotlin 数值验收，不进 APK |
+| `tools/kotlin/ConfigCheck.kt` | 在 JVM 上真跑 `Config.refresh()`，吃 CLI `--dry-run` 原样输出的配置体 |
 
 模块注册只走 libxposed 现代 API 一条路（按 [libxposed/api](https://github.com/libxposed/api) 的约定：
 不需要 `assets/xposed_init`，也不需要 manifest 里的 `xposedmodule` meta-data）。
@@ -423,14 +450,39 @@ hook `Location.getLatitude/getLongitude` 之后，App 从真实 GPS 拿到的每
 也不需要 app-op，所以 `isMock()` 这条检测路径根本不会被触发。
 
 代价：这个 hook 作用于该进程内**所有** `Location` 对象，App 自己构造用于计算的 Location 也会被改写。
-FakeLoc/XposedFakeLocation 都有同样的取舍，并用"每个字段单独开关"来缓解；本项目把开关留在配置里，
-阶段 3 的 UI 再暴露出来。
+FakeLoc/XposedFakeLocation 都有同样的取舍，并用"每个字段单独开关"来缓解；本项目把开关放在配置里
+（CLI `--gnss / --blind-wifi / --blind-cell`，App 状态页只读显示当前值）。
+
+### B4. 档 3 的反检测面（照 AnyWhere 的实机清单补，逐条对 API 36 重核）
+
+`refs/AnyWhere/app/.../HideMockHook.java` 是唯一一份"在别人手机上跑通过"的检测面清单，值得抄；
+但它写于旧版本 AOSP，**照抄会在 Android 16 上静默失效**，所以每条都用本地 `android.jar`（API 36）重核过：
+
+| 检测面 | 这一版的做法 | 与 AnyWhere 的差异（核实依据） |
+|---|---|---|
+| `isMock()` / `isFromMockProvider()` | 读侧直接返回 false | 一致 |
+| `setMock()` / `setIsFromMockProvider()` | 写侧把参数强制成 false（`Chain.withArg`），从源头堵 | `setIsFromMockProvider` 已从 API 36 公开面移除，按名查不到时**记录**而不是不提 |
+| `getExtras()` 里的 `mockLocation` 键 | 在返回的 Bundle 上删键 | AnyWhere 用 `Location.removeExtra`；**API 36 的 `Location` 已经没有 putExtra/removeExtra 了**，只有 `Bundle.remove`（API 30） |
+| Parcel 反序列化绕过读侧 hook | `readFromParcel` 之后反射清 `mMock`/`mIsFromMockProvider` 与 `mFieldsMask` 的 mock 位 | AnyWhere 这里**空 catch**，且没带 `HiddenApiBypass` —— 一旦被 greylist 挡住就是永久静默失败。本模块先 `addHiddenApiExemptions("")`，失败全部进 `Diagnostics` |
+| `getCurrentLocation(…, Consumer)` | 包一层 Consumer，交付前清位 | `getLastKnownLocation` 不重复处理：B3 那条路径返回的是新建对象，mock 位天生 false |
+| `Settings.Secure.getString("mock_location")` | 强制 `"0"` | 额外把 `getInt` 两个重载也盖住：`getInt` 内部走 `getString` 是实现细节而不是契约，不赌它 |
+| `getProviders / getAllProviders / isProviderEnabled` | 只留 `gps/network/passive/fused` | 补 `getProviders(Criteria, boolean)` 这个重载 |
+| `GnssStatus` 卫星视图 | 12 个 getter 全改（含 `getBasebandCn0DbHz`）| AnyWhere 钩的 `hasEphemeris/hasAlmanac` **在 API 36 上不存在**，真名是 `hasEphemerisData/hasAlmanacData`；钩不到就是零命中且不报错 |
+| 造伪 `GnssStatus` 并每秒回调 | `Builder().addSatellite(...).build()` | AnyWhere 反射的是旧 7 参 `Builder.add(...)`；API 36 是 `addSatellite` **12 参且 constellationType 在前**。按 `parameterCount` 分 8/10/12 三种形状取值顺序 |
+| 吞掉 `registerGnssStatusCallback` | 只有**造得出** dummy 才吞；造不出就保留真实注册 | AnyWhere 无条件吞 + 只钩 `(Callback)` 与 `(Callback, Handler)`；API 36 还有 `(Executor, Callback)`，漏了它那条路径就完全没数据 |
+| WiFi / 基站致盲 | 默认**关**，`--blind-wifi/--blind-cell` 才开 | 这两条会真的破坏目标 App 自己的 WiFi 列表/基站信息，不能当默认值 |
+
+`Diagnostics` 是这套东西的"仪表盘"：任何类找不到、方法挂不上、反射被挡、重载数量对不上，都会记一条并
+立刻 `module.log` 到 logcat；本进程的记录还会显示在 App 状态页。**故意不做**AnyWhere 那种
+`catch (Throwable ignored) {}` —— 静默失败的 hook 在新系统上和正常工作的 hook 长得一模一样，
+这是最难查的一类 bug。
 
 ## 附录 C 待验证清单（必须上真机）
 
 按优先级，每条都是"我写了但我不能在本机证明"的东西：
 
-1. **CI 首次编译能否通过**——本机 JDK 11 且无 SDK，Kotlin 层只做了人工审读。
+1. **新增 `hiddenapibypass` 之后 CI 能否出包**：本机只有 JRE + 手工下的 `classes.jar`，类型检查过了，
+   但 AGP 解析 AAR、`META-INF/xposed/*` 是否仍被合并进 APK 只能在 CI 看（工作流里那条 `unzip -l | grep xposed` 守卫就是为它准备的）。
 2. **KernelSU 的 `su -c` 语义与 SELinux 上下文**：`cmd location` / `appops` 是否能在 KernelSU 模块的
    `service.sh` 里跑通（Magisk 语境下可以，KernelSU 的域不同）。
 3. **KernelSU/APatch 是否接受本模块 zip 格式**（`update-binary` 取自 Magisk master）。
@@ -444,11 +496,27 @@ FakeLoc/XposedFakeLocation 都有同样的取舍，并用"每个字段单独开�
 9. `doctor` 的档 1 探针：确认 shell uid 单独授权 app-op 后 `cmd location` 真的不报 SecurityException
    ——这是"无 root 也能全局"这整条结论的唯一直接证据。
    **已实测：本机不通**（ColorOS 摘了 `MANAGE_APP_OPS_MODES`），见 A0；免 root 档改走 App 内 provider。
-10. **高德瓦片能不能显示**：`AmapTiles` 用 `{x}{y}{z}` 占位符式 URL，osmdroid 6.1.20 的
-    `TileSourcePolicy` 是否替换占位符要靠真机看瓦片出没出来；不出就改成拼接式 URL。签名与投影都对，唯一变量是它。
+10. **高德瓦片在真机上出不出图**：`AmapTiles` 改成"解析父类 URL 再重建"之后，PC 上重建出来的地址实测
+    `200 image/png`；剩下的变量只有 osmdroid 自己的下载/缓存路径与 GCJ-02 瓦片配 WGS-84 中心的偏移。
 11. Android 16 上从 Activity 前台 `startForegroundService` + `foregroundServiceType=location` 是否放行；
     未授 `POST_NOTIFICATIONS` 时通知不显示、服务是否仍在跑。
 12. 真 key 下 App 内搜索的正向返回（REST 层目前只验过 `10001` 错误路径）。
+13. **反射清 `mMock` 到底成没成**（B4 的核心未知项）。AnyWhere 那段是空 catch，谁也不知道它在
+    Android 16 上是正常工作还是从来没生效过。判据（都会出现在 `logcat | grep mockloc` 或状态页）：
+    `HiddenApiBypass 未生效` ⇒ HAB 6.2 在 API 36 上这条路不通，只能靠 setter/reader hook；
+    `未找到 mMock / mIsFromMockProvider 字段` ⇒ 字段改名了；
+    `写回 xxx 失败` ⇒ 豁免生效但写入被挡。三条都没打印才算真的通过。
+14. **`GnssStatus.Builder.addSatellite` 的参数形状**：代码按 8/10/12 三种 `parameterCount` 取值顺序，
+    真机若打印 `addSatellite() 有 N 个参数，这一版没对上`，就是 API 36 又改了形状。
+15. **吞掉 GNSS 注册会不会让 App 判定"GPS 不可用"**：现在只在造得出 dummy 时才吞。若目标 App 因此
+    一直收不到回调（dummy 构造失败但注册被别的分支吞了），表现是"定位转圈"——关掉 `--no-gnss` 对比即可确认。
+16. **致盲 WiFi/基站的副作用**：默认关。开了之后要单独验"高德地图是否因此回落到 GPS"（A7 第 3 条的打法），
+    否则这一层只是把 App 弄坏而没有换到效果。
+17. **`setIsFromMockProvider` 是否还在 API 36 的框架里**（SDK 公开面已删，运行时类可能还在）。
+    状态页/logcat 里那条"不存在或被 hidden API 挡住"就是答案；如果真没有，只依赖 `setMock` 写侧 + 读侧 hook。
+18. **高德地图到底认不认框架层 mock**（D 里 v0.4.1 那条结论已撤回，这是补测方法）：注入生效后在高德里
+    **主动发起一次新的定位请求**（搜索附近/起点选"我的位置"），读它返回的坐标或地址，而不是看首页显示的
+    城市名——首页城市是缓存，等于没测。判据只有"新请求的返回坐标是否等于注入点"。
 
 ## 附录 D 版本历史
 
@@ -481,28 +549,23 @@ FakeLoc/XposedFakeLocation 都有同样的取舍，并用"每个字段单独开�
   两套实现互验。新增 INTERNET 权限与 `AmapTiles` 高德瓦片源。
 - **v0.4.1**（2026-10-24）真机走查阶段 3：inset 与瓦片两个渲染问题修完（见 A0 与 `AmapTiles` 注释），
   注入链路端到端验通（点选 → 反算 → 三 provider 全 `[mock]`）。
-  新发现并记录框架层 mock 的能力边界：**高德地图在注入生效期间仍显示真实城市「清远市」**，
-  尽管它确实注册了 gps 客户端（见 A0 末段）——要覆盖这类自带定位引擎的 App，必须加地图 SDK hook 层。
   状态页文案也改了：原来一行"注入: 未生效"把「LSPosed 模块未加载」和「定位没注入」混为一谈，
   现在拆成 `系统注入` / `无痕模块` 两行，并直接列出四个 provider 的读回值。
-
-### A7 目标 App 到底吃什么定位（从 APK 的 DEX 里抠出来的，不是猜的）
-
-`tools/dexprobe.py` 直接在设备上拉两个 App 的 base.apk 搜 DEX 字符串：
-
-| App | 公开定位 SDK | 实际用的东西 | `isMock` 痕迹 |
-|---|---|---|---|
-| 高德地图 `com.autonavi.minimap` (172 MB, 8 dex) | **无**（`com/amap/api/location` 命中 0） | 自家引擎 `com/amap/location/api/ILocationService`、`com/amap/location/type/location/Location`、`INetworkLocationListener`、`VALocationResult` | `isMock` 17 次、`isFromMockProvider` 1 次 |
-| 微信 `com.tencent.mm` (219 MB, 18 dex) | **有** `com/tencent/map/geolocation`（20 次）、`TencentLocation`（28 次） | 腾讯定位 SDK + `com/tencent/mm/plugin/location/model/LocationInfo` | `isMock` 11 次 |
-
-推论与打法：
-
-1. **给高德地图 hook `AMapLocation` 是错的**——它压根没有这个类。FakeLoc 的 `MapSdkHooks.kt` 覆盖的是
-   `com.amap.api.location.*` / `com.baidu.location.*` / `com.tencent.map.geolocation.*` 这三家**公开 SDK**，
-   对第三方 App 有效，对高德地图本体无效。
-2. 微信可以直接走公开 SDK 路径（类名已由 DEX 证实存在）。
-3. 高德地图这类自带引擎的，通用打法是**饿死它的网络定位输入**：在目标进程里 hook
-   `WifiManager.getScanResults/getConnectionInfo` 与 `TelephonyManager.getAllCellInfo/getCellLocation`
-   返回空，逼它回落到 GPS —— 而 GPS 已经被我们 mock。FakeLoc 的 `SourceLockHooks.kt` 正是用这招
-   治"地图跳一下又飘回去"。这比猜私有类名可靠，也不需要知道混淆后的名字。
-4. 两者都读 `isMock`，所以这一层必须和档 3（libxposed 抹痕迹）一起做，单靠系统 mock 无效——已实测。
+  ~~当时据"高德地图首页仍显示真实城市"断定框架层 mock 覆盖不了高德——**这条结论已撤回**：
+  首页城市是缓存/定位历史，不是一次新的定位请求，用它当证据等于没测。正确测法（主动触发一次新定位、
+  看返回坐标而不是看文案）记在 C 里，尚未执行。按 DEX 证据（A7）仍然成立的是：高德地图不吃公开 SDK，
+  要覆盖它得走它自己的引擎或饿死它的网络定位输入。
+- **v0.4.2**（2026-10-26）按 AnyWhere 的实机清单把档 3 的反检测面补完（见 B4），全部对 API 36 重核：
+  ① 拆层：`ModuleEntry` 只管坐标，`MockTrace` 管痕迹，`Sensors` 管一致性，`HookKit` 管管线——没有一处 hook 被装两遍。
+  ② **不静默吞异常**：新增 `Diagnostics`，类找不到/方法挂不上/重载数对不上/反射被挡一律记账并立刻 `module.log`；
+  AnyWhere 那种空 catch 在它自己的新版系统上到底是死是活无人知晓，这里不留同样的洞。
+  ③ 核实到 AnyWhere 清单在 Android 16 上会**静默失效**的四处：`hasEphemeris/hasAlmanac` 真名是
+  `*Data`；`Location.putExtra/removeExtra` 已从公开面删除；`GnssStatus.Builder.add(7 参)` 变成
+  `addSatellite(12 参，constellationType 在前)`；`registerGnssStatusCallback` 还有 `(Executor, Callback)` 重载。
+  ④ 新依赖 `org.lsposed.hiddenapibypass:hiddenapibypass:6.2`（`implementation`，要在目标进程里跑）——
+  清 `mMock` 字段需要它，AnyWhere 没带。
+  ⑤ 配置契约加 `GNSS / BLIND_WIFI / BLIND_CELL` 三键（CLI `--gnss/--no-gnss`、`--blind-wifi`、`--blind-cell`，
+  菜单里只在填了包名时多问一句）；状态页新增模块配置回读与 `Diagnostics` 记录。
+  ⑥ `tools/kotlin/ConfigCheck.kt`：在 JVM 上真跑 `Config.refresh()` 吃 CLI `--dry-run` 的原样输出，
+  26 项断言全过，其中两项第一次就抓到东西（1s 统计缓存让"删文件即停"要等一个 TTL 周期）。
+  ⑦ 全部 Kotlin 源码本地类型检查（`kotlinc` + API 36 `android.jar` + libxposed 102 + osmdroid + HAB）零 error。

@@ -327,6 +327,7 @@ class MainActivity : Activity() {
         val last = prefs.getString(KEY_LAST, "无")
         val label = prefs.getString(KEY_LAST_LABEL, "")
         val fixes = readback()
+        Config.refresh()
         statusText.text = buildString {
             appendLine("系统注入 : ${if (fixes.any { "mock=true" in it }) "生效中" else "未注入"}")
             appendLine("无痕模块 : ${if (selfCheck()) "已加载" else "未加载（需 LSPosed）"}")
@@ -334,9 +335,27 @@ class MainActivity : Activity() {
             appendLine("----")
             fixes.forEach { appendLine(it) }
             appendLine("----")
+            // What the module in every other process is going to read next time it refreshes.
+            appendLine("模块开关 : ${onOff(Config.enabled)} 全局=${onOff(Config.global)}")
+            appendLine("作用包名 : ${if (Config.targets.isEmpty()) "LSPosed 作用域内全部" else Config.targets.joinToString()}")
+            appendLine("伪造卫星 : ${onOff(Config.gnssSpoof)}  致盲WiFi/基站 : ${onOff(Config.blindWifi)}/${onOff(Config.blindCell)}")
+            appendLine("配置来源 : ${Config.DEFAULT_PATH}")
+            appendLine(
+                if (Config.lastError == null) "读取正常（写入于 ${Config.lastLoadedAgo}ms 前）"
+                else "读取失败：${Config.lastError}"
+            )
+            val notes = Diagnostics.snapshot()
+            if (notes.isNotEmpty()) {
+                appendLine("----")
+                appendLine("本进程挂钩记录（目标进程的同类记录看 logcat 的 mockloc tag）：")
+                notes.forEach { appendLine("  $it") }
+            }
+            appendLine("----")
             appendLine("注：高德/腾讯系 App 用自己的定位引擎，不吃这条注入，需 SDK hook 层")
         }
     }
+
+    private fun onOff(value: Boolean) = if (value) "开" else "关"
 
     // Both accessors are shown on purpose: older apps still call the deprecated one, and the whole
     // point of this screen is to see which flag a target app would be reading.

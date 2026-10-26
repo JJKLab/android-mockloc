@@ -13,6 +13,11 @@ import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
  * so unlisted apps keep their real fix and the listed ones read fake coordinates off genuine
  * Location objects - no test provider, hence no mock bit to detect.
  *
+ * Work is split by concern, and no hook is installed twice:
+ * - here: the coordinates themselves, on every Location the process can touch
+ * - [MockTrace]: the traces a system test provider leaves behind (mock bit, extras, Settings)
+ * - [Sensors]: the consistency layer a detecting app cross-checks against (GNSS, WiFi, cell)
+ *
  * `android` (system_server) is deliberately skipped. Rewriting locations there would make the
  * spoof global *and* flag-free, but a mistake in that process takes system_server down.
  */
@@ -27,65 +32,59 @@ class ModuleEntry : XposedModule() {
             log(Log.INFO, tag, "skipped system package scope")
             return
         }
+        // Anything that fails from now on has to reach logcat, not only an in-memory list that
+        // lives in a process nobody is looking at.
+        Diagnostics.attach { message -> log(Log.ERROR, tag, message) }
         log(Log.INFO, tag, "attached to $pkg")
-        installLocationHooks(param.classLoader, pkg)
-        if (pkg == SELF_PKG) installSelfCheck(param.classLoader)
+
+        if (pkg == SELF_PKG) {
+            // Only the load proof is hooked in our own process. Cleaning the mock bit here would
+            // make the status page report success while the target apps were never touched.
+            installSelfCheck(param.classLoader)
+            return
+        }
+
+        Config.refresh()
+        val kit = HookKit(this, tag)
+        val locationClass = kit.findClass(param.classLoader, Location::class.java.name) ?: return
+        installCoordinates(kit, locationClass, param.classLoader, pkg)
+        MockTrace(this, param.classLoader, pkg).init()
+        Sensors(this, param.classLoader, pkg).init()
+        log(
+            Log.INFO, tag,
+            "$pkg: providers=${Config.providers} global=${Config.global} " +
+                "gnss=${Config.gnssSpoof} blind=${Config.blindWifi}/${Config.blindCell} " +
+                "notes=${Diagnostics.snapshot().size}"
+        )
     }
 
-    private fun installLocationHooks(classLoader: ClassLoader, pkg: String) {
-        val locationClass = try {
-            Class.forName(Location::class.java.name, false, classLoader)
-        } catch (t: Throwable) {
-            log(Log.ERROR, tag, "Location class unavailable: ${t.message}")
-            return
+    /**
+     * getLatitude/getLongitude cover every delivery route at once - push callbacks, poll APIs,
+     * and objects the app deserialises itself - which is why no per-API rewriting is needed.
+     *
+     * `getLastKnownLocation` is still replaced outright because a scope with no real provider
+     * returns null there, and null makes the app start a fresh fix request instead of reading
+     * the coordinates we would then have to intercept.
+     */
+    private fun installCoordinates(kit: HookKit, clazz: Class<*>, classLoader: ClassLoader, pkg: String) {
+        kit.install(kit.methodsOf(clazz, "getLatitude")) { chain ->
+            if (SpoofLogic.isActive(pkg)) Config.currentLat else chain.proceed()
         }
-        hookGetter(locationClass, "getLatitude", pkg) { Config.currentLat }
-        hookGetter(locationClass, "getLongitude", pkg) { Config.currentLng }
-        hookGetter(locationClass, "isMock", pkg) { false }
-        hookGetter(locationClass, "isFromMockProvider", pkg) { false }
+        kit.install(kit.methodsOf(clazz, "getLongitude")) { chain ->
+            if (SpoofLogic.isActive(pkg)) Config.currentLng else chain.proceed()
+        }
 
-        try {
-            val lm = Class.forName(LocationManager::class.java.name, false, classLoader)
-            val method = lm.getDeclaredMethod("getLastKnownLocation", String::class.java)
-            hook(method).intercept { chain ->
-                if (!SpoofLogic.isActive(pkg)) return@intercept chain.proceed()
-                val provider = chain.getArg(0) as? String
-                val original = chain.proceed() as? Location
-                SpoofLogic.fakeLocation(original, provider)
-            }
-        } catch (t: Throwable) {
-            log(Log.ERROR, tag, "getLastKnownLocation hook failed: ${t.message}")
-        }
-    }
-
-    private fun hookGetter(clazz: Class<*>, name: String, pkg: String, replacement: () -> Any?) {
-        val method = try {
-            clazz.getDeclaredMethod(name)
-        } catch (t: NoSuchMethodException) {
-            // isMock() only exists from API 31; absence is expected on older devices.
-            log(Log.INFO, tag, "$name not present: ${t.message}")
-            return
-        } catch (t: Throwable) {
-            log(Log.ERROR, tag, "$name lookup failed: ${t.message}")
-            return
-        }
-        try {
-            hook(method).intercept { chain ->
-                if (SpoofLogic.isActive(pkg)) replacement() else chain.proceed()
-            }
-        } catch (t: Throwable) {
-            log(Log.ERROR, tag, "$name hook failed: ${t.message}")
+        val lmClass = kit.findClass(classLoader, LocationManager::class.java.name) ?: return
+        kit.install(kit.methodsOf(lmClass, "getLastKnownLocation", String::class.java)) { chain ->
+            if (!SpoofLogic.isActive(pkg)) return@install chain.proceed()
+            SpoofLogic.fakeLocation(chain.proceed() as? Location, chain.args.getOrNull(0) as? String)
         }
     }
 
     private fun installSelfCheck(classLoader: ClassLoader) {
-        try {
-            val clazz = Class.forName(MainActivity::class.java.name, false, classLoader)
-            val method = clazz.getDeclaredMethod("selfCheck")
-            hook(method).intercept { true }
-        } catch (t: Throwable) {
-            log(Log.ERROR, tag, "selfCheck hook failed: ${t.message}")
-        }
+        val kit = HookKit(this, tag)
+        val clazz = kit.findClass(classLoader, MainActivity::class.java.name) ?: return
+        kit.install(kit.methodsOf(clazz, "selfCheck")) { true }
     }
 
     private companion object {

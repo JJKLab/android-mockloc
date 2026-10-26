@@ -315,6 +315,9 @@ def cmd_set(t, args):
             "MOCKLOC_INTERVAL": f"{int(args.interval)}",
             "MOCKLOC_TARGETS": ",".join(args.target or []),
             "MOCKLOC_LABEL": label,
+            "MOCKLOC_GNSS": "true" if args.gnss_spoof else "false",
+            "MOCKLOC_BLIND_WIFI": "true" if args.blind_wifi else "false",
+            "MOCKLOC_BLIND_CELL": "true" if args.blind_cell else "false",
         })
         print(f"[ok] 开机自恢复配置已写入 {path}（root 模块会读它）")
     return lat, lng, label
@@ -521,6 +524,7 @@ def build_args(place=None, city=None, coord=None, datum="gcj02", watch=False):
         providers=PROVIDERS_DEFAULT,
         accuracy=5.0, persist=True, dry_run=False, radius=(20.0 if watch else 0.0),
         interval=15.0, first=False, target=[], global_provider=True, wipe=False,
+        gnss_spoof=True, blind_wifi=False, blind_cell=False,
     )
 
 
@@ -531,6 +535,11 @@ def ask_scope(ns):
     ns.target = [p.strip() for p in raw.split(",") if p.strip()] if raw else []
     if not ns.global_provider and not ns.target:
         print("[提示] 既不建全局 provider 又没填包名，模块会按 LSPosed 作用域里的全部 App 生效")
+    if ns.target:
+        # Only worth asking when the module is the layer doing the work. The blinding hooks are
+        # installed once per process, so changing this needs the target app to be restarted.
+        if (input("致盲 WiFi/基站扫描结果(网络定位SDK喂服务器的输入)? y/n [n]: ").strip() or "n").lower() == "y":
+            ns.blind_wifi = ns.blind_cell = True
     return ns
 
 
@@ -548,6 +557,12 @@ def main():
     common.add_argument("--dry-run", action="store_true", help="print the device commands, send nothing")
     common.add_argument("--global", dest="global_provider", action=argparse.BooleanOptionalAction,
                         default=True, help="--no-global: only the Xposed module path, no system provider")
+    common.add_argument("--gnss", dest="gnss_spoof", action=argparse.BooleanOptionalAction,
+                        default=True, help="伪造卫星状态（假 gps 却 0 颗星正是一致性检测点）")
+    common.add_argument("--blind-wifi", action=argparse.BooleanOptionalAction, default=False,
+                        help="清空 getScanResults；会破坏目标 App 自己的 WiFi 功能")
+    common.add_argument("--blind-cell", action=argparse.BooleanOptionalAction, default=False,
+                        help="清空基站信息；同上")
 
     p_set = sub.add_parser("set", parents=[common], help="resolve + inject once")
     p_set.add_argument("--place")

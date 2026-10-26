@@ -63,6 +63,20 @@ object Config {
     var targets: Set<String> = emptySet()
         private set
 
+    /** Fake the satellite view so a mocked gps does not contradict a zero satellite count. */
+    @Volatile
+    var gnssSpoof: Boolean = true
+        private set
+
+    /** Off by default: these break the target app's own WiFi/cellular features. */
+    @Volatile
+    var blindWifi: Boolean = false
+        private set
+
+    @Volatile
+    var blindCell: Boolean = false
+        private set
+
     @Volatile
     var lastError: String? = null
         private set
@@ -112,6 +126,9 @@ object Config {
         var nextLabel = ""
         var nextTargets = emptySet<String>()
         var nextGlobal = false
+        var nextGnss = true
+        var nextBlindWifi = false
+        var nextBlindCell = false
         text.lineSequence().forEach { line ->
             val idx = line.indexOf('=')
             if (idx <= 0) return@forEach
@@ -128,6 +145,10 @@ object Config {
                     .takeIf { it.isNotEmpty() }?.let { nextProviders = it }
                 "MOCKLOC_LABEL" -> nextLabel = value
                 "MOCKLOC_TARGETS" -> nextTargets = value.split(',').map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+                // Read once at attach time: the hooks they gate are installed per process, not live.
+                "MOCKLOC_GNSS" -> nextGnss = value != "false" && value != "0"
+                "MOCKLOC_BLIND_WIFI" -> nextBlindWifi = value == "true" || value == "1"
+                "MOCKLOC_BLIND_CELL" -> nextBlindCell = value == "true" || value == "1"
             }
         }
         enabled = nextEnabled
@@ -140,6 +161,9 @@ object Config {
         global = nextGlobal
         label = nextLabel
         targets = nextTargets
+        gnssSpoof = nextGnss
+        blindWifi = nextBlindWifi
+        blindCell = nextBlindCell
     }
 
     fun shouldSpoof(packageName: String?): Boolean {
