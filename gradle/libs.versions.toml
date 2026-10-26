@@ -3,7 +3,10 @@ agp = "8.7.0"
 kotlin = "2.2.10"
 libxposed = "102.0.0"
 osmdroid = "6.1.20"
-hiddenApiBypass = "6.2"
+# Pinned to 6.1 on purpose. 6.2's AAR declares minCompileSdk=37, which AGP enforces against our
+# compileSdk=36 and the apk job fails before Kotlin is even compiled. 6.1 exposes the identical
+# addHiddenApiExemptions(String...) surface, so nothing here depends on the newer version.
+hiddenApiBypass = "6.1"
 
 [libraries]
 libxposed-api = { group = "io.github.libxposed", name = "api", version.ref = "libxposed" }

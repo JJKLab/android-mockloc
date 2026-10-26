@@ -117,8 +117,19 @@ mock_location app-op**，又得重点一次。破解办法是把仓库 secret `D
 
 版本组合是从 [XposedFakeLocation](https://github.com/noobexon1/XposedFakeLocation) 这套**正在出正式版**的工程里抄的，
 不是猜的。libxposed 用 **`io.github.libxposed:api:102.0.0`**（Maven 元数据里 `<release>102.0.0</release>`，
-aar 拉下来解出 `classes.jar` 后，本仓库 4 个 Kotlin 文件在它上面重新类型检查过：**零错误零告警**，
-说明我的代码没有用到 101 与 102 之间有任何差异的 API）。协程/Compose 一律没用，运行时依赖为零。
+aar 拉下来解出 `classes.jar` 后，本仓库全部 Kotlin 文件在它上面重新类型检查过：**零错误**，
+说明我的代码没有用到 101 与 102 之间有任何差异的 API）。协程/Compose 一律没用。
+
+**加依赖时必须先看 AAR 里的 `META-INF/com/android/build/gradle/aar-metadata.properties`。**
+本地类型检查只喂 `classes.jar`，看不到这份元数据，而 AGP 会拿 `minCompileSdk` 跟项目的 `compileSdk` 比，
+超了就在建 APK 阶段直接失败——`hiddenapibypass:6.2` 就是这一类（它写 `minCompileSdk=37`，我们 36），
+第一次 CI 就是这么红的。查法（不用 JDK，本机就能跑）：
+
+```bash
+unzip -p hiddenapibypass-6.2.aar META-INF/com/android/build/gradle/aar-metadata.properties | grep minCompileSdk
+```
+
+顺带一条：`osmdroid 6.1.20` 是 `minCompileSdk=1` 且零传递依赖，`hiddenapibypass:6.1` 也是 1 —— 两者都不给 CI 添风险。
 
 ## 4. 装到手机
 
@@ -481,8 +492,9 @@ FakeLoc/XposedFakeLocation 都有同样的取舍，并用"每个字段单独开�
 
 按优先级，每条都是"我写了但我不能在本机证明"的东西：
 
-1. **新增 `hiddenapibypass` 之后 CI 能否出包**：本机只有 JRE + 手工下的 `classes.jar`，类型检查过了，
-   但 AGP 解析 AAR、`META-INF/xposed/*` 是否仍被合并进 APK 只能在 CI 看（工作流里那条 `unzip -l | grep xposed` 守卫就是为它准备的）。
+1. **依赖改到 `hiddenapibypass:6.1` 之后 CI 能否转绿**：上一轮 `apk` job 红的直接原因就是 6.2 的
+   `minCompileSdk=37`（本地类型检查看不见 AAR 元数据，这条已记进 §3）。`logic` 与 `root-module` 两个 job
+   当时是通过的，所以嫌疑面只剩依赖解析与打包守卫。
 2. **KernelSU 的 `su -c` 语义与 SELinux 上下文**：`cmd location` / `appops` 是否能在 KernelSU 模块的
    `service.sh` 里跑通（Magisk 语境下可以，KernelSU 的域不同）。
 3. **KernelSU/APatch 是否接受本模块 zip 格式**（`update-binary` 取自 Magisk master）。
@@ -503,7 +515,7 @@ FakeLoc/XposedFakeLocation 都有同样的取舍，并用"每个字段单独开�
 12. 真 key 下 App 内搜索的正向返回（REST 层目前只验过 `10001` 错误路径）。
 13. **反射清 `mMock` 到底成没成**（B4 的核心未知项）。AnyWhere 那段是空 catch，谁也不知道它在
     Android 16 上是正常工作还是从来没生效过。判据（都会出现在 `logcat | grep mockloc` 或状态页）：
-    `HiddenApiBypass 未生效` ⇒ HAB 6.2 在 API 36 上这条路不通，只能靠 setter/reader hook；
+    `HiddenApiBypass 未生效` ⇒ HAB 6.1 在 API 36 上这条路不通，只能靠 setter/reader hook；
     `未找到 mMock / mIsFromMockProvider 字段` ⇒ 字段改名了；
     `写回 xxx 失败` ⇒ 豁免生效但写入被挡。三条都没打印才算真的通过。
 14. **`GnssStatus.Builder.addSatellite` 的参数形状**：代码按 8/10/12 三种 `parameterCount` 取值顺序，
@@ -562,8 +574,9 @@ FakeLoc/XposedFakeLocation 都有同样的取舍，并用"每个字段单独开�
   ③ 核实到 AnyWhere 清单在 Android 16 上会**静默失效**的四处：`hasEphemeris/hasAlmanac` 真名是
   `*Data`；`Location.putExtra/removeExtra` 已从公开面删除；`GnssStatus.Builder.add(7 参)` 变成
   `addSatellite(12 参，constellationType 在前)`；`registerGnssStatusCallback` 还有 `(Executor, Callback)` 重载。
-  ④ 新依赖 `org.lsposed.hiddenapibypass:hiddenapibypass:6.2`（`implementation`，要在目标进程里跑）——
-  清 `mMock` 字段需要它，AnyWhere 没带。
+  ④ 新依赖 `org.lsposed.hiddenapibypass:hiddenapibypass:**6.1**`（`implementation`，要在目标进程里跑）——
+  清 `mMock` 字段需要它，AnyWhere 没带。**6.2 不能用**：它的 AAR 写 `minCompileSdk=37`，AGP 会拿我们的
+  `compileSdk=36` 比，直接在建 APK 时报失败，而这一步本地类型检查看不见（详见 §3 的 AAR 元数据条）。
   ⑤ 配置契约加 `GNSS / BLIND_WIFI / BLIND_CELL` 三键（CLI `--gnss/--no-gnss`、`--blind-wifi`、`--blind-cell`，
   菜单里只在填了包名时多问一句）；状态页新增模块配置回读与 `Diagnostics` 记录。
   ⑥ `tools/kotlin/ConfigCheck.kt`：在 JVM 上真跑 `Config.refresh()` 吃 CLI `--dry-run` 的原样输出，
