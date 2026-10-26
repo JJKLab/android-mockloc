@@ -259,6 +259,26 @@ requestCellInfoUpdate / registerTelephonyCallback`、Connectivity 层、BLE，�
 把 `de.robv.android.xposed` / `io.github.libxposed` / `org.lsposed` 这些帧抹掉。风控 SDK 找 hook 的第一入口就是异常栈。
 本机它当前报"LSPosed 模块未激活"，所以"成熟工具能不能挪走高德"这个市场验证**还没做**。
 
+**档 3 判死：改写与抹痕都生效（0.4.4，判别性设计）。** 故意让两个来源给不同值——系统 mock 留上海
+`31.24,121.50`，模块配置指北京 `39.9087,116.3975`——然后让模块在被 hook 的进程里自读一次：
+
+```
+(com.autonavi.minimap)                 自检 gps=39.9087,116.3975 mock=false  network=… fused=… mock=false
+(com.autonavi.minimap:locationservice) 同上   （高德 3 个进程、微信 4 个进程，全部一致）
+```
+
+系统侧 `dumpsys location` 仍是 `Location[gps 31.24,121.50 mock]`。同一个进程里读到的是**北京且 mock=false**
+⇒ `getLastKnownLocation` 替换、`isFromMockProvider` 清除、`getProviders` 过滤三件事同时成立。
+
+**但天气 App 的界面没有跟着变（仍显示"上海市"），这不算反证也不算确认**：它的城市来自自己的存量城市列表，
+下拉刷新那次探针一条读取都没录到（说明没真的重新定位）。教训和 A0 那条同源——**显示值 ≠ 读取值**，
+仪器要放在读回那一层，不是放在"某个 App 的界面变了没"。
+
+**于是微信的真实地址有了确定解释**：替换在微信进程里早就生效（0.4.2 起就挂着），它的位置卡片还是真实
+⇒ 微信的位置来自**内嵌腾讯定位 SDK**，不是 `LocationManager`；而那个 SDK 有自己的 Location 类型和
+自己的 `isMock()`。已按 A8 的分层加 `TencentSdk.kt`（钩 `TencentLocationImpl` 的经纬度/精度/`isMock`，
+并把地址文字换成配置里的地点名——只改坐标不改文字正是"地图动了字没动"的那种不一致）。
+
 **0.4.3 第一次上机就抓到三处"仪器本身坏了"**（这正是 `Diagnostics` 要可见的理由——三处都是它自己报出来的）：
 
 | 报出来的话 | 实情 | 修法 |
@@ -543,6 +563,7 @@ PC 端根本写不了 `/data/adb`——收件箱让"只刷模块、不依赖 su"
 | `app/.../MockTrace.kt` | 抹掉系统测试 provider 留下的痕迹（mock 位、extras、`Settings.Secure`、provider 列表、Parcel 路径）|
 | `app/.../Sensors.kt` | 一致性层：伪 `GnssStatus`（含每秒回调）、可选致盲 WiFi/基站 |
 | `app/.../Probe.kt` | `--probe` 打开时的定位 API 调用记录（只记不改值），用来把"该钩什么"变成读日志 |
+| `app/.../TencentSdk.kt` | 微信内嵌腾讯定位 SDK 那一层的替换（它不吃 `LocationManager`，见 A0.1）：`TencentLocationImpl` 的经纬度/精度/`isMock` + 地址文字 |
 | `app/.../SelfTest.kt` | 在**被 hook 的进程里**读回一次 LKL/providers/`mock_location` 并打日志——模块勾不进自己的作用域，这是唯一能证明"改写咬住了"的仪器 |
 | `app/.../MainActivity.kt` | 四页 View：搜索 / 地图点选 / 收藏 / 状态（`selfCheck` + 各 provider 回读） |
 | `app/.../CoordTransform.kt` | `coords.py` 的 Kotlin 移植，与 Python 版对同一批锚点数值一致（477.87 m） |
@@ -713,3 +734,7 @@ FakeLoc/XposedFakeLocation 都有同样的取舍，并用"每个字段单独开�
   （`onPackageReady` 时 `currentApplication()` 还是 null）、AppOps 钩子换成 classdump 出来的真实方法名
   （`checkOp` 家族，`checkOperation` 那组这版运行时没有）、探针调用方过滤补 hook 框架帧并一次给 3 帧。
   判别性测试就位：系统 mock 留上海、模块配置指北京，两边值不同，`自检(进程内读回)` 一行即可判死改写有没有咬住。
+- **v0.4.5**（2026-10-26）判别性测试跑完并**判死档 3 生效**（A0.1）：高德 3 个进程 + 微信 4 个进程读回全部
+  是配置的北京且 `mock=false`，而系统侧仍是上海 `mock=true`。天气界面没变不构成反证（显示值来自存量城市，
+  那次下拉刷新探针一条读取都没录到）——教训记成"仪器要放在读回层，不是放在某个 App 的界面"。
+  据此确认微信的位置来自内嵌腾讯 SDK，新增 `TencentSdk.kt` 补那一层的替换。
