@@ -451,6 +451,14 @@ cmd location providers send-extra-command <PROVIDER> <COMMAND>
 | 高德地图 `com.autonavi.minimap` (172 MB, 8 dex) | **无**（`com/amap/api/location` 命中 0） | 自家引擎 `com/amap/location/api/ILocationService`、`com/amap/location/type/location/Location`、`INetworkLocationListener`、`VALocationResult` | `isMock` 17 次、`isFromMockProvider` 1 次 |
 | 微信 `com.tencent.mm` (219 MB, 18 dex) | **有** `com/tencent/map/geolocation`（20 次）、`TencentLocation`（28 次） | 腾讯定位 SDK + `com/tencent/mm/plugin/location/model/LocationInfo` | `isMock` 11 次 |
 
+> **2026-10-26 更正这张表的读法**：上表的"次数"是**裸字节子串**命中，会算进字符串表里的碎片，
+> **不等于类定义存在**。按类型描述符 `Lcom/tencent/map/geolocation/…;` 精确查，微信 18 个 dex 里的
+> 真实定义在 **`com.tencent.map.geolocation.sapp.*`**（`TencentLocation`/`TencentLocationListener`/
+> `TencentLocationManager`/`TencentLocationRequest`/`TencentLocationManagerOptions`/`TencentLocationUtils`/
+> `TencentPoi`，定义在 `classes14.dex`），而且**没有 `TencentLocationImpl`**——所以照公开 SDK 的类名去钩，
+> 本模块第一版和 LocationSpoofer 的 `TencentLocation SDK not found` 都会落空。结论：**引用计数 ≠ 定义，
+> 要判"有没有这个类"必须解析 `class_defs`。**
+
 推论与打法：
 
 1. **给高德地图 hook `AMapLocation` 是错的**——它压根没有这个类。FakeLoc 的 `MapSdkHooks.kt` 覆盖的是
@@ -505,6 +513,13 @@ autoHotReload=true`（比我们多一项热重载）；`java_init.list` 指向 `
    也就是说"想让高德地图挪位置"这件事，成熟工具同样没有捷径，只有伪造射频输入与 GNSS 原始流。
 2. **它 README 声称的"调用栈清洗"在这个 APK 里不存在。** 全 smali 树里没有任何
    `"getStackTrace"` 常量、也没有钩 `Thread`/`Throwable` 的地方 ⇒ 文档超前于实现，别照着做。
+
+**据此落地的第一件（v0.4.6）**：微信那一层不靠实现类名，改成**只依赖接口**的接管——
+`TencentLocation` 与 `TencentLocationListener` 经 DEX `access_flags` 确认都是 interface，于是
+① 钩 `TencentLocationManager` 上**所有以 listener 为参数**的方法（不猜方法名与签名）；
+② 把 listener 换成动态代理，在 `onLocationChanged` 里把 SDK 的位置对象换成 `TencentLocation` 的
+`Proxy`，按**运行时方法名**应答经纬度/精度/`isMock`/地址文字，其余方法原样转发给真对象。
+这样 SDK 换版本、实现类被混淆都不影响接管点，且 SDK 不存在的 App（高德）只是安静跳过而不是报错。
 
 **据此排的本项目待办（按性价比）**：
 ① 便宜且直接补无痕面：`AppOpsManager.checkOperation/noteOperation` 的 `OPSTR_MOCK_LOCATION`、
@@ -738,3 +753,7 @@ FakeLoc/XposedFakeLocation 都有同样的取舍，并用"每个字段单独开�
   是配置的北京且 `mock=false`，而系统侧仍是上海 `mock=true`。天气界面没变不构成反证（显示值来自存量城市，
   那次下拉刷新探针一条读取都没录到）——教训记成"仪器要放在读回层，不是放在某个 App 的界面"。
   据此确认微信的位置来自内嵌腾讯 SDK，新增 `TencentSdk.kt` 补那一层的替换。
+- **v0.4.6**（2026-10-26）`TencentSdk` 第一版落空并给出正确形状：微信内嵌的是 **`com.tencent.map.geolocation.sapp.*`**
+  且**没有 `TencentLocationImpl`**（A7 那张表的"子串计数"被更正为"不等于类定义"）。改成只依赖接口的接管
+  （钩 `TencentLocationManager` 所有带 listener 参数的方法 + `Proxy` 换掉回调里的 `TencentLocation`），
+  方法名与签名都不再需要猜；SDK 不存在时安静跳过。类型检查抓到 `String.ifEmpty` 与 `Any?` 转发两处类型错。
