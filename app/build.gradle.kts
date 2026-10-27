@@ -17,7 +17,7 @@ android {
         // CI passes -PgitSha=<7 chars> so `dumpsys package com.mockloc | grep versionName` on the
         // phone identifies the exact build; without it every artifact says the same version and
         // "is the new code actually installed?" becomes guesswork.
-        versionName = "0.6.0" + (project.findProperty("gitSha") as String?)?.let { "-$it" }.orEmpty()
+        versionName = "0.6.1" + (project.findProperty("gitSha") as String?)?.let { "-$it" }.orEmpty()
     }
 
     buildTypes {

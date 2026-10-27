@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.view.Gravity
 import android.view.View
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
@@ -52,16 +53,22 @@ class MainActivity : Activity() {
     private lateinit var keyField: EditText
     private lateinit var queryField: EditText
     private lateinit var pasteField: EditText
-    private lateinit var policyList: ListView
+    private lateinit var policyRows: LinearLayout
+    private lateinit var policyFilter: EditText
+    private lateinit var policyCount: TextView
     private lateinit var appOpChipRow: LinearLayout
-    private lateinit var hitAdapter: ArrayAdapter<String>
+    private lateinit var hitRows: LinearLayout
     private lateinit var placeAdapter: ArrayAdapter<String>
 
     private var hits: List<Hit> = emptyList()
     private var pickedWgs: DoubleArray? = null
     private var marker: Marker? = null
     private var pasteGcj = true
-    private var policyPackages: List<String> = emptyList()
+
+    /** Everything the policy list knows, kept out of the views so filtering is cheap. */
+    private var policyAll: List<Pair<String, String>> = emptyList()
+    private val policyChecked = linkedSetOf<String>()
+    private var policyIncludeSystem = false
     private var policyLoaded = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -142,6 +149,9 @@ class MainActivity : Activity() {
                         renderAppOpChips()
                         if (!policyLoaded) {
                             policyLoaded = true
+                            // A Scope of All cannot be shown as ticked packages, so start from the
+                            // saved list and let the user re-narrow it explicitly.
+                            policyChecked.addAll(bridge.blindScope().packages)
                             loadPolicyList()
                         }
                     }
@@ -220,12 +230,10 @@ class MainActivity : Activity() {
             setOnClickListener { runSearch() }
         })
         searchCard.addView(goRow)
-        hitAdapter = ArrayAdapter(this, android.R.layout.simple_list_item_1, mutableListOf())
-        searchCard.addView(ListView(this).apply {
-            adapter = hitAdapter
-            layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, ui.dp(200))
-            onItemClickListener = AdapterView.OnItemClickListener { _, _, pos, _ -> onPickHit(pos) }
-        })
+        // Same reason as the policy list: a ListView inside this ScrollView cannot scroll, so
+        // anything past the first screenful of results was unreachable.
+        hitRows = ui.column()
+        searchCard.addView(hitRows)
         searchCard.addView(ui.hint("点一条即注入；高德给的是 GCJ-02，注入前自动反算 WGS-84"))
         column.addView(searchCard)
 
@@ -341,17 +349,39 @@ class MainActivity : Activity() {
         policy.addView(ui.title("哪些 App 要抽空输入"))
         policy.addView(ui.body(
             "勾上的包会屏蔽自己的 WiFi/基站扫描结果，逼它落回系统定位——实测只有高德这类" +
-                "「自己算路」的 App 需要。没勾的 App 不受影响。\n" +
-                "标记：①系统provider ②抽空输入 ③进进程 未测",
+                "「自己算路」的 App 需要。没勾的 App 不受影响。",
         ))
-        policyList = ListView(this).apply {
-            choiceMode = ListView.CHOICE_MODE_MULTIPLE
-            layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, ui.dp(300))
+        val filterRow = ui.row()
+        policyFilter = EditText(this).apply {
+            hint = "过滤名称或包名"
+            isSingleLine = true
+            addTextChangedListener(object : android.text.TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+                override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+                override fun afterTextChanged(s: android.text.Editable?) = renderPolicyRows()
+            })
         }
-        policyList.adapter = ArrayAdapter(
-            this, android.R.layout.simple_list_item_multiple_choice, mutableListOf<String>(),
-        )
-        policy.addView(policyList)
+        filterRow.addView(policyFilter, ui.fill())
+        filterRow.addView(android.widget.CheckBox(this).apply {
+            text = "含系统"
+            isChecked = policyIncludeSystem
+            setOnCheckedChangeListener { _, on ->
+                policyIncludeSystem = on
+                renderPolicyRows()
+            }
+        })
+        policy.addView(filterRow)
+        policyCount = TextView(this).apply {
+            textSize = 12f
+            setTextColor(0xFF6B6B6B.toInt())
+            setPadding(0, ui.dp(4), 0, ui.dp(4))
+        }
+        policy.addView(policyCount)
+        // Rows live directly in the page's scroll column. A ListView inside a ScrollView measures
+        // itself to one screenful and then fights the parent for the drag, which is how the first
+        // version ended up showing about six apps with no way to scroll.
+        policyRows = ui.column()
+        policy.addView(policyRows)
         val policyButtons = ui.row()
         policyButtons.addView(Button(this).apply {
             text = "保存"
@@ -362,7 +392,8 @@ class MainActivity : Activity() {
             text = "清空"
             isAllCaps = false
             setOnClickListener {
-                for (i in 0 until policyList.count) policyList.setItemChecked(i, false)
+                policyChecked.clear()
+                renderPolicyRows()
             }
         }, ui.fill())
         policy.addView(policyButtons)
@@ -385,48 +416,69 @@ class MainActivity : Activity() {
     }
 
     private fun loadPolicyList() {
-        val installed = runCatching {
-            // One binder call for the whole list: resolving permissions per package took ~600
-            // round trips and froze the tab on first open.
-            packageManager.getInstalledPackages(
-                android.content.pm.PackageManager.GET_PERMISSIONS,
-            )
-                .mapNotNull { info ->
-                    val permissions = info.requestedPermissions
-                    if (permissions == null || !(permissions.contains(
-                            android.Manifest.permission.ACCESS_FINE_LOCATION
-                        ) || permissions.contains(
-                            android.Manifest.permission.ACCESS_COARSE_LOCATION
-                        ))
-                    ) {
-                        return@mapNotNull null
-                    }
-                    val pkg = info.packageName
-                    if (pkg == packageName) return@mapNotNull null
-                    pkg to runCatching {
-                        packageManager.getApplicationLabel(info.applicationInfo!!).toString()
-                    }.getOrDefault(pkg)
-                }
-                .sortedBy { it.second }
+        val packages = runCatching {
+            packageManager.getInstalledPackages(android.content.pm.PackageManager.GET_PERMISSIONS)
         }.getOrElse { emptyList() }
-        policyPackages = installed.map { it.first }
-        val chosen = bridge.blindScope()
-        (policyList.adapter as ArrayAdapter<String>).apply {
-            clear()
-            addAll(installed.map { (pkg, name) -> "$name ${Tiers.needsOf(pkg).label.take(1)}  $pkg" })
-            notifyDataSetChanged()
+        policyAll = packages.mapNotNull { info ->
+            val pkg = info.packageName
+            if (pkg == packageName) return@mapNotNull null
+            val permissions = info.requestedPermissions ?: return@mapNotNull null
+            val asksForLocation =
+                android.Manifest.permission.ACCESS_FINE_LOCATION in permissions ||
+                    android.Manifest.permission.ACCESS_COARSE_LOCATION in permissions
+            if (!asksForLocation) return@mapNotNull null
+            val appInfo = info.applicationInfo
+            // A phone has hundreds of platform packages that nominally ask for location; listing
+            // them buries the handful the user could possibly mean. Updated system apps stay in,
+            // because preinstalled OEM maps and delivery apps are exactly those.
+            val system = appInfo != null &&
+                (appInfo.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0 &&
+                (appInfo.flags and android.content.pm.ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) == 0
+            if (system && !policyIncludeSystem) return@mapNotNull null
+            val label = runCatching {
+                packageManager.getApplicationLabel(appInfo!!).toString()
+            }.getOrDefault(pkg)
+            pkg to label
+        }.sortedBy { it.second }
+        renderPolicyRows()
+    }
+
+    private fun renderPolicyRows() {
+        val needle = policyFilter.text.toString().trim().lowercase()
+        val shown = policyAll.filter { (pkg, label) ->
+            needle.isEmpty() || label.lowercase().contains(needle) || pkg.lowercase().contains(needle)
         }
-        installed.forEachIndexed { index, (pkg, _) ->
-            policyList.setItemChecked(index, chosen.covers(pkg))
+        policyRows.removeAllViews()
+        shown.forEach { (pkg, label) ->
+            val row = android.widget.CheckBox(this).apply {
+                text = "$label  ${Tiers.needsOf(pkg).label.take(1)}\n$pkg"
+                textSize = 13f
+                isChecked = pkg in policyChecked
+                setPadding(0, ui.dp(6), 0, ui.dp(6))
+                setOnCheckedChangeListener { _, on ->
+                    if (on) policyChecked.add(pkg) else policyChecked.remove(pkg)
+                }
+            }
+            policyRows.addView(row, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT,
+            ))
+        }
+        if (shown.isEmpty()) {
+            policyRows.addView(ui.body("没有匹配的 App（试试勾「含系统」）"))
+        }
+        policyCount.text = buildString {
+            append("共 ${shown.size} 个可选项，已选 ${policyChecked.size} 个")
+            if (!policyIncludeSystem) append("（已隐藏系统 App）")
+            // "作用域内全部" is not expressible as a ticked list, so saving from here would quietly
+            // narrow it. Say so instead of letting the write look like a no-op that lost their setting.
+            if (bridge.blindScope().mode == com.mockloc.Scope.Mode.ALL) {
+                append("\n当前生效的是「作用域内全部」；在这里保存会改成只致盲勾上的包")
+            }
         }
     }
 
     private fun saveBlindScope() {
-        val checked = policyList.checkedItemPositions
-        val picked = (0 until checked.size()).asSequence()
-            .filter { checked.valueAt(it) }
-            .mapNotNull { policyPackages.getOrNull(checked.keyAt(it)) }
-            .toList()
+        val picked = policyChecked.toList()
         bridge.setBlindScope(Scope.only(picked))
         toast(
             if (picked.isEmpty()) "已清空：没有 App 需要抽空输入"
@@ -575,6 +627,24 @@ class MainActivity : Activity() {
 
     // ---------------------------------------------------------------- actions
 
+    /** One tappable row per geocode hit, rendered inline (see searchPage for why not a ListView). */
+    private fun renderHits() {
+        hitRows.removeAllViews()
+        hits.forEachIndexed { index, hit ->
+            hitRows.addView(Button(this).apply {
+                text = hit.label
+                isAllCaps = false
+                gravity = Gravity.START
+                setBackgroundColor(0x00000000)
+                setTextColor(0xFF1F6FEB.toInt())
+                setOnClickListener { onPickHit(index) }
+            })
+        }
+        if (hits.isEmpty()) {
+            hitRows.addView(ui.body("还没有结果：填好 key 后搜一个地点"))
+        }
+    }
+
     private fun runSearch() {
         val key = keyField.text.toString().trim()
         val query = queryField.text.toString().trim()
@@ -586,8 +656,7 @@ class MainActivity : Activity() {
                 val found = AmapSearch.geocode(key, query)
                 runOnUiThread {
                     hits = found
-                    hitAdapter.clear()
-                    hitAdapter.addAll(found.map { it.label })
+                    renderHits()
                     if (found.isEmpty()) toast("没有解析结果")
                 }
             } catch (t: Throwable) {
