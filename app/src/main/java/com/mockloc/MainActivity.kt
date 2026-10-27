@@ -4,7 +4,7 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
-import android.view.Gravity
+import android.util.SparseBooleanArray
 import android.view.View
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
@@ -24,12 +24,16 @@ import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.MapEventsOverlay
 import org.osmdroid.views.overlay.Marker
 import kotlin.concurrent.thread
+import kotlin.math.abs
 
 /**
- * Four tabs, four jobs: search, tap the map, switch between saved points, and read what the device
- * is actually reporting. Views rather than Compose on purpose - this file is compiled and checked
- * locally against android.jar and osmdroid's own classes, which is the only verification available
- * to a project that is never built on a dev machine.
+ * Five tabs: search, pick on the map, favourites, which apps are affected, and what the device is
+ * actually reporting. Views rather than Compose on purpose - this file is compiled and type-checked
+ * locally against android.jar and osmdroid's classes, the only verification available to a project
+ * that is never built on a dev machine.
+ *
+ * Cards and status pills replace the original wall of text: users read "注入: 未生效" as "模块没装"
+ * when those are two unrelated facts.
  */
 class MainActivity : Activity() {
 
@@ -38,19 +42,26 @@ class MainActivity : Activity() {
 
     private val prefs by lazy { getSharedPreferences(PREFS, Context.MODE_PRIVATE) }
     private val places by lazy { Places(this) }
+    private val bridge by lazy { ModuleBridge(this) }
+    private val ui by lazy { Ui(this) }
 
     private lateinit var flipper: ViewFlipper
     private lateinit var map: MapView
     private lateinit var mapInfo: TextView
     private lateinit var statusText: TextView
+    private lateinit var tierChips: LinearLayout
     private lateinit var keyField: EditText
     private lateinit var queryField: EditText
+    private lateinit var pasteField: EditText
+    private lateinit var scopeList: ListView
     private lateinit var hitAdapter: ArrayAdapter<String>
     private lateinit var placeAdapter: ArrayAdapter<String>
 
     private var hits: List<Hit> = emptyList()
     private var pickedWgs: DoubleArray? = null
     private var marker: Marker? = null
+    private var pasteGcj = true
+    private var scopePackages: List<String> = emptyList()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -60,8 +71,8 @@ class MainActivity : Activity() {
         map.setTileSource(AmapTiles())
         map.setMultiTouchControls(true)
         map.controller.setZoom(11.0)
-        // setCenter before the first layout is dropped by osmdroid, which leaves the view parked
-        // at 0,0 in the Gulf of Guinea.
+        // setCenter before the first layout is dropped by osmdroid, which leaves the view parked at
+        // 0,0 in the Gulf of Guinea.
         map.post { centerOn(31.2304, 121.4737) }
         map.getOverlays().add(
             MapEventsOverlay(object : MapEventsReceiver {
@@ -73,6 +84,7 @@ class MainActivity : Activity() {
                 override fun longPressHelper(p: GeoPoint): Boolean = false
             })
         )
+        loadScopeList()
     }
 
     override fun onResume() {
@@ -92,20 +104,27 @@ class MainActivity : Activity() {
     private fun buildUi(): View {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            // targetSdk 35+ forces edge-to-edge on Android 15/16: without this the tab row is
-            // drawn underneath the status bar and the app looks like it has no navigation at all.
+            // targetSdk 35+ forces edge-to-edge on Android 15/16: without this the tab row is drawn
+            // under the status bar and the app looks like it has no navigation at all.
             fitsSystemWindows = true
+            setBackgroundColor(0xFFF4F5F7.toInt())
         }
+        root.addView(header())
+
         flipper = ViewFlipper(this)
         // ViewFlipper is a FrameLayout: passing LinearLayout.LayoutParams here gets converted and
-        // the conversion keeps height=0 while dropping weight, so every page measured zero pixels
-        // tall and the app looked like a blank screen.
+        // the conversion keeps height=0 while dropping weight, which is how a whole page measured
+        // zero pixels and the app looked blank.
         flipper.addView(searchPage(), pageParams())
         flipper.addView(mapPage(), pageParams())
         flipper.addView(placesPage(), pageParams())
+        flipper.addView(scopePage(), pageParams())
         flipper.addView(statusPage(), pageParams())
 
-        val tabRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val tabRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(ui.dp(8), 0, ui.dp(8), 0)
+        }
         TABS.forEachIndexed { index, title ->
             tabRow.addView(Button(this).apply {
                 text = title
@@ -114,13 +133,35 @@ class MainActivity : Activity() {
                 // background or text, which made a zero-height content bug look like a dead app.
                 setBackgroundColor(0xFF1F6FEB.toInt())
                 setTextColor(0xFFFFFFFF.toInt())
-                setPadding(0, 28, 0, 28)
-                setOnClickListener { flipper.displayedChild = index }
-            }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+                setPadding(0, ui.dp(10), 0, ui.dp(10))
+                setOnClickListener {
+                    flipper.displayedChild = index
+                    if (index == TABS.lastIndex) refreshStatus()
+                }
+            }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                setMargins(ui.dp(3), ui.dp(6), ui.dp(3), ui.dp(4))
+            })
         }
         root.addView(tabRow)
         root.addView(flipper, weightParams())
         return root
+    }
+
+    private fun header(): View = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setBackgroundColor(0xFF1F6FEB.toInt())
+        setPadding(ui.dp(16), ui.dp(14), ui.dp(16), ui.dp(14))
+        addView(TextView(this@MainActivity).apply {
+            text = "mockloc"
+            textSize = 20f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setTextColor(0xFFFFFFFF.toInt())
+        })
+        addView(TextView(this@MainActivity).apply {
+            text = "系统级虚拟定位 · 档1 免root / 档2 root / 档3 无痕"
+            textSize = 12f
+            setTextColor(0xD9FFFFFF.toInt())
+        })
     }
 
     private fun weightParams() =
@@ -130,56 +171,96 @@ class MainActivity : Activity() {
         FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT,
     )
 
+    private fun scrollColumn(): Pair<ScrollView, LinearLayout> {
+        val column = ui.column()
+        return ScrollView(this).apply {
+            addView(column)
+            isFillViewport = true
+        } to column
+    }
+
     private fun searchPage(): View {
-        val page = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val (scroll, column) = scrollColumn()
+
+        val keyCard = ui.card()
+        keyCard.addView(ui.title("高德 Web服务 key"))
         keyField = EditText(this).apply {
-            hint = "高德 Web服务 key"
+            hint = "只存本机私有 prefs，不写 world-readable 配置"
             setText(prefs.getString(KEY_AMAP, ""))
             isSingleLine = true
         }
-        queryField = EditText(this).apply {
-            hint = "地点，如 东方明珠"
-            isSingleLine = true
-        }
-        val goRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        goRow.addView(queryField, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        goRow.addView(Button(this).apply {
-            text = "搜索"
-            isAllCaps = false
-            setOnClickListener { runSearch() }
-        })
-        val saveRow = Button(this).apply {
+        keyCard.addView(keyField)
+        keyCard.addView(Button(this).apply {
             text = "保存 key"
             isAllCaps = false
             setOnClickListener {
                 prefs.edit().putString(KEY_AMAP, keyField.text.toString().trim()).apply()
                 toast("key 已存到本机私有配置")
             }
-        }
-        val list = ListView(this)
+        })
+        column.addView(keyCard)
+
+        val searchCard = ui.card()
+        searchCard.addView(ui.title("搜地点"))
+        val goRow = ui.row()
+        queryField = EditText(this).apply { hint = "地点，如 东方明珠"; isSingleLine = true }
+        goRow.addView(queryField, ui.fill())
+        goRow.addView(Button(this).apply {
+            text = "搜索"
+            isAllCaps = false
+            setOnClickListener { runSearch() }
+        })
+        searchCard.addView(goRow)
         hitAdapter = ArrayAdapter(this, android.R.layout.simple_list_item_1, mutableListOf())
-        list.adapter = hitAdapter
-        list.onItemClickListener = AdapterView.OnItemClickListener { _, _, pos, _ -> onPickHit(pos) }
-        page.addView(keyField)
-        page.addView(goRow)
-        page.addView(saveRow)
-        page.addView(list, weightParams())
-        page.addView(hint("点一条即注入；结果坐标是高德 GCJ-02，注入前自动反算 WGS-84"))
-        return page
+        searchCard.addView(ListView(this).apply {
+            adapter = hitAdapter
+            layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, ui.dp(200))
+            onItemClickListener = AdapterView.OnItemClickListener { _, _, pos, _ -> onPickHit(pos) }
+        })
+        searchCard.addView(ui.hint("点一条即注入；高德给的是 GCJ-02，注入前自动反算 WGS-84"))
+        column.addView(searchCard)
+
+        val pasteCard = ui.card()
+        pasteCard.addView(ui.title("粘贴坐标"))
+        val pasteRow = ui.row()
+        pasteField = EditText(this).apply { hint = "31.239703,121.499733"; isSingleLine = true }
+        pasteRow.addView(pasteField, ui.fill())
+        pasteRow.addView(Button(this).apply {
+            text = "GCJ-02"
+            isAllCaps = false
+            setOnClickListener {
+                pasteGcj = !pasteGcj
+                text = if (pasteGcj) "GCJ-02" else "WGS-84"
+            }
+        })
+        pasteCard.addView(pasteRow)
+        pasteCard.addView(Button(this).apply {
+            text = "按这组坐标注入"
+            isAllCaps = false
+            setOnClickListener { injectPasted() }
+        })
+        pasteCard.addView(ui.hint("国内网页地图上抄下来的一般是 GCJ-02；选 GCJ-02 时自动反算成 WGS-84"))
+        column.addView(pasteCard)
+        return scroll
     }
 
     private fun mapPage(): View {
         val page = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         map = MapView(this)
-        mapInfo = TextView(this).apply { text = "点地图任意位置选点" }
-        val actions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        mapInfo = TextView(this).apply {
+            text = "点地图任意位置选点"
+            textSize = 13f
+            setTextColor(0xFF444444.toInt())
+            setPadding(ui.dp(14), ui.dp(8), ui.dp(14), ui.dp(8))
+        }
+        val actions = ui.row().apply { setPadding(ui.dp(10), ui.dp(6), ui.dp(10), ui.dp(8)) }
         actions.addView(Button(this).apply {
             text = "注入"
             isAllCaps = false
             setOnClickListener { injectPicked("地图点选") }
-        })
+        }, ui.fill())
         actions.addView(Button(this).apply {
-            text = "收藏"
+            text = "收藏这个点"
             isAllCaps = false
             setOnClickListener {
                 val w = pickedWgs ?: return@setOnClickListener toast("先点一下地图")
@@ -187,7 +268,7 @@ class MainActivity : Activity() {
                 reloadPlaces()
                 toast("已收藏")
             }
-        })
+        }, ui.fill())
         page.addView(map, weightParams())
         page.addView(mapInfo)
         page.addView(actions)
@@ -209,39 +290,148 @@ class MainActivity : Activity() {
             true
         }
         page.addView(list, weightParams())
-        page.addView(hint("点=注入   长按=删除"))
+        page.addView(ui.hint("点 = 注入    长按 = 删除    收藏存的就是 WGS-84，不再转换"))
         return page
+    }
+
+    private fun scopePage(): View {
+        val (scroll, column) = scrollColumn()
+
+        val card = ui.card()
+        card.addView(ui.title("哪些 App 用假位置"))
+        card.addView(ui.body(
+            "勾上的包名写进模块配置，没勾的保持真实位置。这只是模块这一层的名单，" +
+                "LSPosed 里的作用域还要另外勾一次。",
+        ))
+        scopeList = ListView(this).apply {
+            choiceMode = ListView.CHOICE_MODE_MULTIPLE
+            layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, ui.dp(340))
+        }
+        scopeList.adapter = ArrayAdapter(
+            this, android.R.layout.simple_list_item_multiple_choice, mutableListOf<String>(),
+        )
+        card.addView(scopeList)
+        val buttons = ui.row()
+        buttons.addView(Button(this).apply {
+            text = "保存名单"
+            isAllCaps = false
+            setOnClickListener { saveTargets() }
+        }, ui.fill())
+        buttons.addView(Button(this).apply {
+            text = "全不选"
+            isAllCaps = false
+            setOnClickListener { for (i in 0 until scopeList.count) scopeList.setItemChecked(i, false) }
+        }, ui.fill())
+        card.addView(buttons)
+        column.addView(card)
+
+        val note = ui.card()
+        note.addView(ui.title("LSPosed 作用域建议"))
+        note.addView(ui.body(
+            "微信：com.tencent.mm\n" +
+                "高德地图：com.autonavi.minimap\n" +
+                "厂商融合定位（本机是 Oplus）：com.oplus.location、com.oplus.locationproxy\n" +
+                "系统框架：可以勾，但本模块故意不 hook android 进程——改 system_server 的风险不对等",
+        ))
+        column.addView(note)
+        return scroll
     }
 
     private fun statusPage(): View {
         val page = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        statusText = TextView(this)
-        val scroll = ScrollView(this)
-        scroll.addView(statusText)
-        val actions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        tierChips = ui.chipRow().apply { setPadding(ui.dp(12), ui.dp(10), ui.dp(12), 0) }
+        statusText = TextView(this).apply { setPadding(ui.dp(14), ui.dp(6), ui.dp(14), ui.dp(6)) }
+        val actions = ui.row().apply { setPadding(ui.dp(10), ui.dp(6), ui.dp(10), ui.dp(8)) }
         actions.addView(Button(this).apply {
             text = "刷新"
             isAllCaps = false
             setOnClickListener { refreshStatus() }
-        })
+        }, ui.fill())
         actions.addView(Button(this).apply {
             text = "停止注入"
             isAllCaps = false
             setOnClickListener {
                 startService(Intent(this@MainActivity, MockService::class.java)
                     .putExtra(MockService.EXTRA_CMD, "stop"))
+                bridge.clear()
                 refreshStatus()
             }
-        })
-        page.addView(scroll, weightParams())
+        }, ui.fill())
+        page.addView(tierChips)
+        page.addView(ScrollView(this).apply { addView(statusText) }, weightParams())
         page.addView(actions)
         return page
     }
 
-    private fun hint(text: String) = TextView(this).apply {
-        this.text = text
-        textSize = 12f
-        setPadding(16, 8, 16, 8)
+    // ---------------------------------------------------------------- status
+
+    private fun refreshStatus() {
+        val last = prefs.getString(KEY_LAST, "无")
+        val label = prefs.getString(KEY_LAST_LABEL, "")
+        val fixes = readback()
+        Config.refresh()
+        renderChips(fixes.any { "mock=true" in it })
+
+        val mismatch = Config.enabled && last != "无" &&
+            (abs(Config.centerLat - lastLat()) > 1e-3 || abs(Config.centerLng - lastLng()) > 1e-3)
+
+        statusText.text = buildString {
+            append("当前坐标（本 App 读回）\n")
+            fixes.forEach { append("  $it\n") }
+            if (mismatch) {
+                append("\n⚠ App 选点与模块配置不一致\n")
+                append("  App : $label $last\n")
+                append("  模块: ${Config.label} ${"%.5f".format(Config.centerLat)},${"%.5f".format(Config.centerLng)}\n")
+                append("  档 3 会用模块那份覆盖，所以目标 App 可能仍显示模块里的点。\n")
+            }
+            append("\n模块配置（${Config.DEFAULT_PATH}）\n")
+            append("  开关=${onOff(Config.enabled)} 全局=${onOff(Config.global)} 卫星=${onOff(Config.gnssSpoof)} ")
+            append("致盲=${onOff(Config.blindWifi)}/${onOff(Config.blindCell)} 探针=${onOff(Config.probe)}\n")
+            append("  作用包名: ${if (Config.targets.isEmpty()) "LSPosed 作用域内全部" else Config.targets.joinToString()}\n")
+            append("  读回: ${Config.lastError ?: "正常（写入于 ${Config.lastLoadedAgo}ms 前）"}\n")
+            append("\n把 App 选点同步给模块（二选一）\n")
+            append("  PC  : python tools/mockloc.py sync\n")
+            append("  免PC: 刷 mockloc-root.zip，模块循环会自己搬\n")
+            val notes = Diagnostics.snapshot()
+            if (notes.isNotEmpty()) {
+                append("\n本进程挂钩记录（目标进程里的同类记录看 logcat 的 mockloc tag）\n")
+                notes.forEach { append("  $it\n") }
+            }
+            append("\n注：以上只反映本 App 读到的值。目标 App 认不认，要在它里面主动发起一次定位请求、看返回坐标\n")
+        }
+    }
+
+    private fun renderChips(mockActive: Boolean) {
+        tierChips.removeAllViews()
+        tierChips.addView(ui.chip("档1 系统注入", if (mockActive) Ui.State.OK else Ui.State.OFF))
+        tierChips.addView(ui.chip("档2 root", if (Config.global) Ui.State.OK else Ui.State.OFF))
+        // A grey 档3 pill means "this process is not in the module's scope", which is the normal
+        // configuration - not "the module is broken". Conflating those two cost a debugging round.
+        tierChips.addView(ui.chip("档3 无痕(本进程)", if (selfCheck()) Ui.State.OK else Ui.State.OFF))
+        if (!selfCheck()) tierChips.addView(ui.chip("本 App 未入作用域＝正常", Ui.State.OFF))
+    }
+
+    private fun lastLat(): Double =
+        prefs.getString(KEY_LAST, "")?.substringBefore(',')?.toDoubleOrNull() ?: 0.0
+
+    private fun lastLng(): Double =
+        prefs.getString(KEY_LAST, "")?.substringAfter(',', "")?.toDoubleOrNull() ?: 0.0
+
+    private fun onOff(value: Boolean) = if (value) "开" else "关"
+
+    // Both accessors are shown on purpose: older apps still call the deprecated one, and the whole
+    // point of this screen is to see which flag a target app would be reading.
+    @Suppress("DEPRECATION")
+    private fun readback(): List<String> {
+        val lm = getSystemService(LOCATION_SERVICE) as? android.location.LocationManager
+        return listOf("gps", "fused", "network", "passive").map { name ->
+            val line = runCatching {
+                val loc = lm?.getLastKnownLocation(name)
+                if (loc == null) "null"
+                else "${"%.6f".format(loc.latitude)},${"%.6f".format(loc.longitude)} acc=${loc.accuracy} mock=${loc.isFromMockProvider}"
+            }.getOrElse { "需授权（${it.javaClass.simpleName}）" }
+            "$name : $line"
+        }
     }
 
     // ---------------------------------------------------------------- actions
@@ -259,7 +449,7 @@ class MainActivity : Activity() {
                     hits = found
                     hitAdapter.clear()
                     hitAdapter.addAll(found.map { it.label })
-                    if (found.isEmpty()) toast("没有解析结果") else flipper.displayedChild = 0
+                    if (found.isEmpty()) toast("没有解析结果")
                 }
             } catch (t: Throwable) {
                 runOnUiThread { toast("失败：${t.message}") }
@@ -272,6 +462,19 @@ class MainActivity : Activity() {
         val w = CoordTransform.gcj02ToWgs84(hit.latGcj, hit.lngGcj)
         centerOn(w[0], w[1])
         inject(w[0], w[1], hit.name)
+    }
+
+    private fun injectPasted() {
+        val parts = pasteField.text.toString().split(',', '，')
+        if (parts.size != 2) return toast("格式：纬度,经度")
+        val a = parts[0].trim().toDoubleOrNull()
+        val b = parts[1].trim().toDoubleOrNull()
+        if (a == null || b == null) return toast("坐标读不懂")
+        // Accept either order: what people copy off a Chinese map is usually 经度,纬度.
+        val (lat, lng) = if (abs(a) <= 90.0) a to b else b to a
+        val w = if (pasteGcj) CoordTransform.gcj02ToWgs84(lat, lng) else doubleArrayOf(lat, lng)
+        centerOn(w[0], w[1])
+        inject(w[0], w[1], "粘贴坐标")
     }
 
     private fun onMapTap(point: GeoPoint) {
@@ -300,6 +503,8 @@ class MainActivity : Activity() {
             .putString(KEY_LAST_LABEL, label)
             .putString(KEY_LAST, "%.7f,%.7f".format(lat, lng))
             .apply()
+        // Same point into the module's channel, so 档 3 stops disagreeing with 档 1 (ModuleBridge).
+        bridge.publish(lat, lng, label)
         startForegroundService(
             Intent(this, MockService::class.java)
                 .putExtra(MockService.EXTRA_CMD, "start")
@@ -323,56 +528,33 @@ class MainActivity : Activity() {
         placeAdapter.addAll(places.all().map { it.label })
     }
 
-    private fun refreshStatus() {
-        val last = prefs.getString(KEY_LAST, "无")
-        val label = prefs.getString(KEY_LAST_LABEL, "")
-        val fixes = readback()
-        Config.refresh()
-        statusText.text = buildString {
-            appendLine("系统注入 : ${if (fixes.any { "mock=true" in it }) "生效中" else "未注入"}")
-            appendLine("无痕模块 : ${if (selfCheck()) "已加载" else "未加载（需 LSPosed）"}")
-            appendLine("最近 : $label $last")
-            appendLine("----")
-            fixes.forEach { appendLine(it) }
-            appendLine("----")
-            // What the module in every other process is going to read next time it refreshes.
-            appendLine("模块开关 : ${onOff(Config.enabled)} 全局=${onOff(Config.global)}")
-            appendLine("作用包名 : ${if (Config.targets.isEmpty()) "LSPosed 作用域内全部" else Config.targets.joinToString()}")
-            appendLine("伪造卫星 : ${onOff(Config.gnssSpoof)}  致盲WiFi/基站 : ${onOff(Config.blindWifi)}/${onOff(Config.blindCell)}")
-            appendLine("API 探针 : ${onOff(Config.probe)}（开时目标 App 的定位调用会进 logcat）")
-            appendLine("配置来源 : ${Config.DEFAULT_PATH}")
-            appendLine(
-                if (Config.lastError == null) "读取正常（写入于 ${Config.lastLoadedAgo}ms 前）"
-                else "读取失败：${Config.lastError}"
-            )
-            val notes = Diagnostics.snapshot()
-            if (notes.isNotEmpty()) {
-                appendLine("----")
-                appendLine("本进程挂钩记录（目标进程的同类记录看 logcat 的 mockloc tag）：")
-                notes.forEach { appendLine("  $it") }
-            }
-            appendLine("----")
-            // Deliberately not claiming anything about other apps: this page only measures what
-            // *this* process reads. Whether a target app honours the fix is a separate test.
-            appendLine("注：以上只反映本 App 读到的值。目标 App 认不认，要在它里面主动发起一次定位请求、看返回坐标")
+    private fun loadScopeList() {
+        val installed = runCatching {
+            packageManager.getInstalledApplications(0)
+                .filter { it.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM == 0 }
+                .filter { it.packageName != packageName }
+                .sortedBy { packageManager.getApplicationLabel(it).toString() }
+                .map { it.packageName to packageManager.getApplicationLabel(it).toString() }
+        }.getOrElse { emptyList() }
+        scopePackages = installed.map { it.first }
+        val chosen = bridge.targets().toSet()
+        (scopeList.adapter as ArrayAdapter<String>).apply {
+            clear()
+            addAll(installed.map { (pkg, name) -> "$name\n$pkg" })
+            notifyDataSetChanged()
         }
+        installed.forEachIndexed { index, (pkg, _) -> scopeList.setItemChecked(index, pkg in chosen) }
     }
 
-    private fun onOff(value: Boolean) = if (value) "开" else "关"
-
-    // Both accessors are shown on purpose: older apps still call the deprecated one, and the whole
-    // point of this screen is to see which flag a target app would be reading.
-    @Suppress("DEPRECATION")
-    private fun readback(): List<String> {
-        val lm = getSystemService(LOCATION_SERVICE) as? android.location.LocationManager
-        return listOf("gps", "fused", "network", "passive").map { name ->
-            val line = runCatching {
-                val loc = lm?.getLastKnownLocation(name)
-                if (loc == null) "null"
-                else "${"%.6f".format(loc.latitude)},${"%.6f".format(loc.longitude)} acc=${loc.accuracy} mock=${loc.isFromMockProvider}"
-            }.getOrElse { "需授权（${it.javaClass.simpleName}）" }
-            "$name : $line"
-        }
+    private fun saveTargets() {
+        val checked: SparseBooleanArray = scopeList.checkedItemPositions
+        val picked = (0 until checked.size()).asSequence()
+            .filter { checked.valueAt(it) }
+            .mapNotNull { scopePackages.getOrNull(checked.keyAt(it)) }
+            .toList()
+        bridge.setTargets(picked)
+        toast("已保存 ${picked.size} 个包名；跑 tools/mockloc.py sync 或刷 root 模块后生效")
+        refreshStatus()
     }
 
     private fun toast(message: String) = Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
@@ -383,6 +565,6 @@ class MainActivity : Activity() {
         const val KEY_LAST = "last_injected"
         const val KEY_LAST_LABEL = "last_label"
         const val DEFAULT_PROVIDERS = "gps,network,fused"
-        val TABS = listOf("搜索", "地图", "收藏", "状态")
+        val TABS = listOf("搜索", "地图", "收藏", "作用域", "状态")
     }
 }

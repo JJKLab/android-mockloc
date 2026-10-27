@@ -107,6 +107,29 @@ fun main() {
     // Deleting the file is how `off --wipe` stops a spoof; the module notices on the next
     // refresh past the 1s stat window, not instantly.
     Thread.sleep(1100)
+
+    // The App renders this exact body (ModuleBridge.render) and the root module or `sync` carries it
+    // verbatim; feeding the renderer's own output back through the parser is what stops the writer
+    // and the reader drifting apart - the drift that made the App pick Shanghai while WeChat showed
+    // the module's Beijing.
+    Thread.sleep(1100)
+    val rendered = com.mockloc.ModuleBridge.render(
+        enabled = true,
+        lat = "31.2229441",
+        lng = "121.4644122",
+        label = "东方明珠 & 陆家嘴",
+        targets = listOf("com.tencent.mm", "com.autonavi.minimap"),
+    )
+    file.writeText(rendered)
+    Config.refresh()
+    check("App 渲染体可被模块解析", Config.lastError, null)
+    check("渲染 lat", Config.centerLat, 31.2229441)
+    check("渲染 lng", Config.centerLng, 121.4644122)
+    check("渲染 label", Config.label, "东方明珠 & 陆家嘴")
+    check("渲染 targets", Config.targets, setOf("com.tencent.mm", "com.autonavi.minimap"))
+    check("渲染 providers", Config.providers, listOf("gps", "network", "fused"))
+
+    Thread.sleep(1100)
     file.delete()
     Config.refresh()
     check("missing file disables", Config.enabled, false)

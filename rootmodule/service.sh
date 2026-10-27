@@ -26,6 +26,7 @@ UP=0
 # the global provider is off.
 while :; do
   sync_inbox
+  sync_app_prefs
   if [ "$(cfg_get MOCKLOC_ENABLED)" = "true" ] && [ "$(cfg_get MOCKLOC_GLOBAL)" = "true" ]; then
     appops set 0 android:mock_location allow 2>/dev/null
     appops set 2000 android:mock_location allow 2>/dev/null

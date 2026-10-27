@@ -47,6 +47,25 @@ jitter() {
   }'
 }
 
+# The App cannot write /data/local/tmp (an app process has no write access there), so the App
+# renders its own config text into private prefs and we carry it over - but only when the App has
+# been touched more recently than the published file, otherwise a PC-side `set` would be stomped.
+# Last-writer-wins is the whole contract; the earlier "App says Shanghai, WeChat says Beijing" bug
+# was these two channels having no rule at all.
+sync_app_prefs() {
+  _prefs=/data/data/com.mockloc/shared_prefs/settings.xml
+  [ -r "$_prefs" ] || return 1
+  [ "$_prefs" -nt "$PUB" ] || return 0
+  _tmp=$(mktemp "/data/local/tmp/mockloc.app.XXXXXX") || return 1
+  sed -n '/name="module_conf"/,/<\/string>/p' "$_prefs"     | sed '1s|.*name="module_conf"[^>]*>||; $s|<\/string>.*||' >"$_tmp"
+  [ -s "$_tmp" ] || { rm -f "$_tmp"; return 1; }
+  sed -i 's/&lt;/</g; s/&gt;/>/g; s/&quot;/"/g; s/&amp;/\&/g' "$_tmp"
+  cp "$_tmp" "$PUB" && chmod 664 "$PUB"
+  cp "$_tmp" "$CFG" 2>/dev/null
+  rm -f "$_tmp"
+  return 0
+}
+
 publish() {
   # The Xposed module runs in an app SELinux domain and cannot read /data/adb, so mirror the
   # effective config to /data/local/tmp with the shelldatafile label. Keys match 1:1, and the

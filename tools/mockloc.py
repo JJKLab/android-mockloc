@@ -11,6 +11,7 @@ import argparse
 import json
 import math
 import os
+import re
 import random
 import shlex
 import subprocess
@@ -36,6 +37,8 @@ def provider_list(args):
 SELF_PKG = "com.mockloc"
 CONFIG_INBOX = "/data/local/tmp/mockloc.in"
 CONFIG_REMOTE = "/data/adb/mockloc/config.prop"
+CONFIG_PUB = "/data/local/tmp/mockloc.conf"
+APP_PREFS = "/data/data/com.mockloc/shared_prefs/settings.xml"
 LOCAL_CONFIG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
 SU_CMD = os.environ.get("MOCKLOC_SU", "su -c")
 COST_GEOCODE = "高德地理编码 1 次（个人实名 key 免费额度 5000/天）"
@@ -368,6 +371,44 @@ def cmd_off(t, args):
         print("[warn] 设备上没找到可读的配置文件，只停了系统 provider；模块侧请自行关掉开关")
 
 
+def cmd_sync(t, args):
+    """App 选点 -> 模块配置。App 进程写不了 /data/local/tmp，所以由有 root 的一方搬运。
+
+    渲染只发生在 Kotlin 那一侧（ModuleBridge.render），这里只做"取出已渲染好的文本 + 落盘"，
+    避免 PC / root 模块 / App 三处各写一遍格式然后互相漂移。
+    """
+    code, xml, err = t.sh(f"cat {APP_PREFS}", su=True)
+    if code != 0 or not xml.strip():
+        detail = (err or xml or "").strip()[:160]
+        raise DeviceError(
+            f"读不到 {APP_PREFS}：{detail}\n"
+            "  需要 KernelSU 给 Shell 授权，或在 App 里先注入一次。")
+    body = pref_value(xml, "module_conf")
+    if not body:
+        raise DeviceError("App 的 prefs 里没有 module_conf——先在 App 里点一次注入。")
+    written = []
+    for path in (CONFIG_PUB, CONFIG_INBOX):
+        c, out, e = t.sh(
+            f"printf '%s\n' {shlex.quote(body)} > {path}; chmod 664 {path}", su=True)
+        if c != 0:
+            raise DeviceError(f"写 {path} 失败: {(out or e)[:160]}")
+        written.append(path)
+    print(f"[ok] 已把 App 选点同步到模块配置：{'、'.join(written)}")
+    print(body)
+    return body
+
+
+def pref_value(xml, name):
+    """Pull one string preference out of SharedPreferences XML and undo the five entities."""
+    match = re.search(rf'name="{name}"[^>]*>(.*?)</string>', xml, re.S)
+    if not match:
+        return ""
+    text = match.group(1)
+    for entity, char in (("&lt;", "<"), ("&gt;", ">"), ("&quot;", '"'), ("&apos;", "'"), ("&amp;", "&")):
+        text = text.replace(entity, char)
+    return text
+
+
 def cmd_status(t, args):
     code, out, err = t.sh("cmd location is-location-enabled")
     print(f"master switch : {out or err}")
@@ -473,6 +514,7 @@ MENU = [
     ("3", "持续刷新（防时间戳过期）", "watch"),
     ("4", "查看当前状态", "status"),
     ("5", "逐项自检 + 三档可用性", "doctor"),
+    ("8", "把 App 选点同步给模块", "sync"),
     ("6", "关闭并恢复真实 GPS", "off"),
     ("7", "对照三档方案与命令", "tiers"),
     ("0", "退出", ""),
@@ -513,6 +555,8 @@ def interactive():
                 cmd_off(t, mk())
             elif choice == "7":
                 cmd_tiers(t, mk())
+            elif choice == "8":
+                cmd_sync(t, mk())
             elif choice == "0":
                 return
         except DeviceError as exc:
@@ -597,6 +641,7 @@ def main():
     p_off = sub.add_parser("off", parents=[common], help="remove the test provider and switch both layers off")
     p_off.add_argument("--wipe", action="store_true", help="also delete the persisted config")
 
+    sub.add_parser("sync", parents=[common], help="把 App 里的选点/名单同步成模块配置（需 Shell root）")
     sub.add_parser("status", parents=[common])
     sub.add_parser("tiers", parents=[common], help="print the three privilege tiers and their commands")
     p_doc = sub.add_parser("doctor", parents=[common])
@@ -620,6 +665,8 @@ def main():
             cmd_watch(t, ns)
         elif args.cmd == "off":
             cmd_off(t, ns)
+        elif args.cmd == "sync":
+            cmd_sync(t, args)
         elif args.cmd == "status":
             cmd_status(t, ns)
         elif args.cmd == "tiers":

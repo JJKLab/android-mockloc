@@ -53,6 +53,7 @@ class ModuleEntry : XposedModule() {
         Sensors(this, param.classLoader, pkg).init()
         GnssStream(this, param.classLoader, pkg).init()
         TencentSdk(this, param.classLoader, pkg).init()
+        AmapSdk(this, param.classLoader, pkg).init()
         SelfTest.schedule(pkg) { message -> log(Log.INFO, tag, message) }
         log(
             Log.INFO, tag,

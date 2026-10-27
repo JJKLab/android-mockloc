@@ -599,6 +599,47 @@ autoHotReload=true`（比我们多一项热重载）；`java_init.list` 指向 `
 | CI 三 job | **通过** | `logic`/`apk`/`root-module` 连续出包 0.4.3→0.4.6（`hiddenapibypass` 钉 6.1 之后） |
 | 反检测面 | **部分通过** | 生效：`isMock`/`isFromMockProvider`/setter 源头堵/extras/provider 列表/`Settings.Secure`/GnssStatus 12 getter/伪卫星回调。已过期：`readFromParcel`（API 36 无此方法）。**未做**：调用栈清洗、`getProviders` 的 Criteria 之外变体、`PackageManager` 隐藏管理器 |
 
+### A11 参考项目整合（2026-10-27，`参考/` 下 5 个来源）
+
+用户放了三个源码项目和两个商用 APK。**授权先说清**，因为它决定能拿什么：
+
+| 来源 | 授权 | 我们拿走的 | 明确不拿的 |
+|---|---|---|---|
+| AnyDoor | **MIT** | 四条，见下 | —— |
+| allmapLocation | 无 LICENSE ⇒ 视为保留所有权利 | 只有思路与类名线索 | 任何代码 |
+| FakeLoc | 无 LICENSE（README 写"学习/授权测试"） | UI 形态与保活细节 | 任何代码 |
+| 全域_3.1.5.apk | 商用；内嵌 BlackBox(**GPL-3.0**) + Rhino(MPL-2.0) | 逆向得到的靶子清单 | dex/so 一律不搬 |
+| 天下游.apk | 商用 + 腾讯乐固壳 | 无——**死路**：无 Xposed 标记、走特权 helper 进程 | —— |
+| LocationSpoofer（见 A8） | GPL-3.0 | 八层地图 | 任何代码 |
+
+**AnyDoor（MIT）给的四条，采纳三条**：
+1. 源头改写在 system_server 的 `LocationProviderManager.onReportLocation` + 每条注册的
+   `Registration.acceptLocationChange`——唯一"App 自己重算也拿不到真值"的位置。
+   **暂不做**：风险不对等（写错=system_server 软重启），且要求 `android` 进作用域。记在 E 后续方向。
+2. **绝不拷贝原始 extras**（fused 的 `noGPSLocation` 把真实位置藏在 extras 里）⇒ 我们的
+   `SpoofLogic.fakeLocation` 只复制 time/nanos/bearing/speed/altitude，不复制 extras ✓
+3. **不钩 `hasAltitude/hasSpeed/hasBearing/hasAccuracy`**（Parcel 布局，钩了会被高德 `#0802` 类校验抓到）✓
+4. SELinux 无关的配置桥（root 写 `/data/system/*.json` + 假 provider 的 extras 当进程内信箱）
+   ⇒ 我们用更简单的等价物，见"断链已修"。
+
+**allmapLocation / 全域给的高德靶子**：`com.amap.android.location.NetworkLocationManager`、
+`com.amap.location.offline.{flp,nlp}.LocationProvider`、厂商融合进程 `com.oplus.location` /
+`com.samsung.android.location`、`com.amap.bundle.network.request.param.NetworkParam`。
+判据是"**带点的字符串在、`L…;` 描述符不在**"⇒ 它们是运行时反射加载的，所以只能按名字找。
+据此加 `AmapSdk.kt`（钩高德自家 `com.amap.location.type.location.Location` 的 getter，候选类名 +
+找不到就自报 + 探针模式打印方法表）。它的 `BlindHook`（自动钩所有返回 Location 的方法 + 把名字含
+`Correct/Valid/Check/Mock` 的 boolean 强制 true）**只取前一半**：强制 boolean 太容易把 App 弄坏。
+
+**FakeLoc 给的 UI/保活经验**：地图即首页、运行中拖动图钉实时改点、无 key 的高德栅格瓦片、
+`PARTIAL_WAKE_LOCK` + `START_STICKY` + 从 prefs 恢复、`Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS`
+深链跳开发者选项。已采纳：**粘贴坐标入口（带 GCJ/WGS 切换）**、**作用域名单页**、状态页分层徽章。
+
+**断链已修（App 选点 ≠ 模块配置）**：App 现在把选点和名单写进自己的私有 prefs，并由
+`ModuleBridge.render()` 渲染成与配置文件逐字节相同的文本；`tools/mockloc.py sync`（PC）或 root 模块的
+`sync_app_prefs`（免 PC，按 mtime 谁新谁赢）负责搬运。**渲染器只有一份**（Kotlin 侧），PC 和 shell
+不重写格式，所以不会再出现三处各写一遍然后漂移。`ConfigCheck.kt` 把 `render()` 的输出直接喂回
+`Config` 解析器验往返。
+
 ## 附录 B 代码解析
 
 ### B1. 配置契约（三层共用同一组键）
@@ -651,6 +692,9 @@ PC 端根本写不了 `/data/adb`——收件箱让"只刷模块、不依赖 su"
 | `app/.../Nmea.kt` | 纯函数 NMEA 句子生成（`$`+语句号+逗号字段+`*`校验和），可在 JVM 上验收 |
 | `app/.../GnssStream.kt` | GNSS 原始测量 + NMEA 注入（全反射造对象，字段自洽见 A9）|
 | `app/.../Sky.kt`（在 GnssStream.kt 内） | 唯一星历表：GnssStatus / 测量流 / NMEA 三处共用，含斜距几何 |
+| `app/.../AmapSdk.kt` | 高德自家定位栈那一层（`com.amap.location.type.location.Location` getter + 候选类方法表探针）|
+| `app/.../ModuleBridge.kt` | App 侧唯一的配置渲染器；PC `sync` 与 root 模块只搬运不重写 |
+| `app/.../Ui.kt` | 卡片与状态徽章的公共样式件（纯 View）|
 | `app/.../TencentSdk.kt` | 微信内嵌腾讯定位 SDK 那一层的替换（它不吃 `LocationManager`，见 A0.1）：`TencentLocationImpl` 的经纬度/精度/`isMock` + 地址文字 |
 | `app/.../SelfTest.kt` | 在**被 hook 的进程里**读回一次 LKL/providers/`mock_location` 并打日志——模块勾不进自己的作用域，这是唯一能证明"改写咬住了"的仪器 |
 | `app/.../MainActivity.kt` | 四页 View：搜索 / 地图点选 / 收藏 / 状态（`selfCheck` + 各 provider 回读） |
@@ -749,7 +793,7 @@ FakeLoc/XposedFakeLocation 都有同样的取舍，并用"每个字段单独开�
 18. ~~高德地图到底认不认框架层 mock~~ **按正确方法测完：不认**（档1/档2 mock 生效期间点它的"我的位置"，
     系统确实把 mock 定位投给了它 `locations=1`，蓝点仍在连州）。你之前"高德认开发者模式虚拟定位"的印象
     在这台机 + 这个版本上不成立；原因见 A0.1 最后一行：它的位置来自射频输入，`LocationManager` 那条路它读了不用。
-19. **v0.4.3 新代码全部未上真机**：`WifiInfo` 抹标识位、`requestCellInfoUpdate` 递交空表、`Probe.kt` 探针。
+19. ~~v0.4.3 新代码全部未上真机~~ 部分已验：`WifiInfo` 抹标识位、`requestCellInfoUpdate`、`Probe.kt` 均已上机，探针录到微信冷启动只读 `Settings.Secure`（定位 SDK 用到才起）。
     本地只有类型检查与 ConfigCheck（29 项）过。
 20. **探针要跑一次才知道下一步钩什么**：`--probe` 打开后重启目标 App，`adb logcat | grep Probe` 会列出
     它调过哪些定位 API 与调用方类名。两种结果要分开看：只出现 `WiFi输入/WiFi身份` ⇒ 致盲路线对，继续补覆盖面；
@@ -757,6 +801,12 @@ FakeLoc/XposedFakeLocation 都有同样的取舍，并用"每个字段单独开�
 21. **档 2 的开机存活仍未验**：`--mode su` 这条路今天验通了，但那是 root shell 手动跑的；
     `mockloc-root.zip` 刷进 KernelSU、`service.sh` 开机自启这条还没走过（C2/C3 一并挂着）。
     现在 Shell 有 root，可以直接 `su -c '/data/adb/ksud module install …'`，不必开 KernelSU 管理器点界面。
+
+22. **`sync` 与 `sync_app_prefs` 两条搬运路径都还没在机上跑过**：前者要 Shell root，后者要刷 root 模块。
+    判据：App 里选一个点 → 跑 `sync` → 状态页"App 选点与模块配置不一致"警告应当消失。
+23. **`AmapSdk` 的候选类名未在真机验证**（本机高德 APK 还没扫过描述符）。它要么打印
+    `已挂钩 com.amap.location.type.location.Location`，要么打印"没有高德定位栈"——后者就说明类名还要改，
+    探针模式的方法表转储就是为这种情况准备的。
 
 ## 附录 D 版本历史
 
@@ -890,3 +940,8 @@ FakeLoc/XposedFakeLocation 都有同样的取舍，并用"每个字段单独开�
 ⑤ 把 `--probe` 的调用面从"定位/WiFi/基站"扩到"GNSS/NMEA/传感器"，让下一步永远有证据；
 ⑥ 配置通道改用 libxposed 的 `getRemotePreferences`（LocationSpoofer 就是这么做的），
 摆脱 world-readable 的 `/data/local/tmp` 文件。
+- **v0.4.9**（2026-10-27）整合 `参考/` 五个来源（A11）：新增 `AmapSdk.kt`（高德自家定位栈，靶子来自
+  allmapLocation/全域暴露的反射类名）、`Ui.kt` + 五页新界面（卡片、分层状态徽章、粘贴坐标带 GCJ/WGS 切换、
+  **作用域名单页**）、`ModuleBridge` 修掉"App 选点与模块配置断链"（`tools/mockloc.py sync` +
+  root 模块 `sync_app_prefs`，mtime 谁新谁赢，渲染器只有一份）。`ConfigCheck` 加渲染体往返共 31 项断言；
+  本地类型检查抓到 4 处（`Ui.fill` 参数设计错、`abs` 未 import、两处布局参数误用）。
