@@ -63,6 +63,9 @@ python tools/mockloc.py watch --place 东方明珠 --radius 25 --interval 15
 python tools/mockloc.py status
 python tools/mockloc.py doctor
 python tools/mockloc.py off
+
+# 模块到底挂进了哪些包与进程（读它自己打的 attached to，不用翻 logcat）
+python tools/mockloc.py scope
 ```
 
 ### 2.5 三种生效层级（这是"能不能过检测"的分水岭）
@@ -632,7 +635,9 @@ autoHotReload=true`（比我们多一项热重载）；`java_init.list` 指向 `
 
 **FakeLoc 给的 UI/保活经验**：地图即首页、运行中拖动图钉实时改点、无 key 的高德栅格瓦片、
 `PARTIAL_WAKE_LOCK` + `START_STICKY` + 从 prefs 恢复、`Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS`
-深链跳开发者选项。已采纳：**粘贴坐标入口（带 GCJ/WGS 切换）**、**作用域名单页**、状态页分层徽章。
+深链跳开发者选项。已采纳：**粘贴坐标入口（带 GCJ/WGS 切换）**、状态页分层徽章；
+**作用域页在 v0.5.1 改成只读**——它原来要求在同一批 App 上第二次勾选（LSPosed 里一次、App 里一次），
+而模块只可能被加载进 LSPosed 作用域内的进程，第二份名单永远不能往外扩，只能往外缩，属于纯摩擦。
 
 **断链已修（App 选点 ≠ 模块配置）**：App 现在把选点和名单写进自己的私有 prefs，并由
 `ModuleBridge.render()` 渲染成与配置文件逐字节相同的文本；`tools/mockloc.py sync`（PC）或 root 模块的
@@ -649,14 +654,18 @@ autoHotReload=true`（比我们多一项热重载）；`java_init.list` 指向 `
    getBearingAccuracyDegrees/getProvider/getSource/getPriority/getPoiid/getSemantics/getFloor/
    getLocationUtcTime/getLocationTickTime/getOptAttr*(String,…)`。0.4.9 只钩了坐标与精度，
    0.5.0 补上高度/来源/provider。
-2. **`ILocationService` 是接口，钩它等于没钩**。真正在高德进程里应答的是 AIDL 客户端代理
-   `com.amap.location.api.ILocationService$Stub$Proxy`，方法表里有：
+2. **`ILocationService` 是接口，钩它等于没钩**。~~真正在高德进程里应答的是 AIDL 客户端代理
+   `com.amap.location.api.ILocationService$Stub$Proxy`~~ ——**这条 0.5.1 已被 A13 推翻**：
+   全 8 个 dex 里这个接口**根本没有内部类**，229 个含 `$Stub` 的类中只有 3 个名字带 `ocation`，
+   且都不带坐标（`com.amap.ams.IAMSLocationService$Stub` 只有车道匹配信息）。它是**普通 Java 接口、
+   进程内实现**（6 个混淆类 `bu2/cu2/ev3/fv3/gv3/i81`）。方法表本身是对的（探针转储的确实是这张表）：
    `getLatestLocation()` / `getLatestLocation(int)` / `getLatestOriginalLocation()` /
    `getLatestGnssLocationList()` / `getSatelliteList()` / **`getFixSatelliteCount()`** /
    **`appCanLocation()`** / `isGnssOn()` / `isGnssLocating()` / `isLocating()` / `isLocationOn()` /
    `isLocationDim()` / `fakeNetworkLocation(boolean)` / `fakeRtkLocation(boolean)` /
    `enableUseSystemLocation(boolean)` / `registerSatelliteStatusCallback(IGnssSatelliteListener)` /
-   `getOffsetLatlng(double,double)`。⇒ 卫星计数与"GNSS 是否在工作"必须在**代理**上答，不是在接口上。
+   `getOffsetLatlng(double,double)`。⇒ 但这些方法**不需要单独钩**：它们返回的都是 `Location` /
+   `AmapLocation`，钩住那两个类就全覆盖了（见 A13）。
 3. **这些类是运行时动态加载的**：`base.apk` 的 8 个 dex 里只有 `Lcom/amap/location/type/location/Location;`
    的**引用**、没有 class_def（`sdkh` 那层是插件化加载）。所以"静态扫不到"≠"不存在"——
    **这正是 A7 当初判错的方法原因**（我只查了 `com/amap/api/location` 且只看引用计数）。
@@ -667,6 +676,57 @@ autoHotReload=true`（比我们多一项热重载）；`java_init.list` 指向 `
 **仍未解**：钩完这些之后高德蓝点会不会动，0.5.0 装机才知道。若仍不动，剩下的嫌疑只有
 `getSatelliteList()` 返回的 `com.amap.location.type.gnss.Satellite`（0.5.0 只转储它的方法表，还没钩）
 和它自己的服务器算路。
+
+### A13 静态全量扫 dex：高德"打开显示杭州、一刷新回广东"的确切原因（0.5.1）
+
+0.5.0 装机后的现象是**冷启动假、刷新回真**——这排除了"完全没钩上"，指向"还有一条读路没盖住"。
+这次不靠探针一条一条试，直接把装机版 `.toolchain/amap.apk`（17.01.0.2015 / 170000，8 个 dex、
+66 256 个类定义、391 557 个方法、6 037 932 条指令全解码）扫了一遍。结论全部是 dex 字节层面核实过的：
+
+1. **`sdkh.base.type.location.AmapLocation` 是与 `Location` 并行的第二个坐标载体**，它的 super 是
+   `java.lang.Object`，**不是** `Location` 的子类；自己有 `latitude/longitude/accuracy/provider/
+   source/satelliteCount` 全套 getter/setter，**外加两个 public 字段 `gcjLatitude/gcjLongitude`**。
+   而 0.5.0 的 `AmapSdk` 写的是 `LOCATION_TYPES.mapNotNull{…}.firstOrNull()`——列表里 `Location` 在前，
+   **`AmapLocation` 从来没被钩过**（26 处读点全在外面）。
+2. **`OffsetUtils.getGcjLatlng(AmapLocation)` 用 `iget-wide` 直读那两个 public gcj 字段**，绕开所有
+   getter；全 APK 只有这一个外部直读点，唯一调用者是 `bu2.b(AmapLocation) -> Location`（引擎→UI 的转换器）。
+   地图蓝点画的正是 GCJ 坐标 ⇒ **这就是刷新回真的那一路**（getter 钩子结构上不可能命中它）。
+3. **`Location` 的字段只有它自己碰**（`mLatitude/mLongitude/mProvider/mAccuracy` 各 2 读 2 写，
+   全在类内），`protected` 守住了；所以钩 getter 对 `Location` 是够的。子类型只有两个：
+   `LocationMatch`（不覆盖任何 getter）与支付宝的 `LBSLocation`（**覆盖了** getLatitude/getLongitude/
+   getAccuracy，走自己的私有字段）⇒ 后者也要单独钩，否则支付宝地图那一路漏。
+4. **卫星列表走构造函数，不走 setter**：`xm0.e(AmapSatellite) -> Satellite` 读 `AmapSatellite` 的
+   10 个 public 字段后一次 `invoke-direct/range` 调 `Satellite.<init>(IIFZFFZZZF)V`。
+   ⇒ 想改卫星只能钩构造函数或 getter，钩 setter 会完全落空（本轮未做，见附录 C）。
+5. **高德自带一整套反虚拟定位判定**（顺手扫出来的，之前完全不知道）：
+   `sdkh.environment.gnss.MockHelper.isMock(Context,Location)` / `isMock(android.location.Location)`
+   （反射缓存 `isFromMockProvider` 再 `invoke`）/ `isMockSwitchOn(Context)`，
+   `AmapLocationListener.isFilterMock()/setFilterMock(Z)`，
+   `ForgeryLabeling.hitForgery(AmapLocation)I` + `NoMoveRecognizer.addGnssAndReturnIsFake` +
+   `HighSpeedThenStopRecognizer.isHighSpeedThenStopFake`，`GeoUtils.isLocationCorrect` /
+   `AmapLocation.isLocationCorrect`，`LocationNmeaTypeDetector.updateInsState`。
+   ⇒ **这些会把我们塞进去的点判为假并丢弃，引擎随后重新交回真点**——症状与"打开是杭州、刷新回广东"一致。
+   `MockTrace` 清了系统 `isFromMockProvider`，但那是框架对象；高德这条是它自己进程内的判定，必须自己答。
+
+0.5.1 的改法按"读 / 写 / 判定"三个面，不再只钩 getter：
+
+- 三个载体（`Location`、`AmapLocation`、`LBSLocation`）的 getLatitude/getLongitude/getAccuracy/
+  getAltitude/getProvider/getSource 全部改写；
+- **写侧**同时钩 `setLatitude/setLongitude/setAccuracy/setProvider/setSource`（+`setGcjLatitude/
+  setGcjLongitude`），让字段本身就存假值——复制构造函数、`toString`、日志与 JNI `GetDoubleField`
+  读的才是同一个值；
+- `getGcjLatlng` 直接返回假 GCJ（`CoordTransform.wgs84ToGcj02`），并在首次读 `AmapLocation` 时把
+  `latitude/longitude/gcjLatitude/gcjLongitude` 四个字段一并对齐，两套坐标系是同一个点的两种写法；
+- 上面第 5 条那批判定在 `active()`（本包正在改写）期间一律答"真、不是 mock、没伪造"；
+- 删掉那条被证伪的死钩子（`ILocationService$Stub$Proxy` 不存在，钩接口方法静默无效果）。
+
+方法名与签名一律从 dex 取，`Class.forName` 失败或方法在本版本不存在就跳过（不报错、不写死混淆名），
+所以高德下次改混淆映射不会把整个层带崩；被删掉的 `bu2/cu2/…` 路线正是为了不在这里埋版本地雷。
+
+**证据可复现**：扫描脚本 `.toolchain/amap_ag.py`（查询 A–F）/ `amap_pass2.py`（全量字段访问与调用点
+普查）/ `amap_pass3.py`（转换器、监听器、native 回调定向转储）/ `amap_repro_raw.py`（指令片段），
+完整报告 `.toolchain/amap_repro.md`。注意 `.toolchain/dexiface.py` 的 `type_list` 读法用了 u32
+（规范是 u16），多接口类的接口列表是错的——本轮已绕开它，别拿它的输出当证据。
 
 ## 附录 B 代码解析
 
@@ -832,8 +892,20 @@ FakeLoc/XposedFakeLocation 都有同样的取舍，并用"每个字段单独开�
 
 22. **`sync` 与 `sync_app_prefs` 两条搬运路径都还没在机上跑过**：前者要 Shell root，后者要刷 root 模块。
     判据：App 里选一个点 → 跑 `sync` → 状态页"App 选点与模块配置不一致"警告应当消失。
-23. ~~AmapSdk 候选类名未验证~~ **已验（A12）**：`com.amap.location.type.location.Location` 挂钩成功；`isMock/isFromMock` 在高德那个类上不存在。0.5.0 新增的 `ILocationService$Stub$Proxy` 与 `Satellite` 转储**待装机验**。
-24. **配置字段必须进渲染器**：`MOCKLOC_PROBE` 曾被 `ModuleBridge.render` 漏掉，于是每次 `sync` 都把探针静默关掉。凡是「配置由渲染器唯一产生」的字段都要在 `ConfigCheck` 的往返断言里出现。
+23. ~~AmapSdk 候选类名未验证~~ **已验（A12）并被 A13 推翻一半**：`com.amap.location.type.location.Location`
+    挂钩成功是真的，但 `ILocationService$Stub$Proxy` **这个类根本不存在**（全 dex 扫过），0.5.0 那条钩子是静默空转；
+    `AmapLocation` 反倒一直没被钩。0.5.1 按 A13 重写。
+24. **0.5.1 的高德复测判据**（装机后唯一要看的一条）：冷启动 + 下拉刷新 + 点"我的位置"三种入口拿到的坐标
+    都要等于注入点。之前的症状是"冷启动杭州、刷新回广东"，正好对应 A13 第 1/2 条（gcj 字段直读）与第 5 条
+    （引擎自己把假点判成 mock 丢掉）。若刷新仍回真，下一个嫌疑只剩 native 引擎重算（`nativeSendLocation`），
+    那时候要看的是 `LocationNmeaTypeDetector` 与 `Satellite` 那一路，而不是再加 getter 钩子。
+25. **高德的卫星列表还没钩**：已证它是**构造函数**交付（`xm0.e` 一次 `invoke-direct/range` 调
+    `Satellite.<init>(IIFZFFZZZF)V`），钩 setter 会完全落空；`getFixSatelliteCount()` 在混淆实现类上，
+    名字随版本变，故意不写死。做之前先确认高德界面有没有露卫星数，别为看不见的字段冒版本兼容风险。
+26. **`scope` 子命令与"作用域只在 LSPosed 里勾"改动尚未上机**：判据是 `python tools/mockloc.py scope`
+    能列出微信 3 个进程、高德 3 个进程的 `attached to`；App 里作用域页不再要求第二次勾选，
+    只在遗留名单非空时显示"清空，跟随 LSPosed"。
+27. **配置字段必须进渲染器**：`MOCKLOC_PROBE` 曾被 `ModuleBridge.render` 漏掉，于是每次 `sync` 都把探针静默关掉。凡是「配置由渲染器唯一产生」的字段都要在 `ConfigCheck` 的往返断言里出现。
 
 ## 附录 D 版本历史
 
@@ -978,3 +1050,11 @@ FakeLoc/XposedFakeLocation 都有同样的取舍，并用"每个字段单独开�
   配置被写成一行、模块读到 `enabled=false`；渲染器漏 `MOCKLOC_PROBE` ⇒ 每次同步把探针关掉），
   修 `GnssStream` 的 `build()` 参数元数查找错（`NoSuchElementException`），状态页徽章改成只说本进程能观测到的事。
   `ConfigCheck` 31 项、Kotlin 类型检查 0 error。
+- **v0.5.1**（2026-10-27）按 A13 的全量 dex 证据二次重写 `AmapSdk`：**补钩 `AmapLocation`（此前从未被钩）、
+  `LBSLocation`、`OffsetUtils.getGcjLatlng`（直读 public gcj 字段，getter 钩子结构上打不到）与写侧 setter**，
+  并首次应对目标 App 自己的反虚拟定位判定（`MockHelper.isMock` / `isFilterMock` / `ForgeryLabeling` /
+  `isLocationCorrect`）；**删掉 A12 里那条被证伪的 `$Stub$Proxy` 钩子**（那个类不存在，一直在静默空转）。
+  界面按"作用域只在 LSPosed 勾一次"重做：App 里不再有第二份勾选名单，只在遗留名单非空时提供一键清空；
+  新增 `tools/mockloc.py scope`，用模块自己打的 `attached to` 日志列出真实挂载的包与进程
+  ——读 LSPosed 的实际效果，而不是读它的配置库，也不让用户自己翻 logcat。
+  Kotlin 类型检查 0 error、`ConfigCheck` 31 项全过。

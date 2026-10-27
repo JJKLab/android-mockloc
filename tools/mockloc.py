@@ -417,6 +417,37 @@ def pref_value(xml, name):
     return text
 
 
+def cmd_scope(t, args):
+    """LSPosed 实际给了哪些作用域——由模块自己在每个进程里报的，不是 App 里的第二份名单。
+
+    读 logcat 而不是读 LSPosed 的配置库：配置库说"勾了谁"，而这一行说"代码真的进了谁的进程"，
+    后者才是排查时想要的那个事实。
+    """
+    code, out, err = t.sh('logcat -d | grep -a "attached to" | tail -60')
+    lines = (out or err).splitlines()
+    attached = {}
+    for line in lines:
+        proc = re.search(r"\(([^)]+)\)\[com\.mockloc", line)
+        pkg = re.search(r"attached to (\S+)", line)
+        if proc and pkg:
+            attached.setdefault(pkg.group(1), set()).add(proc.group(1))
+    print("模块挂载证据（logcat 全缓冲区）")
+    if not attached:
+        print("  一条都没有：要么模块没启用/没勾作用域，要么那些 App 还没被重启过。")
+    for pkg in sorted(attached):
+        print(f"  {pkg}  进程 {len(attached[pkg])} 个: {', '.join(sorted(attached[pkg]))}")
+
+    code, out, err = t.sh(
+        'logcat -d | grep -aE "\\[(Amap|Tencent|MockTrace|Sensors|Gnss)\\]|notes=" | tail -40')
+    report = (out or err).splitlines()
+    if report:
+        print("\n挂钩小结（同一份 logcat，去掉进程前缀）")
+        for line in report:
+            body = re.sub(r"^.*?,\d,\d\] ", "", line, count=1)
+            print(f"  {body[:160]}")
+    return attached
+
+
 def cmd_status(t, args):
     code, out, err = t.sh("cmd location is-location-enabled")
     print(f"master switch : {out or err}")
@@ -523,6 +554,7 @@ MENU = [
     ("4", "查看当前状态", "status"),
     ("5", "逐项自检 + 三档可用性", "doctor"),
     ("8", "把 App 选点同步给模块", "sync"),
+    ("9", "模块真正挂进了哪些进程", "scope"),
     ("6", "关闭并恢复真实 GPS", "off"),
     ("7", "对照三档方案与命令", "tiers"),
     ("0", "退出", ""),
@@ -565,6 +597,8 @@ def interactive():
                 cmd_tiers(t, mk())
             elif choice == "8":
                 cmd_sync(t, mk())
+            elif choice == "9":
+                cmd_scope(t, mk())
             elif choice == "0":
                 return
         except DeviceError as exc:
@@ -650,6 +684,7 @@ def main():
     p_off.add_argument("--wipe", action="store_true", help="also delete the persisted config")
 
     sub.add_parser("sync", parents=[common], help="把 App 里的选点/名单同步成模块配置（需 Shell root）")
+    sub.add_parser("scope", parents=[common], help="读模块自己报的挂载名单：LSPosed 实际给了谁作用域")
     sub.add_parser("status", parents=[common])
     sub.add_parser("tiers", parents=[common], help="print the three privilege tiers and their commands")
     p_doc = sub.add_parser("doctor", parents=[common])
@@ -675,6 +710,8 @@ def main():
             cmd_off(t, ns)
         elif args.cmd == "sync":
             cmd_sync(t, args)
+        elif args.cmd == "scope":
+            cmd_scope(t, args)
         elif args.cmd == "status":
             cmd_status(t, ns)
         elif args.cmd == "tiers":

@@ -4,7 +4,6 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
-import android.util.SparseBooleanArray
 import android.view.View
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
@@ -53,7 +52,6 @@ class MainActivity : Activity() {
     private lateinit var keyField: EditText
     private lateinit var queryField: EditText
     private lateinit var pasteField: EditText
-    private lateinit var scopeList: ListView
     private lateinit var hitAdapter: ArrayAdapter<String>
     private lateinit var placeAdapter: ArrayAdapter<String>
 
@@ -61,12 +59,15 @@ class MainActivity : Activity() {
     private var pickedWgs: DoubleArray? = null
     private var marker: Marker? = null
     private var pasteGcj = true
-    private var scopePackages: List<String> = emptyList()
+
+    /** Leftover narrowing list from the old in-app picker; empty is the default and the advice. */
+    private var leftover: List<String> = emptyList()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Configuration.getInstance().load(applicationContext, prefs)
         Configuration.getInstance().setUserAgentValue(packageName)
+        leftover = bridge.targets()
         setContentView(buildUi())
         map.setTileSource(AmapTiles())
         map.setMultiTouchControls(true)
@@ -84,7 +85,6 @@ class MainActivity : Activity() {
                 override fun longPressHelper(p: GeoPoint): Boolean = false
             })
         )
-        loadScopeList()
     }
 
     override fun onResume() {
@@ -298,35 +298,34 @@ class MainActivity : Activity() {
         val (scroll, column) = scrollColumn()
 
         val card = ui.card()
-        card.addView(ui.title("哪些 App 用假位置"))
+        card.addView(ui.title("作用域只在 LSPosed 里勾"))
         card.addView(ui.body(
-            "勾上的包名写进模块配置，没勾的保持真实位置。这只是模块这一层的名单，" +
-                "LSPosed 里的作用域还要另外勾一次。",
+            "模块只会被加载进 LSPosed 作用域里的进程，未勾选的 App 连代码都进不去，" +
+                "所以这里不需要第二份名单。\n" +
+                "当前模块名单：${if (leftover.isEmpty()) "空 = 完全跟随 LSPosed 作用域" else leftover.joinToString()}",
         ))
-        scopeList = ListView(this).apply {
-            choiceMode = ListView.CHOICE_MODE_MULTIPLE
-            layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, ui.dp(340))
+        if (leftover.isNotEmpty()) {
+            var clearButton: Button? = null
+            clearButton = Button(this).apply {
+                text = "清空，跟随 LSPosed"
+                isAllCaps = false
+                setOnClickListener {
+                    bridge.setTargets(emptyList())
+                    toast("名单已清空：作用域里每个 App 都会被改写")
+                    clearButton?.visibility = View.GONE
+                    refreshStatus()
+                }
+            }
+            card.addView(clearButton)
         }
-        scopeList.adapter = ArrayAdapter(
-            this, android.R.layout.simple_list_item_multiple_choice, mutableListOf<String>(),
-        )
-        card.addView(scopeList)
-        val buttons = ui.row()
-        buttons.addView(Button(this).apply {
-            text = "保存名单"
-            isAllCaps = false
-            setOnClickListener { saveTargets() }
-        }, ui.fill())
-        buttons.addView(Button(this).apply {
-            text = "全不选"
-            isAllCaps = false
-            setOnClickListener { for (i in 0 until scopeList.count) scopeList.setItemChecked(i, false) }
-        }, ui.fill())
-        card.addView(buttons)
+        card.addView(ui.hint(
+            "名单是旧功能的残留：它只能在 LSPosed 作用域之内再收窄，永远不会往外扩。" +
+                "除非只想让作用域里的一部分 App 生效，否则保持空。",
+        ))
         column.addView(card)
 
         val note = ui.card()
-        note.addView(ui.title("LSPosed 作用域建议"))
+        note.addView(ui.title("在 LSPosed 里勾这些"))
         note.addView(ui.body(
             "微信：com.tencent.mm\n" +
                 "高德地图：com.autonavi.minimap\n" +
@@ -334,6 +333,15 @@ class MainActivity : Activity() {
                 "系统框架：可以勾，但本模块故意不 hook android 进程——改 system_server 的风险不对等",
         ))
         column.addView(note)
+
+        val proof = ui.card()
+        proof.addView(ui.title("谁真的挂上了"))
+        proof.addView(ui.body(
+            "这一页说不了谎：进程里的模块自己会打一行 `attached to 包名`。PC 上跑\n" +
+                "  python tools/mockloc.py scope\n" +
+                "就把 logcat 里这些行收成一份名单，那才是 LSPosed 实际给的作用域。",
+        ))
+        column.addView(proof)
         return scroll
     }
 
@@ -538,35 +546,6 @@ class MainActivity : Activity() {
     private fun reloadPlaces() {
         placeAdapter.clear()
         placeAdapter.addAll(places.all().map { it.label })
-    }
-
-    private fun loadScopeList() {
-        val installed = runCatching {
-            packageManager.getInstalledApplications(0)
-                .filter { it.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM == 0 }
-                .filter { it.packageName != packageName }
-                .sortedBy { packageManager.getApplicationLabel(it).toString() }
-                .map { it.packageName to packageManager.getApplicationLabel(it).toString() }
-        }.getOrElse { emptyList() }
-        scopePackages = installed.map { it.first }
-        val chosen = bridge.targets().toSet()
-        (scopeList.adapter as ArrayAdapter<String>).apply {
-            clear()
-            addAll(installed.map { (pkg, name) -> "$name\n$pkg" })
-            notifyDataSetChanged()
-        }
-        installed.forEachIndexed { index, (pkg, _) -> scopeList.setItemChecked(index, pkg in chosen) }
-    }
-
-    private fun saveTargets() {
-        val checked: SparseBooleanArray = scopeList.checkedItemPositions
-        val picked = (0 until checked.size()).asSequence()
-            .filter { checked.valueAt(it) }
-            .mapNotNull { scopePackages.getOrNull(checked.keyAt(it)) }
-            .toList()
-        bridge.setTargets(picked)
-        toast("已保存 ${picked.size} 个包名；跑 tools/mockloc.py sync 或刷 root 模块后生效")
-        refreshStatus()
     }
 
     private fun toast(message: String) = Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
