@@ -74,8 +74,10 @@ fun main() {
     check("targets", Config.targets, setOf("com.tencent.mm"))
     check("label", Config.label, "31.240000,121.460000")
     check("gnssSpoof", Config.gnssSpoof, true)
-    check("blindWifi", Config.blindWifi, true)
-    check("blindCell", Config.blindCell, false)
+    check("blindWifi", Config.blindWifi.render(), "true")
+    check("blindCell", Config.blindCell.render(), "false")
+    check("blindWifi 覆盖任意包", Config.blindWifiFor("com.autonavi.minimap"), true)
+    check("blindCell 不覆盖任何包", Config.blindCellFor("com.autonavi.minimap"), false)
     check("probe", Config.probe, true)
     check("lastError", Config.lastError, null)
 
@@ -92,7 +94,7 @@ fun main() {
     check("legacy providers", Config.providers, listOf("gps"))
     check("legacy targets empty=all", Config.shouldSpoof("any.pkg"), true)
     check("legacy gnss default", Config.gnssSpoof, true)
-    check("legacy blindWifi default", Config.blindWifi, false)
+    check("legacy blindWifi default", Config.blindWifi.render(), "false")
     check("legacy probe default", Config.probe, false)
 
     Thread.sleep(1100)
@@ -101,7 +103,7 @@ fun main() {
         .replace("MOCKLOC_PROBE=true", "MOCKLOC_PROBE=0"))
     Config.refresh()
     check("gnss off", Config.gnssSpoof, false)
-    check("blindCell as 1", Config.blindCell, true)
+    check("blindCell as 1", Config.blindCell.render(), "true")
     check("probe as 0", Config.probe, false)
 
     // Deleting the file is how `off --wipe` stops a spoof; the module notices on the next
@@ -128,7 +130,7 @@ fun main() {
     check("渲染 label", Config.label, "东方明珠 & 陆家嘴")
     check("渲染 targets", Config.targets, setOf("com.tencent.mm", "com.autonavi.minimap"))
     check("渲染 providers", Config.providers, listOf("gps", "network", "fused"))
-    check("渲染默认不致盲", Config.blindWifi, false)
+    check("渲染默认不致盲", Config.blindWifi.render(), "false")
 
     // Every field the module reads has to come out of the renderer, or a sync silently resets it.
     // `MOCKLOC_PROBE` was once missing this way; blinding is the field that actually moves Amap's
@@ -142,14 +144,34 @@ fun main() {
             label = "杭州",
             targets = emptyList(),
             probe = true,
-            blind = true,
+            blind = com.mockloc.Scope.All,
         )
     )
     Config.refresh()
-    check("渲染致盲 WiFi", Config.blindWifi, true)
-    check("渲染致盲基站", Config.blindCell, true)
+    check("渲染致盲 WiFi", Config.blindWifi.render(), "true")
+    check("渲染致盲基站", Config.blindCell.render(), "true")
     check("渲染探针", Config.probe, true)
     check("渲染空 targets = 跟随作用域", Config.targets, emptySet<String>())
+
+    // The tri-state matters because blinding breaks the host app's own WiFi features: "only these
+    // packages" is the setting people actually want, and it has to survive the same round trip.
+    Thread.sleep(1100)
+    file.writeText(
+        com.mockloc.ModuleBridge.render(
+            enabled = true,
+            lat = "30.2638384",
+            lng = "120.1927132",
+            label = "杭州",
+            targets = emptyList(),
+            blind = com.mockloc.Scope.only(listOf("com.autonavi.minimap", "com.sankuai.meituan")),
+        )
+    )
+    Config.refresh()
+    check("按包致盲 render", Config.blindWifi.render(), "com.autonavi.minimap,com.sankuai.meituan")
+    check("按包致盲 命中高德", Config.blindWifiFor("com.autonavi.minimap"), true)
+    check("按包致盲 命中美团", Config.blindCellFor("com.sankuai.meituan"), true)
+    check("按包致盲 不命中微信", Config.blindWifiFor("com.tencent.mm"), false)
+    check("按包致盲 不命中 null", Config.blindWifiFor(null), false)
     check("空 targets 仍对任意包生效", Config.shouldSpoof("com.autonavi.minimap"), true)
 
     Thread.sleep(1100)

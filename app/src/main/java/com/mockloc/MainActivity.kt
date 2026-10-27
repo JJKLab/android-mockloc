@@ -52,6 +52,8 @@ class MainActivity : Activity() {
     private lateinit var keyField: EditText
     private lateinit var queryField: EditText
     private lateinit var pasteField: EditText
+    private lateinit var policyList: ListView
+    private lateinit var appOpChipRow: LinearLayout
     private lateinit var hitAdapter: ArrayAdapter<String>
     private lateinit var placeAdapter: ArrayAdapter<String>
 
@@ -59,15 +61,13 @@ class MainActivity : Activity() {
     private var pickedWgs: DoubleArray? = null
     private var marker: Marker? = null
     private var pasteGcj = true
-
-    /** Leftover narrowing list from the old in-app picker; empty is the default and the advice. */
-    private var leftover: List<String> = emptyList()
+    private var policyPackages: List<String> = emptyList()
+    private var policyLoaded = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Configuration.getInstance().load(applicationContext, prefs)
         Configuration.getInstance().setUserAgentValue(packageName)
-        leftover = bridge.targets()
         setContentView(buildUi())
         map.setTileSource(AmapTiles())
         map.setMultiTouchControls(true)
@@ -118,7 +118,7 @@ class MainActivity : Activity() {
         flipper.addView(searchPage(), pageParams())
         flipper.addView(mapPage(), pageParams())
         flipper.addView(placesPage(), pageParams())
-        flipper.addView(scopePage(), pageParams())
+        flipper.addView(policyPage(), pageParams())
         flipper.addView(statusPage(), pageParams())
 
         val tabRow = LinearLayout(this).apply {
@@ -136,6 +136,15 @@ class MainActivity : Activity() {
                 setPadding(0, ui.dp(10), 0, ui.dp(10))
                 setOnClickListener {
                     flipper.displayedChild = index
+                    // Enumerating packages and reading the app-op are both too slow/noisy to do on
+                    // every keystroke, so the pages that need them fill in on first show.
+                    if (index == TABS.indexOf("策略")) {
+                        renderAppOpChips()
+                        if (!policyLoaded) {
+                            policyLoaded = true
+                            loadPolicyList()
+                        }
+                    }
                     if (index == TABS.lastIndex) refreshStatus()
                 }
             }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
@@ -158,7 +167,7 @@ class MainActivity : Activity() {
             setTextColor(0xFFFFFFFF.toInt())
         })
         addView(TextView(this@MainActivity).apply {
-            text = "系统级虚拟定位 · 档1 免root / 档2 root / 档3 无痕"
+            text = "四档：免root / Shizuku / root / 模块无痕（策略页看哪个 App 要哪层）"
             textSize = 12f
             setTextColor(0xD9FFFFFF.toInt())
         })
@@ -264,9 +273,7 @@ class MainActivity : Activity() {
             isAllCaps = false
             setOnClickListener {
                 val w = pickedWgs ?: return@setOnClickListener toast("先点一下地图")
-                places.add(Place("点${System.currentTimeMillis() % 10000}", w[0], w[1], "地图点选"))
-                reloadPlaces()
-                toast("已收藏")
+                promptPlace("点${"%.4f".format(w[0])}", w[0], w[1], null)
             }
         }, ui.fill())
         page.addView(map, weightParams())
@@ -285,64 +292,142 @@ class MainActivity : Activity() {
             inject(item.lat, item.lng, item.name)
         }
         list.onItemLongClickListener = AdapterView.OnItemLongClickListener { _, _, pos, _ ->
-            places.removeAt(pos)
-            reloadPlaces()
+            val item = places.all().getOrElse(pos) { return@OnItemLongClickListener true }
+            // Long press used to delete outright, which is the one gesture nobody wants to repeat.
+            android.app.AlertDialog.Builder(this)
+                .setTitle(item.name)
+                .setItems(arrayOf("改名称 / 备注", "删除")) { _, which ->
+                    when (which) {
+                        0 -> promptPlace(item.name, item.lat, item.lng, item)
+                        else -> confirmDelete(item)
+                    }
+                }
+                .show()
             true
         }
         page.addView(list, weightParams())
-        page.addView(ui.hint("点 = 注入    长按 = 删除    收藏存的就是 WGS-84，不再转换"))
+        page.addView(ui.hint("点 = 注入    长按 = 改名称/备注、删除    收藏存的就是 WGS-84，不再转换"))
         return page
     }
 
-    private fun scopePage(): View {
+    private fun policyPage(): View {
         val (scroll, column) = scrollColumn()
 
-        val card = ui.card()
-        card.addView(ui.title("作用域只在 LSPosed 里勾"))
-        card.addView(ui.body(
-            "模块只会被加载进 LSPosed 作用域里的进程，未勾选的 App 连代码都进不去，" +
-                "所以这里不需要第二份名单。\n" +
-                "当前模块名单：${if (leftover.isEmpty()) "空 = 完全跟随 LSPosed 作用域" else leftover.joinToString()}",
-        ))
-        if (leftover.isNotEmpty()) {
-            var clearButton: Button? = null
-            clearButton = Button(this).apply {
-                text = "清空，跟随 LSPosed"
-                isAllCaps = false
-                setOnClickListener {
-                    bridge.setTargets(emptyList())
-                    toast("名单已清空：作用域里每个 App 都会被改写")
-                    clearButton?.visibility = View.GONE
-                    refreshStatus()
+        val preflight = ui.card()
+        preflight.addView(ui.title("免 root 档自检"))
+        appOpChipRow = ui.chipRow()
+        preflight.addView(appOpChipRow)
+        preflight.addView(Button(this).apply {
+            text = "去开发者选项"
+            isAllCaps = false
+            setOnClickListener {
+                val intent = if (Tiers.developerOptionsEnabled(this@MainActivity)) {
+                    Tiers.developmentSettingsIntent()
+                } else {
+                    toast("开发者选项还没打开，先到设备信息里连点版本号")
+                    Tiers.fallbackSettingsIntent()
                 }
+                runCatching { startActivity(intent) }
+                    .onFailure { toast("这个 ROM 不让我直接跳，请手动进设置") }
             }
-            card.addView(clearButton)
+        })
+        preflight.addView(ui.hint(
+            "「选择虚拟定位应用」只能由设置进程授权（本机 shell 被摘了 MANAGE_APP_OPS_MODES）；" +
+                "重装 App 会清掉那次授权，所以这一栏每次进来都重读。",
+        ))
+        column.addView(preflight)
+
+        val policy = ui.card()
+        policy.addView(ui.title("哪些 App 要抽空输入"))
+        policy.addView(ui.body(
+            "勾上的包会屏蔽自己的 WiFi/基站扫描结果，逼它落回系统定位——实测只有高德这类" +
+                "「自己算路」的 App 需要。没勾的 App 不受影响。\n" +
+                "标记：①系统provider ②抽空输入 ③进进程 未测",
+        ))
+        policyList = ListView(this).apply {
+            choiceMode = ListView.CHOICE_MODE_MULTIPLE
+            layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, ui.dp(300))
         }
-        card.addView(ui.hint(
-            "名单是旧功能的残留：它只能在 LSPosed 作用域之内再收窄，永远不会往外扩。" +
-                "除非只想让作用域里的一部分 App 生效，否则保持空。",
-        ))
-        column.addView(card)
+        policyList.adapter = ArrayAdapter(
+            this, android.R.layout.simple_list_item_multiple_choice, mutableListOf<String>(),
+        )
+        policy.addView(policyList)
+        val policyButtons = ui.row()
+        policyButtons.addView(Button(this).apply {
+            text = "保存"
+            isAllCaps = false
+            setOnClickListener { saveBlindScope() }
+        }, ui.fill())
+        policyButtons.addView(Button(this).apply {
+            text = "清空"
+            isAllCaps = false
+            setOnClickListener {
+                for (i in 0 until policyList.count) policyList.setItemChecked(i, false)
+            }
+        }, ui.fill())
+        policy.addView(policyButtons)
+        column.addView(policy)
 
-        val note = ui.card()
-        note.addView(ui.title("在 LSPosed 里勾这些"))
-        note.addView(ui.body(
-            "微信：com.tencent.mm\n" +
-                "高德地图：com.autonavi.minimap\n" +
-                "厂商融合定位（本机是 Oplus）：com.oplus.location、com.oplus.locationproxy\n" +
-                "系统框架：可以勾，但本模块故意不 hook android 进程——改 system_server 的风险不对等",
+        val legend = ui.card()
+        legend.addView(ui.title("三件事互相独立"))
+        legend.addView(ui.body(Tiers.summary().trim()))
+        legend.addView(ui.hint(
+            "①/②/③ 不是「权限越高越有效」的阶梯：0、1、2 档给目标 App 的是同一个系统 provider，" +
+                "所以 Tier 0 推不动的 App，Tier 2 也推不动。",
         ))
-        column.addView(note)
+        column.addView(legend)
 
-        val proof = ui.card()
-        proof.addView(ui.title("谁真的挂上了"))
-        proof.addView(ui.body(
-            "这一页说不了谎：进程里的模块自己会打一行 `attached to 包名`。PC 上跑\n" +
-                "  python tools/mockloc.py scope\n" +
-                "就把 logcat 里这些行收成一份名单，那才是 LSPosed 实际给的作用域。",
-        ))
-        column.addView(proof)
+        val limits = ui.card()
+        limits.addView(ui.title("这几样定位层改不了"))
+        limits.addView(ui.body(Tiers.outsideScope.joinToString("\n")))
+        column.addView(limits)
         return scroll
+    }
+
+    private fun loadPolicyList() {
+        val installed = runCatching {
+            packageManager.getInstalledApplications(0)
+                .filter { it.packageName != packageName }
+                .filter { info ->
+                    runCatching {
+                        packageManager.getPackageInfo(
+                            info.packageName,
+                            android.content.pm.PackageManager.GET_PERMISSIONS,
+                        ).requestedPermissions?.any { perm ->
+                            perm == android.Manifest.permission.ACCESS_FINE_LOCATION ||
+                                perm == android.Manifest.permission.ACCESS_COARSE_LOCATION
+                        } == true
+                    }.getOrDefault(false)
+                }
+                .sortedBy { packageManager.getApplicationLabel(it).toString() }
+                .map { it.packageName to packageManager.getApplicationLabel(it).toString() }
+        }.getOrElse { emptyList() }
+        policyPackages = installed.map { it.first }
+        val chosen = bridge.blindScope()
+        (policyList.adapter as ArrayAdapter<String>).apply {
+            clear()
+            addAll(installed.map { (pkg, name) ->
+                "$name ${Tiers.needsOf(pkg).label.take(1)}  $pkg"
+            })
+            notifyDataSetChanged()
+        }
+        installed.forEachIndexed { index, (pkg, _) ->
+            policyList.setItemChecked(index, chosen.covers(pkg))
+        }
+    }
+
+    private fun saveBlindScope() {
+        val checked = policyList.checkedItemPositions
+        val picked = (0 until checked.size()).asSequence()
+            .filter { checked.valueAt(it) }
+            .mapNotNull { policyPackages.getOrNull(checked.keyAt(it)) }
+            .toList()
+        bridge.setBlindScope(Scope.only(picked))
+        toast(
+            if (picked.isEmpty()) "已清空：没有 App 需要抽空输入"
+            else "已选 ${picked.size} 个；跑 tools/mockloc.py sync 或刷 root 模块后生效，且要重启目标 App"
+        )
+        refreshStatus()
     }
 
     private fun statusPage(): View {
@@ -361,18 +446,6 @@ class MainActivity : Activity() {
             setOnClickListener {
                 bridge.setProbe(!bridge.probe())
                 toast(if (bridge.probe()) "探针已开，记得跑一次 tools/mockloc.py sync" else "探针已关")
-                refreshStatus()
-            }
-        }, ui.fill())
-        actions.addView(Button(this).apply {
-            text = if (bridge.blind()) "致盲：开" else "致盲：关"
-            isAllCaps = false
-            setOnClickListener {
-                bridge.setBlind(!bridge.blind())
-                toast(
-                    if (bridge.blind()) "已致盲 WiFi/基站输入：高德这类自家算路的 App 才会落到注入点"
-                    else "已恢复真实 WiFi/基站输入"
-                )
                 refreshStatus()
             }
         }, ui.fill())
@@ -415,7 +488,8 @@ class MainActivity : Activity() {
             }
             append("\n模块配置（${Config.DEFAULT_PATH}）\n")
             append("  开关=${onOff(Config.enabled)} 全局=${onOff(Config.global)} 卫星=${onOff(Config.gnssSpoof)} ")
-            append("致盲=${onOff(Config.blindWifi)}/${onOff(Config.blindCell)} 探针=${onOff(Config.probe)}\n")
+            append("探针=${onOff(Config.probe)}\n")
+            append("  致盲 WiFi=${Config.blindWifi.render()} 基站=${Config.blindCell.render()}\n")
             append("  作用包名: ${if (Config.targets.isEmpty()) "LSPosed 作用域内全部" else Config.targets.joinToString()}\n")
             append("  读回: ${Config.lastError ?: "正常（写入于 ${Config.lastLoadedAgo}ms 前）"}\n")
             // Measured on 2026-10-27: this is the one switch that moves Amap's blue dot, and the
@@ -432,6 +506,31 @@ class MainActivity : Activity() {
             append("\n注：以上只反映本 App 读到的值。目标 App 认不认，要在它里面主动发起一次定位请求、看返回坐标\n")
         }
     }
+
+    /**
+     * The two facts the no-root tier actually depends on, read fresh every time: the app-op grant
+     * (a reinstall clears it) and whether 开发者选项 is even reachable on this ROM.
+     */
+    private fun renderAppOpChips() {
+        appOpChipRow.removeAllViews()
+        val allowed = Tiers.mockAppOpAllowed(this)
+        appOpChipRow.addView(
+            ui.chip("虚拟定位授权", if (allowed) Ui.State.OK else Ui.State.BAD),
+        )
+        appOpChipRow.addView(
+            ui.chip(
+                "开发者选项",
+                if (Tiers.developerOptionsEnabled(this)) Ui.State.OK else Ui.State.WARN,
+            ),
+        )
+        appOpChipRow.addView(
+            ui.chip("本 App 定位权限", if (hasLocationGrant()) Ui.State.OK else Ui.State.BAD),
+        )
+    }
+
+    private fun hasLocationGrant(): Boolean =
+        checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
 
     private fun renderChips(mockActive: Boolean) {
         tierChips.removeAllViews()
@@ -548,7 +647,8 @@ class MainActivity : Activity() {
                 .putExtra(MockService.EXTRA_LNG, "%.7f".format(lng))
                 .putExtra(MockService.EXTRA_ACC, "5.0")
                 .putExtra(MockService.EXTRA_RADIUS, "0")
-                .putExtra(MockService.EXTRA_INTERVAL, "15")
+                // 1s, not 15s: a stale fix is what makes an app go re-locate through its own path.
+                .putExtra(MockService.EXTRA_INTERVAL, "1")
         )
         toast("已注入 $label")
         refreshStatus()
@@ -563,6 +663,57 @@ class MainActivity : Activity() {
         placeAdapter.addAll(places.all().map { it.label })
     }
 
+    /**
+     * Ask for a name and a note instead of inventing "点3782". A saved point with no note is
+     * indistinguishable from the one 30 m away, which is the whole reason people stop using
+     * favourites.
+     */
+    private fun promptPlace(defaultName: String, lat: Double, lng: Double, existing: Place?) {
+        val fields = ui.column().apply { setPadding(ui.dp(20), ui.dp(8), ui.dp(20), 0) }
+        val nameField = EditText(this).apply {
+            setText(existing?.name ?: defaultName)
+            hint = "名称"
+            isSingleLine = true
+        }
+        val noteField = EditText(this).apply {
+            setText(existing?.note ?: "")
+            hint = "备注（哪栋楼、几点打卡、给谁用）"
+            isSingleLine = true
+        }
+        fields.addView(nameField)
+        fields.addView(noteField)
+        android.app.AlertDialog.Builder(this)
+            .setTitle(if (existing == null) "收藏这个点" else "编辑收藏")
+            .setView(fields)
+            .setPositiveButton("保存") { _, _ ->
+                val name = nameField.text.toString().trim().ifEmpty { defaultName }
+                val note = noteField.text.toString().trim()
+                val edited = existing?.let { old ->
+                    places.all().indexOfFirst { it.name == old.name && it.lat == old.lat }
+                } ?: -1
+                if (edited >= 0) places.replaceAt(edited, Place(name, lat, lng, note)) else
+                    places.add(Place(name, lat, lng, note))
+                reloadPlaces()
+                toast(if (existing == null) "已收藏 $name" else "已更新 $name")
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    private fun confirmDelete(place: Place) {
+        android.app.AlertDialog.Builder(this)
+            .setTitle("删除 ${place.name}")
+            .setMessage(place.label)
+            .setPositiveButton("删除") { _, _ ->
+                places.all().indexOfFirst { it.name == place.name && it.lat == place.lat }
+                    .takeIf { it >= 0 }
+                    ?.let { places.removeAt(it) }
+                reloadPlaces()
+            }
+            .setNegativeButton("留下", null)
+            .show()
+    }
+
     private fun toast(message: String) = Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
 
     private companion object {
@@ -571,6 +722,6 @@ class MainActivity : Activity() {
         const val KEY_LAST = "last_injected"
         const val KEY_LAST_LABEL = "last_label"
         const val DEFAULT_PROVIDERS = "gps,network,fused"
-        val TABS = listOf("搜索", "地图", "收藏", "作用域", "状态")
+        val TABS = listOf("搜索", "地图", "收藏", "策略", "状态")
     }
 }

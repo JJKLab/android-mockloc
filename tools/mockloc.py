@@ -189,6 +189,28 @@ def jitter(lat, lng, radius_m):
     return offset_meters(lat, lng, dist, random.uniform(0, 2 * math.pi))
 
 
+def blind_spec(value):
+    """Normalise a blinding spec to what the module parses: false | true | pkg,pkg.
+
+    Tri-state on purpose. The layer that actually moves 高德地图 breaks the host app's own WiFi
+    features, so "only these packages" is the setting people want, and an empty string cannot tell
+    "nobody" apart from "everybody in scope".
+    """
+    if value is None or value is False:
+        return "false"
+    if value is True:
+        return "true"
+    text = str(value).strip()
+    if text.lower() in ("", "false", "0", "none", "no"):
+        return "false"
+    if text.lower() in ("true", "1", "all", "*", "yes"):
+        return "true"
+    packages = [p.strip() for p in text.replace("，", ",").split(",") if p.strip()]
+    if not all(re.fullmatch(r"[A-Za-z0-9._]+", p) for p in packages):
+        raise DeviceError(f"致盲包名看不懂：{value}（要逗号分隔的包名，或 true/false）")
+    return ",".join(packages)
+
+
 def write_config(t, cfg):
     """Hand the config to the root module through the shell-writable inbox: KernelSU gives adb no
     su, so writing /data/adb directly from the PC is not an option on this device."""
@@ -319,8 +341,8 @@ def cmd_set(t, args):
             "MOCKLOC_TARGETS": ",".join(args.target or []),
             "MOCKLOC_LABEL": label,
             "MOCKLOC_GNSS": "true" if args.gnss_spoof else "false",
-            "MOCKLOC_BLIND_WIFI": "true" if args.blind_wifi else "false",
-            "MOCKLOC_BLIND_CELL": "true" if args.blind_cell else "false",
+            "MOCKLOC_BLIND_WIFI": blind_spec(args.blind_wifi),
+            "MOCKLOC_BLIND_CELL": blind_spec(args.blind_cell),
             "MOCKLOC_PROBE": "true" if args.probe else "false",
         })
         print(f"[ok] 开机自恢复配置已写入 {path}（root 模块会读它）")
@@ -467,17 +489,34 @@ def cmd_status(t, args):
 
 
 TIERS = [
-    ("1", "无 root（App 内 provider + 开发者选项授权）",
-     "全局假位置；isMock()=true；重启后要在 App 里重新起一次。注意：本机实测 ColorOS 系已把 "
-     "MANAGE_APP_OPS_MODES 从 shell 摘掉，所以旧的 `--mode adb` 直调 cmd location 在这类 ROM 上不通，"
-     "app-op 必须由开发者选项（Settings 进程）来授",
+    ("0", "普通 App（无 root、无 Shizuku）",
+     "App 自己调 addTestProvider，app-op 由开发者选项「选择虚拟定位应用」写；全局一个点、isMock=true、"
+     "重装会清掉授权。本机实测：微信/高德/美团都不吃（美团首页仍显示连州、卡片距离都是真的）",
      "--mode app set --place 东方明珠 --first"),
+    ("1", "Shizuku / Rish（shell uid，不用 root shell）",
+     "与档 0 是同一个数据面（系统里多一个 mock provider），差别只在不用开发者选项、可脚本化、provider "
+     "identity 是 shell 而非某个包名。本机已实测：adb shell（uid 2000、完全不用 su）就能建 provider。"
+     "结构上不会改变任何 App 的判定：档 0 推不动的，这一档也推不动",
+     "--mode adb set --place 东方明珠 --first"),
     ("2", "root，不装 Xposed",
-     "全局假位置 + 开机自恢复；isMock()=true 依旧",
+     "系统 provider（identity 0/android[LocationService]）+ 开机自恢复 + **只有这一档能按 uid 断网**。"
+     "本机实测：root provider + 掐掉高德网络（模块完全关掉）⇒ 高德蓝点落在注入点，重定位也不回真。"
+     "isMock=true 依旧擦不掉",
      "set --mode su --place 东方明珠 --first --persist"),
-    ("3", "root + LSPosed 模块",
-     "只有列进 TARGETS 的 App 拿到假位置，其余 App 真实；没有测试 provider，所以 isMock()=false",
-     "set --mode su --no-global --place 东方明珠 --first --target com.example.app --persist"),
+    ("3", "root + LSPosed/libxposed 模块",
+     "进目标进程改读数：按 App 分流、没有测试 provider 所以 isMock=false。本机实测：微信只有这一档"
+     "（它读内嵌腾讯 SDK 并看自家 isMock）；高德反而不靠这档——它的坐标在 native 侧生成与消费，"
+     "Java 钩子够不着，真正有效的是②输入面（这一档提供精细版致盲）",
+     "set --mode su --no-global --place 东方明珠 --first --persist --blind-wifi com.autonavi.minimap"),
+]
+
+# Measured on this device (OnePlus Ace 3V / Android 16). What makes a given app move is a lever,
+# not a rung: 0/1/2 all deliver the same mock provider, so "which tier" is the wrong question.
+NEEDS = [
+    ("微信 com.tencent.mm", "③进进程", "只吃进程内改写：它读内嵌腾讯 SDK 并看 mock 标志。已验通过"),
+    ("高德地图 com.autonavi.minimap", "②抽空输入", "自家引擎算路、native 消费；致盲或按 uid 断网即落点，③改不动"),
+    ("美团 com.sankuai.meituan", "未判定", "档 0 实测无效；它不在模块作用域，②/③还没测"),
+    ("抖音 aweme.lite", "未测", "注意评论里的「IP 属地」是服务端按出口 IP 算的，与定位无关"),
 ]
 
 
@@ -495,6 +534,9 @@ def cmd_tiers(t, args):
         print(f"档 {num}  {name}")
         print(f"   效果 : {effect}")
         print(f"   命令 : python tools/mockloc.py {cmd}")
+    print("\n目标 App 要的是哪一层（本机实测，①=系统provider ②=抽空输入 ③=进进程）：")
+    for app, lever, note in NEEDS:
+        print(f"  {app:32} {lever:8} {note}")
     print("\n判据：三档都装同一个 mockloc.apk，跑完档打开页面看两行——")
     print("  LKL gps : ... mock=False/True   是 App 实际读到的痕迹")
     print("  注入 : 已生效/未生效            只有档 3 会是已生效")
@@ -529,9 +571,15 @@ def cmd_doctor(t, args):
             break
 
     print("\n三档可用性")
-    # Tier 1 needs only the shell uid, so re-probe it without su rather than inferring.
-    ok1, detail1 = probe(t, f"appops set 2000 android:mock_location allow && cmd location providers add-test-provider {probe_provider}", su=False)
-    print(f"  档1 无root      : {'可用' if ok1 else '不可用'} {'' if ok1 else detail1}")
+    # Tier 1 is the shell uid, so probe it without su. Asking for the grant in the same command is
+    # what made this read "不可用" on ROMs that strip MANAGE_APP_OPS_MODES from shell even though the
+    # op is already allow and the provider builds fine - two different facts, two probes.
+    ok_grant, grant_detail = probe(t, f"appops set 2000 android:mock_location allow", su=False)
+    ok1, detail1 = probe(t, f"cmd location providers add-test-provider {probe_provider}", su=False)
+    if ok1:
+        t.sh(f"cmd location providers remove-test-provider {probe_provider}", su=False)
+    print(f"  档0/1 免root    : {'可用（shell 能建 provider）' if ok1 else '不可用'} {'' if ok1 else detail1}")
+    print(f"      授权途径    : {'shell 可自授 app-op' if ok_grant else f'需开发者选项或 root（{grant_detail[:60]}）'}")
     print(f"  档2 root        : {'可用' if tier_ok.get('su') and tier_ok.get('provider') else '不可用'}")
     ok_apk, d_apk = probe(t, f"pm path {SELF_PKG}", su=False)
     ok_lspd, _ = probe(t, "ls /data/adb/lspd", su=True)
@@ -611,7 +659,7 @@ def build_args(place=None, city=None, coord=None, datum="gcj02", watch=False):
         providers=PROVIDERS_DEFAULT,
         accuracy=5.0, persist=True, dry_run=False, radius=(20.0 if watch else 0.0),
         interval=15.0, first=False, target=[], global_provider=True, wipe=False,
-        gnss_spoof=True, blind_wifi=False, blind_cell=False, probe=False,
+        gnss_spoof=True, blind_wifi="false", blind_cell="false", probe=False,
     )
 
 
@@ -625,8 +673,9 @@ def ask_scope(ns):
     if ns.target:
         # Only worth asking when the module is the layer doing the work. The blinding hooks are
         # installed once per process, so changing this needs the target app to be restarted.
-        if (input("致盲 WiFi/基站扫描结果(网络定位SDK喂服务器的输入)? y/n [n]: ").strip() or "n").lower() == "y":
-            ns.blind_wifi = ns.blind_cell = True
+        blind = input("致盲哪些 App 的 WiFi/基站输入(逗号包名, all=全部, 空=不致盲): ").strip()
+        if blind:
+            ns.blind_wifi = ns.blind_cell = "true" if blind.lower() == "all" else blind
         if (input("开 API 探针(只记录不改值，结果进 logcat)? y/n [n]: ").strip() or "n").lower() == "y":
             ns.probe = True
     return ns
@@ -648,10 +697,11 @@ def main():
                         default=True, help="--no-global: only the Xposed module path, no system provider")
     common.add_argument("--gnss", dest="gnss_spoof", action=argparse.BooleanOptionalAction,
                         default=True, help="伪造卫星状态（假 gps 却 0 颗星正是一致性检测点）")
-    common.add_argument("--blind-wifi", action=argparse.BooleanOptionalAction, default=False,
-                        help="清空 getScanResults；会破坏目标 App 自己的 WiFi 功能")
-    common.add_argument("--blind-cell", action=argparse.BooleanOptionalAction, default=False,
-                        help="清空基站信息；同上")
+    common.add_argument("--blind-wifi", nargs="?", const="true", default="false", metavar="SPEC",
+                        help="抹掉 getScanResults/WifiInfo：true=作用域内全部、false=关、或逗号包名列表"
+                             "（会破坏目标 App 自己的 WiFi 功能）")
+    common.add_argument("--blind-cell", nargs="?", const="true", default="false", metavar="SPEC",
+                        help="抹掉基站信息，取值同上")
     common.add_argument("--probe", action=argparse.BooleanOptionalAction, default=False,
                         help="只记录不改值：目标 App 调了哪些定位 API、从它自己哪个类调的（进 logcat）")
 

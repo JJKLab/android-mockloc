@@ -69,25 +69,37 @@ python tools/mockloc.py scope
 
 # 高德地图专属：它自己算路，只开注入点没用，要把它的射频输入抽空让它落回系统定位
 # （代价：目标 App 自己的 WiFi 相关功能同时失真；改完必须重启目标 App）
-python tools/mockloc.py set --place 东方明珠 --blind-wifi --blind-cell --persist
+# 取值三态：--blind-wifi 单独写 = 作用域内全部；带包名 = 只致盲这些 App；false = 关
+python tools/mockloc.py set --place 东方明珠 --blind-wifi com.autonavi.minimap --blind-cell com.autonavi.minimap --persist
+
+# 四档权限各是什么、这台设备上哪档能拿下哪个 App
+python tools/mockloc.py tiers
 ```
 
-### 2.5 三种生效层级（这是"能不能过检测"的分水岭）
+### 2.5 四档权限（这是"能不能过检测"的分水岭）
 
-| 层级 | 靠什么 | 需要的权限 | 按 App 分流 | `isMock()` | 本项目 |
-|---|---|---|---|---|---|
-| 全局·App 内 provider | App 自己调 `addTestProvider`，app-op 由开发者选项授 | 无需 root，装 APK + 一次点选 | ❌ 全体 App 同一个位置 | **true**，自检可见 | ✅ `--mode app` |
-| 全局·root/shell 直注 | `cmd location providers ...` | adb 需要 ROM 把 `MANAGE_APP_OPS_MODES` 留给 shell（**本机不通**，见 A0）；**root 通**（`--mode su`，A0.1 已验，identity 是 `0/android[LocationService]`） | ❌ | **true** | ✅ `--mode su`（档 2）/ ⚠️ `--mode adb` 仅近 AOSP ROM |
-| 按 App·进程内 hook | libxposed 改 `Location` 读数 | **root + LSPosed** | ✅ 只有列进 `TARGETS` 的 App | **false**（压根没有测试 provider） | ✅ `--no-global --target` |
-| 全局·无痕 | 在 system_server 里就地改写 `LocationResult` | root + LSPosed，且要作用域加 `system` | ❌ 全体 | false | ⚠️ 未实现，见下 |
+| 档 | 靠什么 | 需要的权限 | 按 App 分流 | `isMock()` | 目标进程里留痕迹 | 本项目 |
+|---|---|---|---|---|---|---|
+| **0** 普通 App | App 自己调 `addTestProvider`，app-op 由开发者选项「选择虚拟定位应用」授 | 无需 root，装 APK + 一次点选（**重装会清掉**） | ❌ 全体同一个点 | **true** | 不留 | ✅ `--mode app` |
+| **1** Shizuku/Rish | 以 shell uid 调系统 API（`cmd location ...`） | 需要 shell 的 mock app-op 已在位（本机由 root 授过一次；近 AOSP ROM 上 adb 就能授） | ❌ 同上，**与档 0 同一数据面** | **true** | 不留 | ✅ `--mode adb`（2026-10-27 本机实测可用，见 A15） |
+| **2** root | `cmd location providers ...` + **只有这档能按 uid 断网/关射频** | KernelSU/Magisk 给 su | ❌ 读数不能，但②可以按 uid | **true** | 不留 | ✅ `--mode su`（identity `0/android[LocationService]`） |
+| **3** LSP/libxposed 模块 | 进目标进程改它读的每一个值 | root + LSPosed + 在管理器里勾作用域 | ✅ 按包 | **false**（压根没有测试 provider） | **留**（栈帧/maps/classloader） | ✅ 装 APK 即生效 |
+| — 全局·无痕 | 在 system_server 里就地改写 `LocationResult` | root + LSPosed，且作用域要加 `system` | ❌ 全体 | false | 不留 | ⚠️ 未实现，见下 |
 
-第三级没写的原因不是能力不够，而是风险不对等：它要改 `LocationProviderManager.onReportLocation`
+**读这张表最重要的一句**：档 0/1/2 给目标 App 的是同一个 mock provider，所以它们不是"权限越高越能过"
+的阶梯——**档 0 推不动的 App，档 1、档 2 也推不动**。真正决定成败的是三个杠杆（①系统 provider、
+②抽空它的输入、③进它进程改读数），完整矩阵与每档实测在 A15。
+
+最后一行没写的原因不是能力不够，而是风险不对等：它要改 `LocationProviderManager.onReportLocation`
 并按调用方 uid 分流，写错的后果是 **system_server 软重启**（XposedFakeLocation 的 issue #50/#49 就是这类）。
 在还没有真机可测的现在，我不会把它盲编盲推。参考实现的位置已记在附录 A3。
 
 
-`--mode adb` 只用 shell 权限（uid 2000）就够了，**不需要 root**，适合临时验证；缺点是重启失效、且
-`adb shell` 一拔线就断。`--mode su`（默认）走 root，配合 root 模块可以开机自恢复。
+`--mode adb` 只用 shell 权限（uid 2000）就够了，**不需要 root**（本机 2026-10-27 实测：能建
+`[mock]` provider，identity `1000/android[LocationService]`）；缺点是重启失效、且 `adb shell` 一拔线就断。
+`--mode su`（默认）走 root，配合 root 模块可以开机自恢复。早期文档写过"`--mode adb` 在本机不通"，
+那是把"shell 不能*自授* app-op"（ColorOS 摘了 `MANAGE_APP_OPS_MODES`）和"shell 不能建 provider"
+混成了一句，A15 已更正。
 
 ### 2.6 三档分别怎么测（建议顺序）
 
@@ -761,6 +773,65 @@ autoHotReload=true`（比我们多一项热重载）；`java_init.list` 指向 `
 `AmapSdk` 那三层钩子保留：对**引用**高德定位 bean 的宿主（第三方 App 里的高德 SDK）它仍然有效，
 只是对高德地图本体的 native 引擎无效——这条边界现在写清楚了。
 
+### A15 四级权限矩阵（2026-10-27 实测，OnePlus Ace 3V / Android 16 / KernelSU + Stellar）
+
+用户提的问题是"低权限能不能做到，这样反检测面就小"。测下来的第一结论是**问题本身要换个问法**：
+0、1、2 三档给目标 App 的是**同一个东西**——系统里多一个 mock provider。三档的差别只在"谁去建它"
+（App / shell / root）、identity 字段（`10304/com.mockloc` / `1000·2000/android[LocationService]`）、
+以及能不能保活，而 identity 目标 App 自己根本读不到。所以"这个 App 用档 1 就行、那个用档 2 就行"
+**结构上不存在**：档 0 推不动的 App，档 1、档 2 一定也推不动。真正正交的是三个杠杆：
+
+| 杠杆 | 谁能给 | 效果 | 在目标进程里留痕迹 |
+|---|---|---|---|
+| ① 系统 provider | 档 0 / 1 / 2 | 全局一个假点，`isFromMockProvider()=true` | 不留 |
+| ② 抽空它的输入 | 档 2（按 uid 断网、关射频）或档 3（致盲扫描结果） | 逼它落回① | 不留 |
+| ③ 改它进程内的读数 | **只有档 3** | 按 App 分流、`isMock=false` | **留**（栈帧 / maps / classloader / 管理器包名） |
+
+#### 实测结果
+
+| 档 | 怎么验的 | 结果 |
+|---|---|---|
+| **0 普通 App** | 开发者选项授权 → App 内 `addTestProvider`，模块 `ENABLED=false` | 美团首页仍「连州」、团购卡 `522m/1.2km` 全是真距离；高德、微信此前已测同样不吃 |
+| **1 Shizuku/Rish** | `adb shell`（uid 2000，**完全不用 su**）跑 `cmd location providers add-test-provider gps` | **建 provider 成功**，`gps provider [mock]` + `identity=1000/android[LocationService]`，`--mode adb set/off` 全流程走通。**纠正 §2.5/A0 的旧结论**：这台 ROM 上 shell 不能*自授* app-op（`MANAGE_APP_OPS_MODES` 被摘），但**授权已在位时 shell 建 provider 是通的**——旧文档把这两件事混成一句"`--mode adb` 不通" |
+| **2 root** | root 建三个 provider + `iptables -I OUTPUT -m owner --uid-owner 10328 -j DROP`，**模块完全关掉** | **高德蓝点落在杭州**（南肖埠社区/凤起东路），点"我的位置"重定位后仍在杭州 ⇒ **高德不需要 LSP 层**，①+② 就够 |
+| **3 模块** | 0.5.1 三层钩子全命中 | 微信**只有这档**有效（它读内嵌腾讯 SDK 并看 mock 标志）；高德无效（native 生成、native 消费，见 A14） |
+
+#### 每档还能扩什么（以及扩不了什么）
+
+- **档 0 可扩（都不需要 root）**：注入间隔 15s→**1s**（参考项目一致取值：15s 的"死点"会促使 App 走自己
+  那条重定位路）；假点补 `satellites/maxCn0/meanCn0` extras（高德系 SDK 会**直接丢掉**没有卫星信息的假点，
+  AnyWhere/AnyDoor 都补）；API 31+ 改用 `ProviderProperties.Builder` 注册（10 参重载在 36 上还在但已弃用）；
+  开机自恢复与前台保活；**自检 app-op 是否还在**（重装必清）+ 深链跳开发者选项（`ACTION_APPLICATION_DEVELOPMENT_SETTINGS`，
+  开发者选项未开时退到 `ACTION_DEVICE_INFO_SETTINGS`；那个"选择虚拟定位应用"的 picker 没有公开 intent）；
+  以及"飞行模式 + 假 GPS"这个档 0 版的②（代价：瓦片/搜索一起没）。
+  **档 0 的硬缺口**：卫星面。`GnssStatus` 是系统回调，不进进程就改不了 ⇒ 假 GPS + 0 颗星，看卫星的 App 一眼识破。
+- **档 1 比档 0 多出来的**：不用开发者选项、不用每次重装重授权、可脚本化、能 `force-stop` 目标 App 逼它重定位、
+  能 `appops set`/`pm revoke`/`settings put`。⚠️ 其中 `pm revoke <pkg> ACCESS_FINE_LOCATION` 看着像②，
+  实际无用——revoke 之后它连我们的假点也读不到，只会显示"未定位"。
+  **档 1 做不到**：进别人进程、改卫星、擦 `isMock`——这三条就是档 3 的护城河。
+  本机没嵌 Shizuku 客户端的原因：Stellar 带的是 Rish（`moe.nb4a` 1.4.2），当前服务未运行，且 13.1.5 的
+  `Shizuku.newProcess` 已是包内可见（要走 AIDL 或 user-service）——**没有可验证路径的客户端不盲编**，
+  所以这一档现在由 `--mode adb` 承担（已实测可用）。
+- **档 2 独有**：按 uid 断网、关射频、开机自恢复。今天证明它加上①就能拿下高德，而这两条都不进目标进程。
+- **档 3 独有**：③。代价是痕迹全在目标进程里。
+
+#### 界面跟着这个模型改了什么
+
+- 原「作用域」页改成**「策略」页**：列出**申请了定位权限**的 App（`QUERY_ALL_PACKAGES` + `requestedPermissions`），
+  每行带上工具自己知道的结论标记（①/②/③/未测，来自本表），可编辑的只有②（按包致盲）——
+  ③仍然只在 LSPosed 里勾一次，不在 App 里收第二遍。
+- 免 root 档自检上页：app-op、开发者选项、本 App 定位权限三枚徽章 + 一键跳设置。
+- 顶部标题重复修掉（manifest 之前是 `DarkActionBar`，系统栏和自绘 header 各印一次 mockloc）。
+- 收藏加**名称+备注**输入与显示，长按从"直接删"改成"改名称/备注、删除"（`Place.note` 早就在数据结构里，UI 一直没给口）。
+- 配置面：`MOCKLOC_BLIND_WIFI/CELL` 从布尔改成三态 `false | true | 逗号包名`，
+  模块按包安装致盲钩子（`Config.blindWifiFor(pkg)`），渲染器与 `ConfigCheck` 同步覆盖（48 项断言）。
+
+#### 与定位层无关的那一面（顺手记下来，免得以后又去找）
+
+档 2 断网测高德时，抖音评论区显示的「3小时前 · **山西**」纹丝不动——**IP 属地是服务端按出口 IP 算的**，
+不在定位这条面上。同类还有账号注册地、收货地址、基站/WiFi 位置数据库本身（在厂商服务器上）。
+这三样任何一档权限都改不了。
+
 ## 附录 B 代码解析
 
 ### B1. 配置契约（三层共用同一组键）
@@ -933,16 +1004,27 @@ FakeLoc/XposedFakeLocation 都有同样的取舍，并用"每个字段单独开�
 24. ~~0.5.1 的高德复测判据~~ **已测，且判据失败→结论已改（A14）**：读/写/判定三层钩子全部命中
     （`Location 11 / AmapLocation 12 / LBSLocation 6 / 反 mock 判定 9`，三进程自检都读回假点），
     **但高德地图本体的蓝点不动**——它的坐标在 native 侧生成与消费（pass4：`AmapLocation` 没有 `getGcj*`
-    访问器，gcj 字段只在构造函数里写）。真正挪动它的是**致盲 WiFi+基站输入**：只开这两个开关，蓝点就落在
-    杭州，重定位/下拉刷新/放两分钟都不回真。**剩下的未验项**：① 只开致盲、不装 0.5.1 的 Amap 层，是否同样有效
-    （用来确认因果只有致盲）；② 致盲对微信等其他目标 App 有无副作用；③ 换城市/开飞行模式后是否仍稳。
+    访问器，gcj 字段只在构造函数里写）。真正挪动它的是**抽空输入**：只开致盲 WiFi+基站并重启高德，蓝点就落在
+    杭州，重定位/下拉刷新/放两分钟都不回真。
+    **因果对照也已做（A15）**：模块完全关掉（`ENABLED=false`），只用 root 建 provider + 按 uid 掐高德网络
+    ⇒ 蓝点同样落在杭州、重定位不回真 ⇒ **高德根本不需要 LSP 层**，暴露面可以从"微信+高德"缩到"只有微信"。
+    仍未验：换城市/开飞行模式后是否仍稳；致盲对微信这类③档 App 有无副作用（微信现在没开致盲）。
 25. **高德的卫星列表还没钩**：已证它是**构造函数**交付（`xm0.e` 一次 `invoke-direct/range` 调
     `Satellite.<init>(IIFZFFZZZF)V`），钩 setter 会完全落空；`getFixSatelliteCount()` 在混淆实现类上，
     名字随版本变，故意不写死。做之前先确认高德界面有没有露卫星数，别为看不见的字段冒版本兼容风险。
-26. **`scope` 子命令与"作用域只在 LSPosed 里勾"改动尚未上机**：判据是 `python tools/mockloc.py scope`
-    能列出微信 3 个进程、高德 3 个进程的 `attached to`；App 里作用域页不再要求第二次勾选，
-    只在遗留名单非空时显示"清空，跟随 LSPosed"。
-27. **配置字段必须进渲染器**：`MOCKLOC_PROBE` 曾被 `ModuleBridge.render` 漏掉，于是每次 `sync` 都把探针静默关掉。凡是「配置由渲染器唯一产生」的字段都要在 `ConfigCheck` 的往返断言里出现。
+26. ~~`scope` 子命令与"作用域只在 LSPosed 里勾"改动尚未上机~~ **已上机**：`scope` 实测能列出微信 4 个进程、
+    高德 3 个进程的 `attached to` 与挂钩小结；作用域页已改成「策略」页（见 A15）。
+    **注意 logcat 只有 256 KiB**，探针开着时 `attached to` 会被挤掉——`scope` 因此改成读全缓冲区并顺手打挂钩小结。
+27. **0.6.0 未装机**：档 0 的三处改动（间隔 15s→1s、假点补 `satellites/maxCn0/meanCn0`、
+    `ProviderProperties.Builder` 注册）与「策略」页、收藏备注、NoActionBar 都要装机才算验过。
+28. **美团的②/③还没测**：它不在模块作用域，档 0 实测无效。要判它到底要哪一层，得先在 LSPosed 里把它勾进作用域
+    （或者用档 2 的按 uid 断网先试②）。抖音同理。
+29. **档 1 没做 App 内 Shizuku 客户端**：本机 Shizuku 兼容层是 Stellar 带的 Rish（`moe.nb4a` 1.4.2），
+   当前服务未运行，且 `dev.rikka.shizuku:api:13.1.5` 的 `newProcess` 已是包内可见（要走 AIDL 或 user-service）。
+   **没有可验证路径的客户端不盲编**，这一档现在由 `--mode adb` 承担（已实测）。要接真客户端，先让用户把 Rish 起来。
+30. **配置字段必须进渲染器**：`MOCKLOC_PROBE` 曾被 `ModuleBridge.render` 漏掉，于是每次 `sync` 都把探针静默关掉；
+    致盲两个键也一度被写死成 `false`（0.5.2 修）。凡是「配置由渲染器唯一产生」的字段都要在 `ConfigCheck`
+    的往返断言里出现（现在 48 项）。
 
 ## 附录 D 版本历史
 
@@ -1102,3 +1184,21 @@ FakeLoc/XposedFakeLocation 都有同样的取舍，并用"每个字段单独开�
   `ConfigCheck` 长到 36 项（新增致盲/探针往返、空 targets＝跟随作用域）。pass4 定向扫描
   （`.toolchain/amap_pass4.py`）补上 AmapLocation 无 `getGcj*` 访问器、gcj 字段只在构造函数写、
   `TypeConverter.transLocation` 的 8 个调用点这三条事实。
+- **v0.6.0**（2026-10-27）四档权限矩阵实测（A15）+ 界面按矩阵重做：
+  ① **实测**档 0 对微信/高德/美团全部无效；档 1（shell uid，完全不用 root）能建 provider
+  （identity `1000/android[LocationService]`，`--mode adb` 全流程走通）；档 2（root provider +
+  按 uid 掐网，**模块完全关掉**）让高德落在注入点且重定位不回真 ⇒ **高德不需要 LSP 层**；
+  ② §2.5 从三档改成四档并加"在目标进程里留不留痕迹"一列，同时更正"`--mode adb` 本机不通"这句混话
+  （不能自授 app-op ≠ 不能建 provider），`doctor` 把这两件事拆成两个探针；
+  ③ 「作用域」页改成**「策略」页**：列出申请了定位权限的 App（`QUERY_ALL_PACKAGES` + `requestedPermissions`）、
+  每行带工具自己知道的①/②/③结论标记、可编辑的只有按包致盲；免 root 档自检（app-op／开发者选项／
+  定位权限三枚徽章 + 一键跳设置）；新增「这几样定位层改不了」卡（IP 属地等）；
+  ④ `MOCKLOC_BLIND_WIFI/CELL` 改三态 `false|true|逗号包名`，模块按包安装致盲钩子
+  （`Config.blindWifiFor(pkg)`），CLI `--blind-wifi[=SPEC]`，`ConfigCheck` 36→48 项；
+  ⑤ 档 0 三处硬化：注入间隔 15s→1s、假点补 `satellites/maxCn0/meanCn0`（高德系 SDK 会丢掉没有卫星
+  信息的点）、API 31+ 走 `ProviderProperties.Builder`；状态页"已开启"改成读回验收 `matched N/3 + ageMs`；
+  ⑥ UI：`DarkActionBar`→`NoActionBar` 修掉重复标题、收藏加名称+备注与编辑/删除入口（`Place.note`
+  早就在数据结构里，UI 一直没给口）、长按不再直接删。
+  本地：Kotlin 类型检查 0 error（抓到 `setRequiresSatellite` 的真名是 `setHasSatelliteRequirement`）、
+  `ConfigCheck` 48 项全过、`tiers/scope/off` 实机跑通。**没有盲编的部分**：App 内 Shizuku 客户端
+  （本机 Rish 服务未运行，且 13.1.5 的 `newProcess` 已是包内可见），这一档暂由已实测的 `--mode adb` 承担。

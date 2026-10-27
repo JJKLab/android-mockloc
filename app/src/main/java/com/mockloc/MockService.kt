@@ -27,6 +27,7 @@ class MockService : Service() {
 
     private val handler = Handler(Looper.getMainLooper())
     private var running = false
+    private var ticks = 0L
 
     override fun onCreate() {
         super.onCreate()
@@ -69,19 +70,92 @@ class MockService : Service() {
         "fused",
     )
 
+    /**
+     * API 31 replaced the 10-argument form with `ProviderProperties`. The old one still exists on
+     * API 36, but every reference project that survived a system upgrade moved to the builder, and
+     * the deprecated form is what a future removal would take first.
+     */
+    private fun register(lm: LocationManager, name: String) {
+        val gps = name == LocationManager.GPS_PROVIDER
+        runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                val props = android.location.provider.ProviderProperties.Builder()
+                    .setPowerUsage(android.location.Criteria.POWER_LOW)
+                    .setAccuracy(
+                        if (gps) android.location.Criteria.ACCURACY_FINE
+                        else android.location.Criteria.ACCURACY_COARSE,
+                    )
+                    .setHasSatelliteRequirement(gps)
+                    .setHasCellRequirement(!gps)
+                    .setHasNetworkRequirement(!gps)
+                    .setHasMonetaryCost(false)
+                    .setHasAltitudeSupport(true)
+                    .setHasSpeedSupport(true)
+                    .setHasBearingSupport(true)
+                    .build()
+                lm.addTestProvider(name, props)
+            } else {
+                addTestProviderLegacy(lm, name, gps)
+            }
+        }.onFailure { Log.e(TAG, "addTestProvider($name) failed: ${it.message}") }
+    }
+
     @Suppress("DEPRECATION")
-    private fun propertiesFor(name: String, lm: LocationManager) =
-        if (name == LocationManager.GPS_PROVIDER) {
-            lm.addTestProvider(
-                name, false, true, false, false, true, true, true,
-                android.location.Criteria.POWER_LOW, android.location.Criteria.ACCURACY_FINE,
-            )
-        } else {
-            lm.addTestProvider(
-                name, true, false, true, false, false, false, false,
-                android.location.Criteria.POWER_LOW, android.location.Criteria.ACCURACY_COARSE,
-            )
+    private fun addTestProviderLegacy(lm: LocationManager, name: String, gps: Boolean) =
+        lm.addTestProvider(
+            name,
+            /* requiresNetwork */ !gps,
+            /* requiresSatellite */ gps,
+            /* requiresCell */ !gps,
+            /* hasMonetaryCost */ false,
+            /* supportsAltitude */ true,
+            /* supportsSpeed */ true,
+            /* supportsBearing */ true,
+            android.location.Criteria.POWER_LOW,
+            if (gps) android.location.Criteria.ACCURACY_FINE else android.location.Criteria.ACCURACY_COARSE,
+        )
+
+    /**
+     * Amap-family SDKs drop a fix that carries no satellite information, so a bare coordinate is
+     * not enough for the no-root tiers even when the provider is accepted. The numbers come from
+     * the same Sky catalog the module's GNSS layer uses, so 档1 and 档3 cannot disagree about the
+     * sky. (AnyWhere/AnyDoor do the same thing.)
+     */
+    private fun buildFix(name: String, lat: Double, lng: Double, acc: Float) =
+        android.location.Location(name).apply {
+            latitude = lat
+            longitude = lng
+            accuracy = acc
+            altitude = 20.0
+            speed = 0f
+            bearing = 0f
+            time = System.currentTimeMillis()
+            elapsedRealtimeNanos = SystemClock.elapsedRealtime() * 1_000_000L
+            extras = android.os.Bundle().apply {
+                putInt("satellites", Sky.SATS.size)
+                putFloat("maxCn0", Sky.SATS.maxOf { it.cn0DbHz })
+                putFloat("meanCn0", Sky.SATS.map { it.cn0DbHz }.average().toFloat())
+            }
         }
+
+    /**
+     * "已开启" is not a claim this service should make about itself: read the fix back out of
+     * LocationManager and report what actually landed, the same way the status page does.
+     */
+    private fun verify(lm: LocationManager, lat: Double, lng: Double) {
+        var matched = 0
+        val ages = ArrayList<String>()
+        providerNames.forEach { name ->
+            val loc = runCatching { lm.getLastKnownLocation(name) }.getOrNull()
+            if (loc != null && kotlin.math.abs(loc.latitude - lat) < 1e-6 &&
+                kotlin.math.abs(loc.longitude - lng) < 1e-6
+            ) {
+                matched++
+                ages += "$name:${System.currentTimeMillis() - loc.time}ms"
+            }
+        }
+        Log.i(TAG, "读回验收 matched=$matched/${providerNames.size} age=${ages.joinToString()}")
+    }
 
     // The 10-arg addTestProvider is deprecated since API 31 but still present on API 36
     // (LocationManager.java:2079); the replacement needs a Build.VERSION branch for minSdk 29 and
@@ -100,13 +174,12 @@ class MockService : Service() {
         val lng = intent?.getStringExtra(EXTRA_LNG)?.toDoubleOrNull() ?: return stopEverything()
         val acc = intent?.getStringExtra(EXTRA_ACC)?.toFloatOrNull() ?: 5f
         val radius = intent?.getStringExtra(EXTRA_RADIUS)?.toDoubleOrNull() ?: 0.0
-        val intervalMs = (intent?.getStringExtra(EXTRA_INTERVAL)?.toFloatOrNull() ?: 15f) * 1000f
+        val intervalMs = (intent?.getStringExtra(EXTRA_INTERVAL)?.toFloatOrNull() ?: DEFAULT_INTERVAL_S) * 1000f
 
         val lm = getSystemService(LOCATION_SERVICE) as LocationManager
         providerNames.forEach { name ->
             runCatching { lm.removeTestProvider(name) }
-            runCatching { propertiesFor(name, lm) }
-                .onFailure { Log.e(TAG, "addTestProvider($name) failed: ${it.message}") }
+            register(lm, name)
             runCatching { lm.setTestProviderEnabled(name, true) }
         }
         running = true
@@ -129,19 +202,14 @@ class MockService : Service() {
                         Log.e(TAG, "setTestProviderLocation($name) failed: ${it.message}")
                     }
                 }
+                ticks++
+                // Verifying every second would be noise; every ~20s is enough to catch a provider
+                // that silently stopped accepting fixes.
+                if (ticks % VERIFY_EVERY == 0L) verify(lm, jLat, jLng)
                 handler.postDelayed(this, intervalMs.toLong())
             }
         })
     }
-
-    private fun buildFix(name: String, lat: Double, lng: Double, acc: Float) =
-        android.location.Location(name).apply {
-            latitude = lat
-            longitude = lng
-            accuracy = acc
-            time = System.currentTimeMillis()
-            elapsedRealtimeNanos = SystemClock.elapsedRealtime() * 1_000_000L
-        }
 
     private fun buildNotification(): Notification {
         val nm = getSystemService(NotificationManager::class.java)
@@ -169,5 +237,13 @@ class MockService : Service() {
         const val EXTRA_INTERVAL = "interval"
         const val EXTRA_PROVIDER = "provider"
         const val EXTRA_PROVIDERS = "providers"
+
+        /**
+         * Every reference project that survived an upgrade re-injects at 1s or faster: a stale fix
+         * is what makes an app re-locate through its own path, which is exactly the hole 高德 walks
+         * into. 15s was a battery compromise that cost correctness.
+         */
+        const val DEFAULT_INTERVAL_S = 1f
+        const val VERIFY_EVERY = 20L
     }
 }

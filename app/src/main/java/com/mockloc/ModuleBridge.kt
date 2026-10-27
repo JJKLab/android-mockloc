@@ -65,16 +65,21 @@ class ModuleBridge(context: Context) {
     /**
      * Blinding WiFi/cell is the switch that actually moves 高德地图's blue dot (2026-10-27: with it
      * on, the dot held at the injected point through a fresh locate, a pull-to-refresh and two
-     * minutes; with it off the engine re-derived the real place from its own server lookup). It is
-     * also the switch that breaks the target app's own WiFi features, so it stays opt-in - but it
-     * has to survive a sync, which means it belongs in the renderer.
+     * minutes; with it off the engine re-derived the real place from its own server lookup). It
+     * breaks the host app's own WiFi features, so it is scoped per package - and either way it has
+     * to survive a sync, which means it belongs in the renderer.
      */
-    fun setBlind(on: Boolean) {
-        prefs.edit().putBoolean(KEY_BLIND, on).apply()
+    fun blindScope(): Scope = Scope.parse(prefs.getString(KEY_BLIND, "false").orEmpty())
+
+    fun setBlindScope(scope: Scope) {
+        prefs.edit().putString(KEY_BLIND, scope.render()).apply()
         store()
     }
 
-    fun blind(): Boolean = prefs.getBoolean(KEY_BLIND, false)
+    /** Convenience for the "blind everything in scope" case. */
+    fun setBlind(on: Boolean) = setBlindScope(if (on) Scope.All else Scope.None)
+
+    fun blind(): Boolean = blindScope().enabled
 
     fun render(): String = render(
         enabled = prefs.getBoolean(KEY_ENABLED, false),
@@ -84,7 +89,7 @@ class ModuleBridge(context: Context) {
         targets = targets(),
         providers = prefs.getString(KEY_PROVIDERS, DEFAULT_PROVIDERS).orEmpty(),
         probe = prefs.getBoolean(KEY_PROBE, false),
-        blind = prefs.getBoolean(KEY_BLIND, false),
+        blind = blindScope(),
     )
 
     companion object {
@@ -109,7 +114,7 @@ class ModuleBridge(context: Context) {
             targets: List<String>,
             providers: String = DEFAULT_PROVIDERS,
             probe: Boolean = false,
-            blind: Boolean = false,
+            blind: Scope = Scope.None,
         ): String = buildString {
             appendLine("MOCKLOC_ENABLED=${if (enabled) "true" else "false"}")
             appendLine("MOCKLOC_GLOBAL=false")
@@ -122,8 +127,8 @@ class ModuleBridge(context: Context) {
             appendLine("MOCKLOC_TARGETS=${targets.joinToString(",")}")
             appendLine("MOCKLOC_LABEL=$label")
             appendLine("MOCKLOC_GNSS=true")
-            appendLine("MOCKLOC_BLIND_WIFI=${if (blind) "true" else "false"}")
-            appendLine("MOCKLOC_BLIND_CELL=${if (blind) "true" else "false"}")
+            appendLine("MOCKLOC_BLIND_WIFI=${blind.render()}")
+            appendLine("MOCKLOC_BLIND_CELL=${blind.render()}")
             appendLine("MOCKLOC_PROBE=${if (probe) "true" else "false"}")
         }
     }

@@ -68,14 +68,22 @@ object Config {
     var gnssSpoof: Boolean = true
         private set
 
-    /** Off by default: these break the target app's own WiFi/cellular features. */
+    /**
+     * Radio-input blinding, per package rather than global: it genuinely breaks the target app's
+     * own WiFi features, so the honest default is "only the apps that need it". Measured on
+     * 2026-10-27 that this is the layer 高德地图 actually falls for.
+     */
     @Volatile
-    var blindWifi: Boolean = false
+    var blindWifi: Scope = Scope.None
         private set
 
     @Volatile
-    var blindCell: Boolean = false
+    var blindCell: Scope = Scope.None
         private set
+
+    fun blindWifiFor(packageName: String?) = blindWifi.covers(packageName)
+
+    fun blindCellFor(packageName: String?) = blindCell.covers(packageName)
 
     /** Log which positioning APIs the target app really calls; changes nothing (see Probe.kt). */
     @Volatile
@@ -132,8 +140,8 @@ object Config {
         var nextTargets = emptySet<String>()
         var nextGlobal = false
         var nextGnss = true
-        var nextBlindWifi = false
-        var nextBlindCell = false
+        var nextBlindWifi = Scope.None
+        var nextBlindCell = Scope.None
         var nextProbe = false
         text.lineSequence().forEach { line ->
             val idx = line.indexOf('=')
@@ -153,8 +161,8 @@ object Config {
                 "MOCKLOC_TARGETS" -> nextTargets = value.split(',').map { it.trim() }.filter { it.isNotEmpty() }.toSet()
                 // Read once at attach time: the hooks they gate are installed per process, not live.
                 "MOCKLOC_GNSS" -> nextGnss = value != "false" && value != "0"
-                "MOCKLOC_BLIND_WIFI" -> nextBlindWifi = value == "true" || value == "1"
-                "MOCKLOC_BLIND_CELL" -> nextBlindCell = value == "true" || value == "1"
+                "MOCKLOC_BLIND_WIFI" -> nextBlindWifi = Scope.parse(value)
+                "MOCKLOC_BLIND_CELL" -> nextBlindCell = Scope.parse(value)
                 "MOCKLOC_PROBE" -> nextProbe = value == "true" || value == "1"
             }
         }
@@ -202,5 +210,48 @@ object Config {
         val dLng = dist * sin(bearing) / (111412.8 * cos(Math.toRadians(centerLat)))
         currentLat = centerLat + dLat
         currentLng = centerLng + dLng
+    }
+}
+
+/**
+ * Who a per-package layer applies to. Three states because two are not enough: "off", "everything
+ * LSPosed gave us", and "only these apps" are all things someone actually wants, and an empty list
+ * cannot tell the last two apart.
+ *
+ * Wire format is one field: `false`, `true`, or a comma-separated package list.
+ */
+class Scope private constructor(val mode: Mode, val packages: Set<String>) {
+    enum class Mode { NONE, ALL, ONLY }
+
+    fun covers(packageName: String?): Boolean = when (mode) {
+        Mode.NONE -> false
+        Mode.ALL -> true
+        Mode.ONLY -> packageName != null && packageName in packages
+    }
+
+    /** True for any app at all - what the status page shows, not what a hook decides. */
+    val enabled: Boolean get() = mode != Mode.NONE
+
+    fun render(): String = when (mode) {
+        Mode.NONE -> "false"
+        Mode.ALL -> "true"
+        Mode.ONLY -> packages.joinToString(",")
+    }
+
+    override fun toString(): String = render()
+
+    companion object {
+        val None = Scope(Mode.NONE, emptySet())
+        val All = Scope(Mode.ALL, emptySet())
+
+        fun only(packages: Collection<String>): Scope =
+            packages.filter { it.isNotBlank() }.toSet().let { if (it.isEmpty()) None else Scope(Mode.ONLY, it) }
+
+        fun parse(value: String): Scope {
+            val text = value.trim()
+            if (text.isEmpty() || text == "false" || text == "0") return None
+            if (text == "true" || text == "1" || text == "*") return All
+            return only(text.split(','))
+        }
     }
 }

@@ -35,8 +35,10 @@ class Sensors(
     fun init() {
         Config.refresh()
         if (Config.gnssSpoof) hookGnssStatusGetters()
-        if (Config.blindWifi) hookWifi()
-        if (Config.blindCell) hookCell()
+        // Per package: these hooks are installed once per process, and blinding breaks the host
+        // app's own WiFi features, so only the apps that need it should pay for it.
+        if (Config.blindWifiFor(pkg)) hookWifi()
+        if (Config.blindCellFor(pkg)) hookCell()
     }
 
     private fun active() = SpoofLogic.isActive(pkg)

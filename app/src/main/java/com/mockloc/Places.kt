@@ -5,7 +5,13 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 class Place(val name: String, val lat: Double, val lng: Double, val note: String) {
-    val label: String get() = "$name  ${"%.5f".format(lat)},${"%.5f".format(lng)}"
+    /** The note is what tells two points 30 m apart apart, so it goes on the same line. */
+    val label: String
+        get() = buildString {
+            append(name)
+            if (note.isNotBlank() && note != name) append(" · $note")
+            append("  ${"%.5f".format(lat)},${"%.5f".format(lng)}")
+        }
 }
 
 /** Saved points, stored as JSON in this app's private prefs (never in the world-readable mirror). */
@@ -30,6 +36,14 @@ class Places(context: Context) {
         val items = all().toMutableList()
         items.removeAll { it.name == place.name && it.lat == place.lat && it.lng == place.lng }
         items.add(place)
+        save(items)
+    }
+
+    /** Editing a favourite has to replace it, not add a second point with a new name. */
+    fun replaceAt(index: Int, place: Place) {
+        val items = all().toMutableList()
+        if (index !in items.indices) return
+        items[index] = place
         save(items)
     }
 
