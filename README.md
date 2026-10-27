@@ -564,6 +564,20 @@ autoHotReload=true`（比我们多一项热重载）；`java_init.list` 指向 `
    真实注册并记一条 `Diagnostics`（否则 App 会从"有矛盾数据"变成"完全没数据"，更糟）。NMEA 无此顾虑。
 8. **可外部验证**：`--probe` 打开时打印一个周期的样例句子，可以直接喂给任意 NMEA 解析器验格式与校验和。
 
+**0.4.7 第一次上机，这层自己报了三条错**（`notes=5`，全是台账抓的，不是人肉看出来的）：
+
+| 报出来的话 | 真实原因 | 修法 |
+|---|---|---|
+| `android.location.GnssMeasurement 造不出来: NoSuchMethodException` | setter 真名是 **`setAutomaticGainControlLevelInDb`**，我写成 `setAgcLevelInDb` | 按 AOSP 源码逐个核 setter 名 |
+| `LocationManager#registerNmeaListener / unregisterNmeaListener 不存在` | API 36 的 `LocationManager` 只有 **`addNmeaListener`(4 重载)/`removeNmeaListener`**，`register*` 那对属于 AIDL 层 | 只装 add/remove |
+| 样例句子 `$GPGGA*082932.5,…` | **NMEA 框架写错**：`*` 是校验和的引导符、不是语句号与字段之间的分隔符 | 改成 `$GPGGA,字段,…*CS` |
+
+修完把句子生成抽成**纯对象 `Nmea`**（不碰任何框架类型），于是能在 JVM 上直接验收：
+`tools/kotlin/NmeaCheck.kt` 16 项断言全过，含"把 GGA 的 `ddmm.mmmm,N` 解析回十进制度并与写入坐标比对
+（±1e-4°）"、"GGA 必须 14 个字段"、"五条句子校验和自算自验"、"传播时间随仰角单调且落在 67.4–83.1 ms"。
+**这个测试本身也错过两处**（RMC 字段下标、8° 传播时间凭印象写 87 ms），都是断言错、实现没错——
+再次说明"能跑的断言"必须和"几何/协议事实"互查，不能只信一边。
+
 **已知不严谨处（写清楚，不含糊过去）**：真实静止接收机的多普勒并不为 0（卫星在动，±500 m/s 量级），
 我们取 0 是为了与"速度 0、ADR 不增长"自洽——**能通过"是否静止"的一致性检查，但过不了严格的最小二乘
 定位解算**。要严格自洽需要真解一组伪距（选星 + 迭代），那是下一步；本层目标是让"读 GNSS 判断有没有
@@ -634,6 +648,7 @@ PC 端根本写不了 `/data/adb`——收件箱让"只刷模块、不依赖 su"
 | `app/.../MockTrace.kt` | 抹掉系统测试 provider 留下的痕迹（mock 位、extras、`Settings.Secure`、provider 列表、Parcel 路径）|
 | `app/.../Sensors.kt` | 一致性层：伪 `GnssStatus`（含每秒回调）、可选致盲 WiFi/基站 |
 | `app/.../Probe.kt` | `--probe` 打开时的定位 API 调用记录（只记不改值），用来把"该钩什么"变成读日志 |
+| `app/.../Nmea.kt` | 纯函数 NMEA 句子生成（`$`+语句号+逗号字段+`*`校验和），可在 JVM 上验收 |
 | `app/.../GnssStream.kt` | GNSS 原始测量 + NMEA 注入（全反射造对象，字段自洽见 A9）|
 | `app/.../Sky.kt`（在 GnssStream.kt 内） | 唯一星历表：GnssStatus / 测量流 / NMEA 三处共用，含斜距几何 |
 | `app/.../TencentSdk.kt` | 微信内嵌腾讯定位 SDK 那一层的替换（它不吃 `LocationManager`，见 A0.1）：`TencentLocationImpl` 的经纬度/精度/`isMock` + 地址文字 |
@@ -645,6 +660,7 @@ PC 端根本写不了 `/data/adb`——收件箱让"只刷模块、不依赖 su"
 | `app/.../Places.kt` | 收藏点，JSON 存私有 prefs（不落 world-readable 镜像） |
 | `tools/classdump.py` | 解析 `.class` 拿真实方法签名（本机只有 JRE，没 `javap`） |
 | `tools/kotlin/CoordCheck.kt` | 可运行的 Kotlin 数值验收，不进 APK |
+| `tools/kotlin/NmeaCheck.kt` | NMEA 框架/校验和/坐标往返 + 卫星几何量级的 JVM 验收 |
 | `tools/kotlin/ConfigCheck.kt` | 在 JVM 上真跑 `Config.refresh()`，吃 CLI `--dry-run` 原样输出的配置体 |
 
 模块注册只走 libxposed 现代 API 一条路（按 [libxposed/api](https://github.com/libxposed/api) 的约定：
@@ -821,6 +837,9 @@ FakeLoc/XposedFakeLocation 都有同样的取舍，并用"每个字段单独开�
   时钟偏置固定、多普勒与 ADR 与"静止"自洽，NMEA 五句带真 XOR 校验和；造不出事件就保留真实注册并记账。
   同时把 `Sensors` 的卫星数值改成从 `Sky` 取（原来各处按 index 现算，与测量流会不一致）。
   另加回归结论表 A10 与技术复盘附录 E。
+- **v0.4.8**（2026-10-26）0.4.7 的 GNSS 层上机自报三条错并修完（setter 真名、`addNmeaListener` 而非
+  `register*`、NMEA 的 `*` 位置）；句子生成抽成纯对象 `Nmea` + `tools/kotlin/NmeaCheck.kt`（16 项断言，
+  含坐标往返与校验和自验，全过）。另修：App 选点与模块配置是两条断开的通道（见 C19）。
 
 ## 附录 E 技术复盘（2026-10-26）
 

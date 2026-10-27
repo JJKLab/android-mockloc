@@ -139,18 +139,16 @@ class GnssStream(
                 chain.proceed()
             }
         }
-        listOf("addNmeaListener", "registerNmeaListener").forEach {
-            kit.install(kit.methodsOf(lmClass, it), collect)
-        }
-        listOf("removeNmeaListener", "unregisterNmeaListener").forEach { name ->
-            kit.install(kit.methodsOf(lmClass, name)) { chain ->
-                val listener = chain.args.firstOrNull { it != null && !isPlumbingArg(it) }
-                if (active() && listener != null) {
-                    synchronized(nmeaListeners) { nmeaListeners.removeAll { it.target === listener } }
-                    true
-                } else {
-                    chain.proceed()
-                }
+        // LocationManager only ever had add/remove; the register* spelling belongs to the AIDL layer,
+        // and asking for it produced two "不存在" notes on device.
+        kit.install(kit.methodsOf(lmClass, "addNmeaListener"), collect)
+        kit.install(kit.methodsOf(lmClass, "removeNmeaListener")) { chain ->
+            val listener = chain.args.firstOrNull { it != null && !isPlumbingArg(it) }
+            if (active() && listener != null) {
+                synchronized(nmeaListeners) { nmeaListeners.removeAll { it.target === listener } }
+                true
+            } else {
+                chain.proceed()
             }
         }
     }
@@ -229,7 +227,7 @@ class GnssStream(
                 put("setCarrierPhase", 0.0)
                 put("setCarrierPhaseUncertainty", 0.0)
                 put("setMultipathIndicator", MULTIPATH_NOT_DETECTED)
-                put("setAgcLevelInDb", -32.0)
+                put("setAutomaticGainControlLevelInDb", -32.0)
                 put("setState", STATE_LOCKED)
                 put("setTimeOffsetNanos", 0.0)
                 put("setReceivedSvTimeNanos", rx - Sky.travelNanos(sat.elevationDeg))
@@ -284,44 +282,9 @@ class GnssStream(
 
     // ---- NMEA ---------------------------------------------------------------------------------
 
-    /** GGA / RMC / GSA / GLL / GST, each with a real XOR checksum over the payload. */
-    private fun nmeaSentences(nowMillis: Long): List<String> {
-        val cal = Calendar.getInstance().apply { timeInMillis = nowMillis }
-        val time = "%02d%02d%02d.5".format(
-            cal.get(Calendar.HOUR_OF_DAY), cal.get(Calendar.MINUTE), cal.get(Calendar.SECOND),
-        )
-        val date = "%02d%02d%02d".format(
-            cal.get(Calendar.DAY_OF_MONTH), cal.get(Calendar.MONTH) + 1, cal.get(Calendar.YEAR) % 100,
-        )
-        val lat = dmm(Config.currentLat, 'N', 'S')
-        val lon = dmm(Config.currentLng, 'E', 'W')
-        val used = Sky.SATS.size
-        val prns = Sky.SATS.joinToString(",") { "%02d".format(it.svid) }
-        val slots = prns + ",,".repeat((12 - used).coerceAtLeast(0))
-        return listOf(
-            checksum("GPGGA", "$time,$lat,$lon,1,$used,$HDOP,$ALTITUDE,M,-32.0,M,,"),
-            checksum("GPRMC", "$time,A,$lat,$lon,0.0,0.0,$date,0.0,E"),
-            checksum("GPGSA", "A,3,$slots,1.6,$HDOP,1.3"),
-            checksum("GPGLL", "$lat,$lon,$time,A"),
-            checksum("GPGST", "$time,0.8,$HDOP,$HDOP,,,,,"),
-        )
-    }
-
-    /** Decimal degrees to NMEA's `ddmm.mmmm, hemisphere` field. */
-    private fun dmm(value: Double, positive: Char, negative: Char): String {
-        val hemisphere = if (value >= 0) positive else negative
-        val absolute = kotlin.math.abs(value)
-        val degrees = absolute.toInt()
-        val minutes = (absolute - degrees) * 60.0
-        return "%02d%07.4f,$hemisphere".format(degrees, minutes)
-    }
-
-    private fun checksum(sentence: String, body: String): String {
-        val payload = "$sentence*$body"
-        var sum = 0
-        for (char in payload) sum = sum xor char.code
-        return "$payload*%02X".format(sum)
-    }
+    /** Sentences are built by the pure Nmea object so their format can be checked off-device. */
+    private fun nmeaSentences(nowMillis: Long): List<String> =
+        Nmea.sentences(Config.currentLat, Config.currentLng, nowMillis, Sky.SATS, ALTITUDE_M, HDOP)
 
     private fun gpsSecondsSinceEpoch(): Long =
         (System.currentTimeMillis() / 1000L) - GPS_EPOCH_OFFSET_SECONDS
@@ -339,8 +302,8 @@ class GnssStream(
         const val ADR_USE_AND_LOCKED = 3
         // CODE_LOCK | BIT_SYNC | SUBFRAME_SYNC | TOW_DECODED | 2ND_CODE_LOCK
         const val STATE_LOCKED = 0x1 or 0x2 or 0x4 or 0x8 or (1 shl 16)
-        const val HDOP = "0.9"
-        const val ALTITUDE = "4.0"
+        const val HDOP = 0.9
+        const val ALTITUDE_M = 4.0
         const val GPS_EPOCH_OFFSET_SECONDS = 315_964_800L // 1980-01-06
     }
 }
