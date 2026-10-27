@@ -365,6 +365,18 @@ class MainActivity : Activity() {
             }
         }, ui.fill())
         actions.addView(Button(this).apply {
+            text = if (bridge.blind()) "致盲：开" else "致盲：关"
+            isAllCaps = false
+            setOnClickListener {
+                bridge.setBlind(!bridge.blind())
+                toast(
+                    if (bridge.blind()) "已致盲 WiFi/基站输入：高德这类自家算路的 App 才会落到注入点"
+                    else "已恢复真实 WiFi/基站输入"
+                )
+                refreshStatus()
+            }
+        }, ui.fill())
+        actions.addView(Button(this).apply {
             text = "停止注入"
             isAllCaps = false
             setOnClickListener {
@@ -406,6 +418,9 @@ class MainActivity : Activity() {
             append("致盲=${onOff(Config.blindWifi)}/${onOff(Config.blindCell)} 探针=${onOff(Config.probe)}\n")
             append("  作用包名: ${if (Config.targets.isEmpty()) "LSPosed 作用域内全部" else Config.targets.joinToString()}\n")
             append("  读回: ${Config.lastError ?: "正常（写入于 ${Config.lastLoadedAgo}ms 前）"}\n")
+            // Measured on 2026-10-27: this is the one switch that moves Amap's blue dot, and the
+            // hooks that implement it are installed per process, so it needs an app restart.
+            append("  致盲这俩是高德唯一认的开关（它自己算路，不读系统定位）；开关改动要重启目标 App 才生效\n")
             append("\n把 App 选点同步给模块（二选一）\n")
             append("  PC  : python tools/mockloc.py sync\n")
             append("  免PC: 刷 mockloc-root.zip，模块循环会自己搬\n")

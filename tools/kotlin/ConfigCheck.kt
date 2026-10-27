@@ -128,6 +128,29 @@ fun main() {
     check("渲染 label", Config.label, "东方明珠 & 陆家嘴")
     check("渲染 targets", Config.targets, setOf("com.tencent.mm", "com.autonavi.minimap"))
     check("渲染 providers", Config.providers, listOf("gps", "network", "fused"))
+    check("渲染默认不致盲", Config.blindWifi, false)
+
+    // Every field the module reads has to come out of the renderer, or a sync silently resets it.
+    // `MOCKLOC_PROBE` was once missing this way; blinding is the field that actually moves Amap's
+    // blue dot, so losing it in a sync would look like the module stopped working.
+    Thread.sleep(1100)
+    file.writeText(
+        com.mockloc.ModuleBridge.render(
+            enabled = true,
+            lat = "30.2638384",
+            lng = "120.1927132",
+            label = "杭州",
+            targets = emptyList(),
+            probe = true,
+            blind = true,
+        )
+    )
+    Config.refresh()
+    check("渲染致盲 WiFi", Config.blindWifi, true)
+    check("渲染致盲基站", Config.blindCell, true)
+    check("渲染探针", Config.probe, true)
+    check("渲染空 targets = 跟随作用域", Config.targets, emptySet<String>())
+    check("空 targets 仍对任意包生效", Config.shouldSpoof("com.autonavi.minimap"), true)
 
     Thread.sleep(1100)
     file.delete()

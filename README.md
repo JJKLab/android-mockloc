@@ -66,6 +66,10 @@ python tools/mockloc.py off
 
 # 模块到底挂进了哪些包与进程（读它自己打的 attached to，不用翻 logcat）
 python tools/mockloc.py scope
+
+# 高德地图专属：它自己算路，只开注入点没用，要把它的射频输入抽空让它落回系统定位
+# （代价：目标 App 自己的 WiFi 相关功能同时失真；改完必须重启目标 App）
+python tools/mockloc.py set --place 东方明珠 --blind-wifi --blind-cell --persist
 ```
 
 ### 2.5 三种生效层级（这是"能不能过检测"的分水岭）
@@ -728,6 +732,35 @@ autoHotReload=true`（比我们多一项热重载）；`java_init.list` 指向 `
 完整报告 `.toolchain/amap_repro.md`。注意 `.toolchain/dexiface.py` 的 `type_list` 读法用了 u32
 （规范是 u16），多接口类的接口列表是错的——本轮已绕开它，别拿它的输出当证据。
 
+### A14 装机实测：上面那套读/写/判定没能挪动高德蓝点，挪动它的是致盲（2026-10-27 19:15）
+
+0.5.1-ad12786 装机后按 A13 的判据复测，**结论是 A13 的预测错了**，而且错得有价值：
+
+- 挂钩本身全部命中：`Location 读+写 11 处`、`AmapLocation 读+写 12 处`、`LBSLocation 6 处`、
+  `反 mock 判定 9 处`，三个高德进程（主 / `:locationservice` / `:widgetProvider`）的进程内自检都读回
+  `30.2638,120.1927 mock=false`。
+- **但蓝点仍在连州**。而且"打开显示杭州、刷新回广东"这个描述本身也不准：force-stop 冷启动后直接就是
+  连州——之前那次"打开是杭州"是地图还停在上一屏的缓存中心，**又一次"显示值 ≠ 读取值"**。
+- 第二轮 pass4（`.toolchain/amap_pass4.py`）解释了为什么：`AmapLocation` **没有任何 `getGcj*` 访问器**，
+  `gcjLatitude/gcjLongitude` 的写入点**只有三个构造函数**；`OffsetUtils.getGcjLatlng` 全 APK 只有
+  `bu2#b` 一个调用者。也就是说引擎的坐标在 native 侧生成、native 侧消费，Java 的 getter/setter
+  钩子结构上碰不到它——`TypeConverter.transLocation` 的 8 个调用点（`GnssProvider$11/$12`、
+  `SyslocProvider`、`SysNetworkLocProvider`、`NativeLocationCallback#getLastKnownLocation`）证明
+  **系统定位只是它的输入之一**，它更信自己服务器算出来的那一版。
+
+真正起作用的是**致盲输入**：同一版 APK、同一份坐标，只把 `MOCKLOC_BLIND_WIFI/CELL` 打开并重启高德，
+蓝点就落在杭州（浙大华家池 / 凤起东路），**点"我的位置"重定位、下拉刷新、放两分钟都还在杭州**。
+⇒ 输入被抽空后，引擎落回系统定位那条我们改得动的路。
+
+顺带结清 A0.1 那条错判：当时"把 WiFi 整个关掉蓝点纹丝不动"被读成"它连 `LocationManager` 都不读"。
+实际是**基站那一路还在给它的服务器喂输入**——单关一条射频不够，得把 `getScanResults` /
+`getAllCellInfo` / `WifiInfo.getBSSID·getSSID·getMacAddress` / `requestCellInfoUpdate` 这组一起抹掉。
+代价照旧：**开着致盲，目标 App 自己的 WiFi 相关功能会一起失真**，所以它仍是显式开关，
+状态页有「致盲：开/关」按钮，CLI 有 `--blind-wifi/--blind-cell`。
+
+`AmapSdk` 那三层钩子保留：对**引用**高德定位 bean 的宿主（第三方 App 里的高德 SDK）它仍然有效，
+只是对高德地图本体的 native 引擎无效——这条边界现在写清楚了。
+
 ## 附录 B 代码解析
 
 ### B1. 配置契约（三层共用同一组键）
@@ -873,14 +906,16 @@ FakeLoc/XposedFakeLocation 都有同样的取舍，并用"每个字段单独开�
     没有 `addSatellite() 有 N 个参数` 也没有"造不出 GnssStatus"）。
 15. **吞掉 GNSS 注册会不会让 App 判定"GPS 不可用"**：现在只在造得出 dummy 时才吞。若目标 App 因此
     一直收不到回调（dummy 构造失败但注册被别的分支吞了），表现是"定位转圈"——关掉 `--no-gnss` 对比即可确认。
-16. ~~致盲 WiFi/基站的副作用与效果~~ **第一版不够**：开着 `getScanResults/getAllCellInfo` 致盲，高德/微信
-    仍算出连州街道级；`appops` 显示它们当时确实在扫 WiFi ⇒ 漏的是 `WifiInfo` 标识位与 `requestCellInfoUpdate`
-    （已在 v0.4.3 补，见 B4）。**补完仍需复测**：判据还是"新定位请求的返回坐标是否等于注入点"。
+16. ~~致盲 WiFi/基站的副作用与效果~~ **v0.4.3 补齐后已复测：对高德地图有效**（A14：只开致盲 + 重启，
+    蓝点落在注入点并且刷新不回真）。第一版无效的原因不是"钩子漏了"，而是**只抹了一条射频**——基站那一路
+    还在给它的服务器喂输入。副作用面仍未系统评估（目标 App 自己的联网状态/附近设备会一起失真）。
 17. ~~`setIsFromMockProvider` 是否还在 API 36 的框架里~~ **在**：那次运行 `notes=1` 只报了 readFromParcel，
     说明这个 setter 挂上了（SDK 公开面删了它，运行时类还在）。
-18. ~~高德地图到底认不认框架层 mock~~ **按正确方法测完：不认**（档1/档2 mock 生效期间点它的"我的位置"，
-    系统确实把 mock 定位投给了它 `locations=1`，蓝点仍在连州）。你之前"高德认开发者模式虚拟定位"的印象
-    在这台机 + 这个版本上不成立；原因见 A0.1 最后一行：它的位置来自射频输入，`LocationManager` 那条路它读了不用。
+18. ~~高德地图到底认不认框架层 mock~~ **按正确方法测完：不认，但原因比"不读"更具体**（档1/档2 mock 生效期间
+    点它的"我的位置"，系统确实把 mock 定位投给了它 `locations=1`，蓝点仍在连州）。A14 补上机制：系统定位只是
+    它多路输入里权重最低的一路，它更信自己服务器用 WiFi/基站算出来的那一版 ⇒ **要么把输入抽空让它落回系统那路
+    （已验有效），要么改它自己的答案（native 侧，Java 钩子做不到）**。你之前"高德认开发者模式虚拟定位"的印象
+    在这台机 + 这个版本上不成立。
 19. ~~v0.4.3 新代码全部未上真机~~ 部分已验：`WifiInfo` 抹标识位、`requestCellInfoUpdate`、`Probe.kt` 均已上机，探针录到微信冷启动只读 `Settings.Secure`（定位 SDK 用到才起）。
     本地只有类型检查与 ConfigCheck（29 项）过。
 20. **探针要跑一次才知道下一步钩什么**：`--probe` 打开后重启目标 App，`adb logcat | grep Probe` 会列出
@@ -895,10 +930,12 @@ FakeLoc/XposedFakeLocation 都有同样的取舍，并用"每个字段单独开�
 23. ~~AmapSdk 候选类名未验证~~ **已验（A12）并被 A13 推翻一半**：`com.amap.location.type.location.Location`
     挂钩成功是真的，但 `ILocationService$Stub$Proxy` **这个类根本不存在**（全 dex 扫过），0.5.0 那条钩子是静默空转；
     `AmapLocation` 反倒一直没被钩。0.5.1 按 A13 重写。
-24. **0.5.1 的高德复测判据**（装机后唯一要看的一条）：冷启动 + 下拉刷新 + 点"我的位置"三种入口拿到的坐标
-    都要等于注入点。之前的症状是"冷启动杭州、刷新回广东"，正好对应 A13 第 1/2 条（gcj 字段直读）与第 5 条
-    （引擎自己把假点判成 mock 丢掉）。若刷新仍回真，下一个嫌疑只剩 native 引擎重算（`nativeSendLocation`），
-    那时候要看的是 `LocationNmeaTypeDetector` 与 `Satellite` 那一路，而不是再加 getter 钩子。
+24. ~~0.5.1 的高德复测判据~~ **已测，且判据失败→结论已改（A14）**：读/写/判定三层钩子全部命中
+    （`Location 11 / AmapLocation 12 / LBSLocation 6 / 反 mock 判定 9`，三进程自检都读回假点），
+    **但高德地图本体的蓝点不动**——它的坐标在 native 侧生成与消费（pass4：`AmapLocation` 没有 `getGcj*`
+    访问器，gcj 字段只在构造函数里写）。真正挪动它的是**致盲 WiFi+基站输入**：只开这两个开关，蓝点就落在
+    杭州，重定位/下拉刷新/放两分钟都不回真。**剩下的未验项**：① 只开致盲、不装 0.5.1 的 Amap 层，是否同样有效
+    （用来确认因果只有致盲）；② 致盲对微信等其他目标 App 有无副作用；③ 换城市/开飞行模式后是否仍稳。
 25. **高德的卫星列表还没钩**：已证它是**构造函数**交付（`xm0.e` 一次 `invoke-direct/range` 调
     `Satellite.<init>(IIFZFFZZZF)V`），钩 setter 会完全落空；`getFixSatelliteCount()` 在混淆实现类上，
     名字随版本变，故意不写死。做之前先确认高德界面有没有露卫星数，别为看不见的字段冒版本兼容风险。
@@ -1058,3 +1095,10 @@ FakeLoc/XposedFakeLocation 都有同样的取舍，并用"每个字段单独开�
   新增 `tools/mockloc.py scope`，用模块自己打的 `attached to` 日志列出真实挂载的包与进程
   ——读 LSPosed 的实际效果，而不是读它的配置库，也不让用户自己翻 logcat。
   Kotlin 类型检查 0 error、`ConfigCheck` 31 项全过。
+- **v0.5.2**（2026-10-27）装机复测否证了 A13 的预测（A14）：高德蓝点不动，**真正有效的是致盲输入**。
+  于是把这条从"CLI 隐藏参数"提为一等公民：`ModuleBridge.render` 之前把 `MOCKLOC_BLIND_WIFI/CELL`
+  写死成 `false`，**任何一次 `sync` 都会把刚生效的致盲静默关掉**（与 v0.5.0 漏 `MOCKLOC_PROBE` 同一类
+  错误，规则"配置字段必须进渲染器"再次抓到它）；状态页加「致盲：开/关」按钮与"改完要重启目标 App"提示。
+  `ConfigCheck` 长到 36 项（新增致盲/探针往返、空 targets＝跟随作用域）。pass4 定向扫描
+  （`.toolchain/amap_pass4.py`）补上 AmapLocation 无 `getGcj*` 访问器、gcj 字段只在构造函数写、
+  `TypeConverter.transLocation` 的 8 个调用点这三条事实。
