@@ -51,7 +51,16 @@ class ModuleBridge(context: Context) {
 
     fun setTargets(list: List<String>) {
         prefs.edit().putString(KEY_TARGETS, list.joinToString(",")).apply()
+        store()
     }
+
+    /** The probe is the only way to see what a target app actually calls. */
+    fun setProbe(on: Boolean) {
+        prefs.edit().putBoolean(KEY_PROBE, on).apply()
+        store()
+    }
+
+    fun probe(): Boolean = prefs.getBoolean(KEY_PROBE, false)
 
     fun render(): String = render(
         enabled = prefs.getBoolean(KEY_ENABLED, false),
@@ -60,6 +69,7 @@ class ModuleBridge(context: Context) {
         label = prefs.getString(KEY_LABEL, "").orEmpty(),
         targets = targets(),
         providers = prefs.getString(KEY_PROVIDERS, DEFAULT_PROVIDERS).orEmpty(),
+        probe = prefs.getBoolean(KEY_PROBE, false),
     )
 
     companion object {
@@ -71,6 +81,7 @@ class ModuleBridge(context: Context) {
         const val KEY_TARGETS = "module_targets"
         const val KEY_PROVIDERS = "module_providers"
         const val KEY_CONF = "module_conf"
+        const val KEY_PROBE = "module_probe"
         const val DEFAULT_PROVIDERS = "gps,network,fused"
 
         /** The exact body the module reads; keep in sync with Config.kt's key names. */
@@ -81,6 +92,7 @@ class ModuleBridge(context: Context) {
             label: String,
             targets: List<String>,
             providers: String = DEFAULT_PROVIDERS,
+            probe: Boolean = false,
         ): String = buildString {
             appendLine("MOCKLOC_ENABLED=${if (enabled) "true" else "false"}")
             appendLine("MOCKLOC_GLOBAL=false")
@@ -95,6 +107,7 @@ class ModuleBridge(context: Context) {
             appendLine("MOCKLOC_GNSS=true")
             appendLine("MOCKLOC_BLIND_WIFI=false")
             appendLine("MOCKLOC_BLIND_CELL=false")
+            appendLine("MOCKLOC_PROBE=${if (probe) "true" else "false"}")
         }
     }
 }

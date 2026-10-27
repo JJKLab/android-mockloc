@@ -277,8 +277,10 @@ class GnssStream(
         }
     }
 
-    private fun Class<*>.method(name: String): Method =
-        methods.first { it.name == name && it.parameterCount == 1 }
+    /** `build()` takes nothing and `setClock()` takes one - the arity has to be stated. */
+    private fun Class<*>.method(name: String, params: Int = 1): Method =
+        methods.firstOrNull { it.name == name && it.parameterCount == params }
+            ?: throw NoSuchMethodException("$simpleName#$name/$params")
 
     // ---- NMEA ---------------------------------------------------------------------------------
 

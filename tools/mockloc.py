@@ -399,11 +399,19 @@ def cmd_sync(t, args):
 
 
 def pref_value(xml, name):
-    """Pull one string preference out of SharedPreferences XML and undo the five entities."""
+    """Pull one string preference out of SharedPreferences XML and undo its escaping.
+
+    Android's XmlUtils writes control characters as numeric references - a newline in a stored
+    string comes back as `&#10;` - so decoding only the named entities produced one long line that
+    the module's parser then read as `ENABLED=true&#10;GLOBAL=...`, i.e. spoofing off. Numeric
+    references are decoded first so an original literal "&#10;" (stored as `&amp;#10;`) survives.
+    """
     match = re.search(rf'name="{name}"[^>]*>(.*?)</string>', xml, re.S)
     if not match:
         return ""
     text = match.group(1)
+    text = re.sub(r"&#x([0-9a-fA-F]+);", lambda m: chr(int(m.group(1), 16)), text)
+    text = re.sub(r"&#([0-9]+);", lambda m: chr(int(m.group(1))), text)
     for entity, char in (("&lt;", "<"), ("&gt;", ">"), ("&quot;", '"'), ("&apos;", "'"), ("&amp;", "&")):
         text = text.replace(entity, char)
     return text

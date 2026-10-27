@@ -348,6 +348,15 @@ class MainActivity : Activity() {
             setOnClickListener { refreshStatus() }
         }, ui.fill())
         actions.addView(Button(this).apply {
+            text = if (bridge.probe()) "探针：开" else "探针：关"
+            isAllCaps = false
+            setOnClickListener {
+                bridge.setProbe(!bridge.probe())
+                toast(if (bridge.probe()) "探针已开，记得跑一次 tools/mockloc.py sync" else "探针已关")
+                refreshStatus()
+            }
+        }, ui.fill())
+        actions.addView(Button(this).apply {
             text = "停止注入"
             isAllCaps = false
             setOnClickListener {
@@ -403,8 +412,11 @@ class MainActivity : Activity() {
 
     private fun renderChips(mockActive: Boolean) {
         tierChips.removeAllViews()
-        tierChips.addView(ui.chip("档1 系统注入", if (mockActive) Ui.State.OK else Ui.State.OFF))
-        tierChips.addView(ui.chip("档2 root", if (Config.global) Ui.State.OK else Ui.State.OFF))
+        // Wording has to stay inside what this process can actually see: a mock=true read-back says
+        // "some test provider is live", not whether 档1 or 档2 put it there - only the config file's
+        // GLOBAL flag says a root module is the one maintaining it.
+        tierChips.addView(ui.chip("系统 mock 生效", if (mockActive) Ui.State.OK else Ui.State.OFF))
+        tierChips.addView(ui.chip("root 模块维持中", if (Config.global) Ui.State.OK else Ui.State.OFF))
         // A grey 档3 pill means "this process is not in the module's scope", which is the normal
         // configuration - not "the module is broken". Conflating those two cost a debugging round.
         tierChips.addView(ui.chip("档3 无痕(本进程)", if (selfCheck()) Ui.State.OK else Ui.State.OFF))

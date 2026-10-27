@@ -59,7 +59,10 @@ sync_app_prefs() {
   _tmp=$(mktemp "/data/local/tmp/mockloc.app.XXXXXX") || return 1
   sed -n '/name="module_conf"/,/<\/string>/p' "$_prefs"     | sed '1s|.*name="module_conf"[^>]*>||; $s|<\/string>.*||' >"$_tmp"
   [ -s "$_tmp" ] || { rm -f "$_tmp"; return 1; }
-  sed -i 's/&lt;/</g; s/&gt;/>/g; s/&quot;/"/g; s/&amp;/\&/g' "$_tmp"
+  # Android's XmlUtils writes a newline as &#10;, so without this the whole config lands on one
+  # line and the module's parser reads ENABLED's value as "true&#10;GLOBAL=..." - i.e. spoofing off.
+  sed -i 's/&#10;/
+/g; s/&lt;/</g; s/&gt;/>/g; s/&quot;/"/g; s/&amp;/\&/g' "$_tmp"
   cp "$_tmp" "$PUB" && chmod 664 "$PUB"
   cp "$_tmp" "$CFG" 2>/dev/null
   rm -f "$_tmp"
