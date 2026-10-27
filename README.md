@@ -640,6 +640,34 @@ autoHotReload=true`（比我们多一项热重载）；`java_init.list` 指向 `
 不重写格式，所以不会再出现三处各写一遍然后漂移。`ConfigCheck.kt` 把 `render()` 的输出直接喂回
 `Config` 解析器验往返。
 
+### A12 探针实测：高德地图内部到底读什么（0.4.9 上机，`--probe` 的方法表转储）
+
+这是本项目第一次**用运行时证据**代替猜测，三个长期悬而未决的问题一次结清：
+
+1. **`com.amap.location.type.location.Location` 确实存在且可钩**——`[Amap]: 已挂钩` 打印出来了。
+   它暴露的远不止坐标：`getLatitude/getLongitude/getAccuracy/getAltitude/getBearing/
+   getBearingAccuracyDegrees/getProvider/getSource/getPriority/getPoiid/getSemantics/getFloor/
+   getLocationUtcTime/getLocationTickTime/getOptAttr*(String,…)`。0.4.9 只钩了坐标与精度，
+   0.5.0 补上高度/来源/provider。
+2. **`ILocationService` 是接口，钩它等于没钩**。真正在高德进程里应答的是 AIDL 客户端代理
+   `com.amap.location.api.ILocationService$Stub$Proxy`，方法表里有：
+   `getLatestLocation()` / `getLatestLocation(int)` / `getLatestOriginalLocation()` /
+   `getLatestGnssLocationList()` / `getSatelliteList()` / **`getFixSatelliteCount()`** /
+   **`appCanLocation()`** / `isGnssOn()` / `isGnssLocating()` / `isLocating()` / `isLocationOn()` /
+   `isLocationDim()` / `fakeNetworkLocation(boolean)` / `fakeRtkLocation(boolean)` /
+   `enableUseSystemLocation(boolean)` / `registerSatelliteStatusCallback(IGnssSatelliteListener)` /
+   `getOffsetLatlng(double,double)`。⇒ 卫星计数与"GNSS 是否在工作"必须在**代理**上答，不是在接口上。
+3. **这些类是运行时动态加载的**：`base.apk` 的 8 个 dex 里只有 `Lcom/amap/location/type/location/Location;`
+   的**引用**、没有 class_def（`sdkh` 那层是插件化加载）。所以"静态扫不到"≠"不存在"——
+   **这正是 A7 当初判错的方法原因**（我只查了 `com/amap/api/location` 且只看引用计数）。
+
+顺带结清的第二件事：`自检 gps=30.2638,120.1927 mock=false`（你在 App 里选的杭州）与 `dumpsys` 里的上海
+同时存在 ⇒ **App→prefs→sync→模块 这条链路端到端打通**，替换确实咬住了。
+
+**仍未解**：钩完这些之后高德蓝点会不会动，0.5.0 装机才知道。若仍不动，剩下的嫌疑只有
+`getSatelliteList()` 返回的 `com.amap.location.type.gnss.Satellite`（0.5.0 只转储它的方法表，还没钩）
+和它自己的服务器算路。
+
 ## 附录 B 代码解析
 
 ### B1. 配置契约（三层共用同一组键）
@@ -804,9 +832,8 @@ FakeLoc/XposedFakeLocation 都有同样的取舍，并用"每个字段单独开�
 
 22. **`sync` 与 `sync_app_prefs` 两条搬运路径都还没在机上跑过**：前者要 Shell root，后者要刷 root 模块。
     判据：App 里选一个点 → 跑 `sync` → 状态页"App 选点与模块配置不一致"警告应当消失。
-23. **`AmapSdk` 的候选类名未在真机验证**（本机高德 APK 还没扫过描述符）。它要么打印
-    `已挂钩 com.amap.location.type.location.Location`，要么打印"没有高德定位栈"——后者就说明类名还要改，
-    探针模式的方法表转储就是为这种情况准备的。
+23. ~~AmapSdk 候选类名未验证~~ **已验（A12）**：`com.amap.location.type.location.Location` 挂钩成功；`isMock/isFromMock` 在高德那个类上不存在。0.5.0 新增的 `ILocationService$Stub$Proxy` 与 `Satellite` 转储**待装机验**。
+24. **配置字段必须进渲染器**：`MOCKLOC_PROBE` 曾被 `ModuleBridge.render` 漏掉，于是每次 `sync` 都把探针静默关掉。凡是「配置由渲染器唯一产生」的字段都要在 `ConfigCheck` 的往返断言里出现。
 
 ## 附录 D 版本历史
 
@@ -945,3 +972,9 @@ FakeLoc/XposedFakeLocation 都有同样的取舍，并用"每个字段单独开�
   **作用域名单页**）、`ModuleBridge` 修掉"App 选点与模块配置断链"（`tools/mockloc.py sync` +
   root 模块 `sync_app_prefs`，mtime 谁新谁赢，渲染器只有一份）。`ConfigCheck` 加渲染体往返共 31 项断言；
   本地类型检查抓到 4 处（`Ui.fill` 参数设计错、`abs` 未 import、两处布局参数误用）。
+- **v0.5.0**（2026-10-27）用 A12 的探针实证重写 `AmapSdk`（补 `getAltitude/getProvider/getSource`，
+  改钩 AIDL 客户端代理 `ILocationService$Stub$Proxy` 的 `getFixSatelliteCount/appCanLocation/isGnssOn/...`，
+  新增 `Satellite` 方法表转储）；修 `sync` 链路上两个真实缺陷（SharedPreferences 的 `&#10;` 未解码 ⇒
+  配置被写成一行、模块读到 `enabled=false`；渲染器漏 `MOCKLOC_PROBE` ⇒ 每次同步把探针关掉），
+  修 `GnssStream` 的 `build()` 参数元数查找错（`NoSuchElementException`），状态页徽章改成只说本进程能观测到的事。
+  `ConfigCheck` 31 项、Kotlin 类型检查 0 error。
