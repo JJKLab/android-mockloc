@@ -16,12 +16,12 @@
          visibility hides all but a handful and the list is useless. -->
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
 
+    <!-- NoActionBar: the system bar used to print the app label right above our own header band,
+         so the title appeared twice on every screen. -->
     <application
         android:allowBackup="false"
         android:description="@string/module_desc"
         android:label="@string/app_name"
-        // NoActionBar: the system bar used to print the app label right above our own header band,
-        // so the title appeared twice on every screen.
         android:theme="@android:style/Theme.DeviceDefault.Light.NoActionBar">
 
         <activity

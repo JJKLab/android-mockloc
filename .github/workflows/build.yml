@@ -23,6 +23,11 @@ jobs:
       - name: Coordinate acceptance tests
         run: python tools/tests/test_coords.py
 
+      # The local Kotlin type-check never opens the manifest, so XML mistakes used to surface only
+      # here - after the apk job had already spent minutes on Gradle.
+      - name: Manifest and resource XML checks
+        run: python tools/tests/test_manifest.py
+
   apk:
     needs: logic
     runs-on: ubuntu-latest

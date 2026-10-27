@@ -1202,3 +1202,10 @@ FakeLoc/XposedFakeLocation 都有同样的取舍，并用"每个字段单独开�
   本地：Kotlin 类型检查 0 error（抓到 `setRequiresSatellite` 的真名是 `setHasSatelliteRequirement`）、
   `ConfigCheck` 48 项全过、`tiers/scope/off` 实机跑通。**没有盲编的部分**：App 内 Shizuku 客户端
   （本机 Rish 服务未运行，且 13.1.5 的 `newProcess` 已是包内可见），这一档暂由已实测的 `--mode adb` 承担。
+  **一次 CI 红（`c599485`）与它的教训**：改主题时我把一行 `//` 注释写进了 `<application ...>` 的
+  属性之间——那是 Kotlin/Java 的写法，在 XML 里是非法 token，manifest merger 直接失败，而本地 Kotlin
+  类型检查根本不打开 manifest，所以看不见。修好后新增 `tools/tests/test_manifest.py`（解析全部 XML +
+  几条要紧的断言：主题必须 NoActionBar、`ACCESS_MOCK_LOCATION`/`QUERY_ALL_PACKAGES` 在不在、
+  MockService 的 DUMP 与 FGS 类型、字符串引用存在），并挂进 CI 的 `logic` 任务，让这类错误在 20 毫秒内
+  报出来而不是烧掉一次 Gradle 构建。**负向验证做过**：把 `//` 塞回属性之间，测试确实 exit 1。
+  （顺带一个反直觉的事实：`//` 放在元素内容位置是**合法** XML，`/` 不是特殊字符——所以只有夹在属性之间才会炸。）
