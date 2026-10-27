@@ -386,29 +386,34 @@ class MainActivity : Activity() {
 
     private fun loadPolicyList() {
         val installed = runCatching {
-            packageManager.getInstalledApplications(0)
-                .filter { it.packageName != packageName }
-                .filter { info ->
-                    runCatching {
-                        packageManager.getPackageInfo(
-                            info.packageName,
-                            android.content.pm.PackageManager.GET_PERMISSIONS,
-                        ).requestedPermissions?.any { perm ->
-                            perm == android.Manifest.permission.ACCESS_FINE_LOCATION ||
-                                perm == android.Manifest.permission.ACCESS_COARSE_LOCATION
-                        } == true
-                    }.getOrDefault(false)
+            // One binder call for the whole list: resolving permissions per package took ~600
+            // round trips and froze the tab on first open.
+            packageManager.getInstalledPackages(
+                android.content.pm.PackageManager.GET_PERMISSIONS,
+            )
+                .mapNotNull { info ->
+                    val permissions = info.requestedPermissions
+                    if (permissions == null || !(permissions.contains(
+                            android.Manifest.permission.ACCESS_FINE_LOCATION
+                        ) || permissions.contains(
+                            android.Manifest.permission.ACCESS_COARSE_LOCATION
+                        ))
+                    ) {
+                        return@mapNotNull null
+                    }
+                    val pkg = info.packageName
+                    if (pkg == packageName) return@mapNotNull null
+                    pkg to runCatching {
+                        packageManager.getApplicationLabel(info.applicationInfo!!).toString()
+                    }.getOrDefault(pkg)
                 }
-                .sortedBy { packageManager.getApplicationLabel(it).toString() }
-                .map { it.packageName to packageManager.getApplicationLabel(it).toString() }
+                .sortedBy { it.second }
         }.getOrElse { emptyList() }
         policyPackages = installed.map { it.first }
         val chosen = bridge.blindScope()
         (policyList.adapter as ArrayAdapter<String>).apply {
             clear()
-            addAll(installed.map { (pkg, name) ->
-                "$name ${Tiers.needsOf(pkg).label.take(1)}  $pkg"
-            })
+            addAll(installed.map { (pkg, name) -> "$name ${Tiers.needsOf(pkg).label.take(1)}  $pkg" })
             notifyDataSetChanged()
         }
         installed.forEachIndexed { index, (pkg, _) ->
