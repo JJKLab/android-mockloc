@@ -19,7 +19,10 @@ import java.util.concurrent.TimeUnit
  */
 object RootInjector {
 
-    private const val TIMEOUT_MS = 8000L
+    // 15s, not the usual 8s: the first probe is the moment KernelSU/APatch pops its grant dialog,
+    // and the user is allowed to be slower than that. A dismissed dialog still fails fast; only
+    // an unanswered one waits.
+    private const val TIMEOUT_MS = 15_000L
     private val CFG_DIR = "/data/adb/mockloc"
     private val CFG_PATH = "$CFG_DIR/config.prop"
     private val PUB_PATH = "/data/local/tmp/mockloc.conf"

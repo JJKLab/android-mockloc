@@ -1087,6 +1087,18 @@ FakeLoc/XposedFakeLocation 都有同样的取舍，并用"每个字段单独开�
     **测试方法教训（又犯第三次）**：键盘弹出/列表滚动都会移动控件——**每次点击前必须重新
     `uiautomator dump` 取坐标**；一次点到「去开发者选项」跳进系统设置、一次 tap 坐标系漂移，
     白跑两轮。
+34. **v0.8.2 的装机验收判据**（App 内一键同步，消灭"配置不一致要 PC 刷新"）：
+    a. 真机诊断：conf 停在 PC 时代旧点（杭州）、App 选点上海、`/data/local/tmp/mockloc.in` 里还躺着
+       10-27 的 `ENABLED=false` 僵尸收件箱、com.mockloc 未获 KernelSU su 授权——四件事叠加成
+       "App 注了、模块不跟、只能 PC 救"。
+    b. **App 内「同步到模块」**（状态页操作行）：force 重探 su（弹 KernelSU 授权框就点允许，等待从
+       8s 放宽到 15s）→ `RootInjector.publishConfig` 直写 conf → 1.2s 后状态条回绿；失败弹引导对话框
+       （①授权 ②刷 rootmodule ③PC）。
+    c. **僵尸收件箱修复**（rootmodule/mockloc-lib.sh）：`sync_inbox` 改一次性语义（应用即删），
+       `publish`/`cfg_get` 一律读 CFG（唯一权威）；`sync_app_prefs` 的比较基准从 PUB（每 tick 被
+       publish 重写）改回 CFG——修掉"陈旧 App prefs 反复盖掉新鲜 PC 写入"的第二个竞态。
+    d. 验收：注入后状态条无黄色不一致警告；`cat /data/local/tmp/mockloc.conf` 与 App 选点一致；
+       微信（档3）读回新点；全程不碰 PC。
 
 
 ## 附录 D 版本历史
@@ -1370,3 +1382,12 @@ FakeLoc/XposedFakeLocation 都有同样的取舍，并用"每个字段单独开�
   https://github.com/JJKLab/android-mockloc/releases/latest
   本地验证：kotlinc 0 error、四个 JVM 校验器全过、test_coords/test_manifest 全过。
   真机复测结果见 C33 与本轮装机记录。
+
+- **v0.8.2**（2026-10-29）App 内一键同步，消灭"配置不一致要 PC 刷新"：
+  ① 状态页新增**「同步到模块」**：force 重探 su（KernelSU 授权等待 8s→15s，弹框点允许即成功）→
+  `publishConfig` 直写两份 conf → 1.2s 后自动刷新判据；失败弹三选一引导（授权 / 刷 rootmodule / PC）。
+  ② rootmodule 僵尸收件箱修复：真机实锤 10-27 的 `mockloc.in`（`ENABLED=false`）永驻——旧 `cfg_src`
+  让它在每次 publish 里压过一切新状态。`sync_inbox` 改一次性（应用即删）、`publish`/`cfg_get` 一律读
+  CFG（唯一权威）、`sync_app_prefs` 比较基准 PUB→CFG（修掉第二个覆盖竞态）。
+  ③ mismatch 文案全部指向 App 内按钮，PC sync 降为最后手段。
+  本地：kotlinc 0 error、四校验器全过、`sh -n` 通过。装机判据 C34。

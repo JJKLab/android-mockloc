@@ -639,6 +639,11 @@ class MainActivity : Activity() {
             setOnClickListener { refreshStatus() }
         }, ui.fill())
         actions.addView(Button(this).apply {
+            text = "同步到模块"
+            isAllCaps = false
+            setOnClickListener { onSyncToModule() }
+        }, ui.fill())
+        actions.addView(Button(this).apply {
             text = if (bridge.probe()) "探针：开" else "探针：关"
             isAllCaps = false
             setOnClickListener {
@@ -647,30 +652,72 @@ class MainActivity : Activity() {
                 refreshStatus()
             }
         }, ui.fill())
-            actions.addView(Button(this).apply {
-                text = "停止注入"
-                isAllCaps = false
-                setOnClickListener {
-                    startService(Intent(this@MainActivity, MockService::class.java)
-                        .putExtra(MockService.EXTRA_CMD, "stop"))
-                    bridge.clear()
-                    // If a root publish ever built providers from the App, stop has to tear those
-                    // down too or the system keeps serving the old point after "停止".
-                    thread {
-                        val out = RootInjector.teardown(DEFAULT_PROVIDERS.split(','))
-                        runOnUiThread {
-                            refreshStatus()
-                            if (out.contains("Error") || out.contains("denied")) toast("root 侧停止异常：${out.take(60)}")
-                        }
+        actions.addView(Button(this).apply {
+            text = "停止注入"
+            isAllCaps = false
+            setOnClickListener {
+                startService(Intent(this@MainActivity, MockService::class.java)
+                    .putExtra(MockService.EXTRA_CMD, "stop"))
+                bridge.clear()
+                // If a root publish ever built providers from the App, stop has to tear those
+                // down too or the system keeps serving the old point after "停止".
+                thread {
+                    val out = RootInjector.teardown(DEFAULT_PROVIDERS.split(','))
+                    runOnUiThread {
+                        refreshStatus()
+                        if (out.contains("Error") || out.contains("denied")) toast("root 侧停止异常：${out.take(60)}")
                     }
                 }
-            }, ui.fill())
+            }
+        }, ui.fill())
         page.addView(tierChips)
         page.addView(riskChips)
         page.addView(riskText)
         page.addView(ScrollView(this).apply { addView(statusText) }, weightParams())
         page.addView(actions)
         return page
+    }
+
+    /**
+     * The app-only sync (REFACTOR-PLAN C34): the module reads /data/local/tmp/mockloc.conf, which
+     * an app process cannot write - but root can, and this device runs KernelSU. Force-probe su
+     * (the spawn itself is what pops the grant dialog the first time), then publish the rendered
+     * conf straight to both locations. No PC, no waiting for the module's mtime loop.
+     */
+    private fun onSyncToModule() {
+        toast("正在尝试 root 通道…（首次会弹 KernelSU 授权，请允许）")
+        thread {
+            runCatching {
+                if (!RootInjector.rootAvailable(force = true)) {
+                    runOnUiThread { showSyncFallbackDialog() }
+                    return@runCatching
+                }
+                val published = RootInjector.publishConfig(this@MainActivity, bridge.render())
+                runOnUiThread {
+                    toast(if (published) "已同步（su 直写模块配置）" else "su 写入失败：检查 KernelSU 授权与磁盘")
+                    // Config carries a 1s stat cache; give it a beat before the read-back verdict.
+                    thread {
+                        runCatching { Thread.sleep(1200) }
+                        runOnUiThread { refreshStatus() }
+                    }
+                }
+            }.onFailure {
+                runOnUiThread { toast("同步失败：${it.javaClass.simpleName} ${it.message.orEmpty().take(60)}") }
+            }
+        }
+    }
+
+    private fun showSyncFallbackDialog() {
+        android.app.AlertDialog.Builder(this)
+            .setTitle("需要一条 root 通道")
+            .setMessage(
+                "模块读的是 /data/local/tmp/mockloc.conf，App 进程自己写不进去。按顺序试：\n\n" +
+                    "① KernelSU/APatch 管理器里给 mockloc 授予 root，回来再点一次「同步到模块」（刚才弹的授权框点了允许就直接成功）；\n" +
+                    "② 刷 mockloc-root.zip，模块循环会自动搬运 App 的选点；\n" +
+                    "③ 最后手段：PC 上跑 python tools/mockloc.py sync。",
+            )
+            .setPositiveButton("知道了", null)
+            .show()
     }
 
     /**
@@ -725,6 +772,7 @@ class MainActivity : Activity() {
                 append("  App : $label $last\n")
                 append("  模块: ${Config.label} ${"%.5f".format(Config.centerLat)},${"%.5f".format(Config.centerLng)}\n")
                 append("  档 3 会用模块那份覆盖，所以目标 App 可能仍显示模块里的点。\n")
+                append("  → 点下方「同步到模块」一键解决（需 KernelSU 给 mockloc 授权，允许一次即可）\n")
             }
             append("\n模块配置（${Config.DEFAULT_PATH}）\n")
             append("  开关=${onOff(Config.enabled)} 全局=${onOff(Config.global)} 卫星=${onOff(Config.gnssSpoof)} ")
@@ -740,9 +788,10 @@ class MainActivity : Activity() {
             // Measured on 2026-10-27: this is the one switch that moves Amap's blue dot, and the
             // hooks that implement it are installed per process, so it needs an app restart.
             append("  致盲这俩是高德唯一认的开关（它自己算路，不读系统定位）；开关改动要重启目标 App 才生效\n")
-            append("\n把 App 选点同步给模块（二选一）\n")
-            append("  PC  : python tools/mockloc.py sync\n")
-            append("  免PC: 刷 mockloc-root.zip，模块循环会自己搬\n")
+            append("\n把 App 选点同步给模块\n")
+            append("  App 内: 点下方「同步到模块」（su 直写；首次会弹 KernelSU 授权，允许即可）\n")
+            append("  免PC备选: 刷 mockloc-root.zip，模块循环自动搬运\n")
+            append("  PC 最后手段: python tools/mockloc.py sync\n")
             val notes = Diagnostics.snapshot()
             if (notes.isNotEmpty()) {
                 append("\n本进程挂钩记录（目标进程里的同类记录看 logcat 的 mockloc tag）\n")

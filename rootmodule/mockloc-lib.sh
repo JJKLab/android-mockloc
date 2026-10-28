@@ -8,22 +8,21 @@ PUB=/data/local/tmp/mockloc.conf
 NETCUT_STATE=/data/adb/mockloc/netcut.pkgs
 
 # The inbox is world-writable-by-shell on purpose: KernelSU does not expose su to `adb shell`, so
-# a PC must be able to hand the module a config without any root channel. The module then mirrors
-# it under /data/adb, which is where a manual on-device edit would live.
+# a PC must be able to hand the module a config without any root channel. One-shot semantics:
+# apply it once and remove it - a persisted inbox used to win publish() forever via cfg_src, so a
+# PC-era file kept shadowing every newer App pick (the "配置不一致，还要 PC 刷新" report).
 sync_inbox() {
   [ -f "$INBOX" ] || return 0
   mkdir -p $(dirname "$CFG") 2>/dev/null
-  cmp -s "$INBOX" "$CFG" || cp "$INBOX" "$CFG"
+  cp "$INBOX" "$CFG" && rm -f "$INBOX"
   chmod 600 "$CFG" 2>/dev/null
 }
 
-cfg_src() {
-  if [ -f "$INBOX" ]; then printf '%s' "$INBOX"; else printf '%s' "$CFG"; fi
-}
-
 # Sourcing config.prop would break on a LABEL containing spaces, so read one key at a time.
+# CFG is the single authority: sync_inbox feeds it from the PC inbox, sync_app_prefs from the
+# App's picks, and publish() mirrors it to the world-readable copy the module reads.
 cfg_get() {
-  sed -n "s/^$1=//p" "$(cfg_src)" 2>/dev/null | head -n 1 | tr -d '\r'
+  sed -n "s/^$1=//p" "$CFG" 2>/dev/null | head -n 1 | tr -d '\r'
 }
 
 jitter() {
@@ -141,7 +140,9 @@ netcut_apply() {
 sync_app_prefs() {
   _prefs=/data/data/com.mockloc/shared_prefs/settings.xml
   [ -r "$_prefs" ] || return 1
-  [ "$_prefs" -nt "$PUB" ] || return 0
+  # Compare against CFG (the authority), not PUB: PUB is rewritten by publish() every tick, so a
+  # PUB-based check let stale App prefs re-publish over a fresh PC inbox apply.
+  [ "$_prefs" -nt "$CFG" ] || return 0
   _tmp=$(mktemp "/data/local/tmp/mockloc.app.XXXXXX") || return 1
   sed -n '/name="module_conf"/,/<\/string>/p' "$_prefs"     | sed '1s|.*name="module_conf"[^>]*>||; $s|<\/string>.*||' >"$_tmp"
   [ -s "$_tmp" ] || { rm -f "$_tmp"; return 1; }
@@ -149,17 +150,18 @@ sync_app_prefs() {
   # line and the module's parser reads ENABLED's value as "true&#10;GLOBAL=..." - i.e. spoofing off.
   sed -i 's/&#10;/
 /g; s/&lt;/</g; s/&gt;/>/g; s/&quot;/"/g; s/&amp;/\&/g' "$_tmp"
-  cp "$_tmp" "$PUB" && chmod 664 "$PUB"
   cp "$_tmp" "$CFG" 2>/dev/null
+  chmod 600 "$CFG" 2>/dev/null
   rm -f "$_tmp"
   return 0
 }
 
 publish() {
   # The Xposed module runs in an app SELinux domain and cannot read /data/adb, so mirror the
-  # effective config to /data/local/tmp. Keys match 1:1, and the module does its own jitter, so
-  # the centre is what gets published.
-  cp "$(cfg_src)" "$PUB" 2>/dev/null || return 1
+  # effective config to /data/local/tmp. CFG is the single authority (inbox + App prefs both
+  # land there first); keys match 1:1, and the module does its own jitter, so the centre is what
+  # gets published.
+  cp "$CFG" "$PUB" 2>/dev/null || return 1
   chmod 664 "$PUB"
   # chcon is gone (2026-10-28): this ROM ships no chcon in shell and the module read the mirror
   # fine without any relabel (A0.1), so the line was dead weight pretending to do work.
