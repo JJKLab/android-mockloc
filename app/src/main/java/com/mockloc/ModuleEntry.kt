@@ -54,6 +54,9 @@ class ModuleEntry : XposedModule() {
         GnssStream(this, param.classLoader, pkg).init()
         TencentSdk(this, param.classLoader, pkg).init()
         AmapSdk(this, param.classLoader, pkg).init()
+        StackClean(this, param.classLoader, pkg).init()
+        PkgHide(this, param.classLoader, pkg).init()
+        GmsHooks(this, param.classLoader, pkg).init()
         SelfTest.schedule(pkg) { message -> log(Log.INFO, tag, message) }
         log(
             Log.INFO, tag,
@@ -72,17 +75,23 @@ class ModuleEntry : XposedModule() {
      * the coordinates we would then have to intercept.
      */
     private fun installCoordinates(kit: HookKit, clazz: Class<*>, classLoader: ClassLoader, pkg: String) {
+        // Per-app points (REFACTOR-PLAN 2.2): a listed app reads its own coordinate, everyone else
+        // the global one - from the same shared jitter offset.
         kit.install(kit.methodsOf(clazz, "getLatitude")) { chain ->
-            if (SpoofLogic.isActive(pkg)) Config.currentLat else chain.proceed()
+            if (SpoofLogic.isActive(pkg)) Config.currentLatFor(pkg) else chain.proceed()
         }
         kit.install(kit.methodsOf(clazz, "getLongitude")) { chain ->
-            if (SpoofLogic.isActive(pkg)) Config.currentLng else chain.proceed()
+            if (SpoofLogic.isActive(pkg)) Config.currentLngFor(pkg) else chain.proceed()
         }
 
         val lmClass = kit.findClass(classLoader, LocationManager::class.java.name) ?: return
         kit.install(kit.methodsOf(lmClass, "getLastKnownLocation", String::class.java)) { chain ->
             if (!SpoofLogic.isActive(pkg)) return@install chain.proceed()
-            SpoofLogic.fakeLocation(chain.proceed() as? Location, chain.args.getOrNull(0) as? String)
+            SpoofLogic.fakeLocation(
+                chain.proceed() as? Location,
+                chain.args.getOrNull(0) as? String,
+                pkg,
+            )
         }
     }
 

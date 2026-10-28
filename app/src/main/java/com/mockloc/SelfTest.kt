@@ -63,8 +63,34 @@ object SelfTest {
             Settings.Secure.getString(app.contentResolver, "mock_location")
         }.getOrNull()
 
-        note("$pkg 自检(进程内读回) $fixes | providers=$providers gpsEnabled=$enabled mockSetting=$setting")
+        note("$pkg 自检(进程内读回) $fixes | providers=$providers gpsEnabled=$enabled mockSetting=$setting${leakProbe(app)}")
         return true
+    }
+
+    /**
+     * Leak probe (REFACTOR-PLAN 3.2): with the probe flag on, read the radio inputs a detecting
+     * app would read and report how much real evidence survived. Runs in the *target's* process,
+     * so it answers the question from the detector's side, not ours - "AP=0 基站=0" means the
+     * blinding scope is closed; any count above zero is an open lane, named.
+     */
+    private fun leakProbe(app: Application): String {
+        if (!Config.probe) return ""
+        val wifi = app.getSystemService(Context.WIFI_SERVICE) as? android.net.wifi.WifiManager
+        val aps = runCatching { wifi?.scanResults?.size }.getOrNull()
+        val tm = app.getSystemService(Context.TELEPHONY_SERVICE) as? android.telephony.TelephonyManager
+        val cells = runCatching {
+            @Suppress("DEPRECATION")
+            tm?.allCellInfo?.size
+        }.getOrNull()
+        val bssid = runCatching {
+            @Suppress("DEPRECATION")
+            wifi?.connectionInfo?.bssid
+        }.getOrNull()
+        val verdict = when {
+            (aps ?: 0) == 0 && (cells ?: 0) == 0 -> "致盲面闭合"
+            else -> "有真实射频证据泄露"
+        }
+        return " | 泄露反推: AP=$aps 基站=$cells 已连BSSID=$bssid → $verdict"
     }
 
     private fun fmt(value: Double) = "%.4f".format(value)

@@ -16,6 +16,22 @@ import android.widget.TextView
  */
 class Ui(private val context: Context) {
 
+    /** Day/night tokens (REFACTOR-PLAN 阶段四): one source, so no page hardcodes a light colour. */
+    val night: Boolean
+        get() = (context.resources.configuration.uiMode and
+            android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+            android.content.res.Configuration.UI_MODE_NIGHT_YES
+
+    fun pageBg() = if (night) 0xFF121316.toInt() else 0xFFF4F5F7.toInt()
+
+    fun cardBg() = if (night) 0xFF1E2024.toInt() else 0xFFFFFFFF.toInt()
+
+    fun titleColor() = if (night) 0xFFE8EAED.toInt() else 0xFF1B1B1B.toInt()
+
+    fun bodyColor() = if (night) 0xFFC7CACD.toInt() else 0xFF444444.toInt()
+
+    fun hintColor() = if (night) 0xFF9AA0A6.toInt() else 0xFF6B6B6B.toInt()
+
     fun dp(value: Int): Int = TypedValue.applyDimension(
         TypedValue.COMPLEX_UNIT_DIP, value.toFloat(), context.resources.displayMetrics,
     ).toInt()
@@ -24,7 +40,7 @@ class Ui(private val context: Context) {
 
     fun card(): LinearLayout = LinearLayout(context).apply {
         orientation = LinearLayout.VERTICAL
-        background = rounded(0xFFFFFFFF.toInt(), 0x1F000000, 1f)
+        background = rounded(cardBg(), 0x1F000000, 1f)
         setPadding(dp(14), dp(12), dp(14), dp(12))
         layoutParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -35,21 +51,21 @@ class Ui(private val context: Context) {
         this.text = text
         textSize = 13f
         setTypeface(typeface, android.graphics.Typeface.BOLD)
-        setTextColor(0xFF1B1B1B.toInt())
+        setTextColor(titleColor())
         setPadding(0, 0, 0, dp(4))
     }
 
     fun body(text: String) = TextView(context).apply {
         this.text = text
         textSize = 13f
-        setTextColor(0xFF444444.toInt())
+        setTextColor(bodyColor())
         setLineSpacing(0f, 1.15f)
     }
 
     fun hint(text: String) = TextView(context).apply {
         this.text = text
         textSize = 12f
-        setTextColor(0xFF6B6B6B.toInt())
+        setTextColor(hintColor())
         setPadding(dp(14), dp(6), dp(14), dp(10))
     }
 

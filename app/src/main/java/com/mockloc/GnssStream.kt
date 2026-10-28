@@ -40,6 +40,31 @@ object Sky {
 
     fun travelNanos(elevationDeg: Double): Long =
         (pathMeters(elevationDeg) / SPEED_OF_LIGHT * 1e9).toLong()
+
+    /** Observed range-rate band for a static receiver under real orbital motion (README A9). */
+    private const val RANGE_RATE_MAX_MPS = 800.0
+
+    /**
+     * Pseudorange rate for one satellite as this receiver sees it. A flat 0.0 for every satellite
+     * is exactly what "no real receiver ever produces" looks like, so the model gives each one a
+     * distinct, slowly drifting rate inside the physically observed ±800 m/s band, elevation-
+     * damped because a high satellite's range barely changes. The receiver's own motion (route
+     * mode) adds its projection on the line of sight. This is a band-aligned envelope, not an
+     * ephemeris solve - stated plainly, the same honesty as the rest of the A9 layer.
+     */
+    fun pseudorangeRateMps(
+        sat: Sat,
+        nowMillis: Long,
+        rxSpeedMps: Double = 0.0,
+        rxCourseDeg: Double = 0.0,
+    ): Double {
+        val envelope = RANGE_RATE_MAX_MPS * Math.cos(Math.toRadians(sat.elevationDeg))
+        val phase = (sat.svid * 137 + nowMillis / 10_000L).toDouble()
+        var rate = envelope * Math.sin(Math.toRadians(phase % 360.0))
+        rate -= rxSpeedMps * Math.cos(Math.toRadians(sat.elevationDeg)) *
+            Math.cos(Math.toRadians(sat.azimuthDeg - rxCourseDeg))
+        return rate
+    }
 }
 
 /**
@@ -72,8 +97,8 @@ class GnssStream(
     /** Stable across epochs: a receiver that restarts its clock every second is its own tell. */
     private val fullBiasNanos = -(gpsSecondsSinceEpoch() * 1_000_000_000L)
 
-    /** A static receiver accumulates no delta range, so this stays put and matches Doppler = 0. */
-    private val adrMeters = 0.0
+    /** ADR accumulates continuously; anchored at first delivery so it drifts, not jumps. */
+    private val adrAnchorElapsed = SystemClock.elapsedRealtimeNanos()
 
     /** The probe prints one epoch's sentences so the format can be checked with a real parser. */
     private var sampled = false
@@ -217,6 +242,13 @@ class GnssStream(
         val measurements = Sky.SATS.map { sat ->
             build("android.location.GnssMeasurement") {
                 val rx = SystemClock.elapsedRealtimeNanos()
+                val nowMs = System.currentTimeMillis()
+                val rate = Sky.pseudorangeRateMps(
+                    sat, nowMs, Config.currentSpeedMps, Config.currentBearingDeg,
+                )
+                // ADR integrates the (slowly varying) rate; modulo an hour keeps the magnitude in
+                // the range a receiver that has been locked for a while would actually report.
+                val adrSeconds = ((rx - adrAnchorElapsed) / 1_000_000_000L) % 3600L
                 put("setSvid", sat.svid)
                 put("setConstellationType", CONSTELLATION_GPS)
                 put("setCn0DbHz", sat.cn0DbHz.toDouble())
@@ -232,10 +264,10 @@ class GnssStream(
                 put("setTimeOffsetNanos", 0.0)
                 put("setReceivedSvTimeNanos", rx - Sky.travelNanos(sat.elevationDeg))
                 put("setReceivedSvTimeUncertaintyNanos", 10L)
-                put("setPseudorangeRateMetersPerSecond", 0.0)
-                put("setPseudorangeRateUncertaintyMetersPerSecond", 0.1)
+                put("setPseudorangeRateMetersPerSecond", rate)
+                put("setPseudorangeRateUncertaintyMetersPerSecond", 0.2)
                 put("setAccumulatedDeltaRangeState", ADR_USE_AND_LOCKED)
-                put("setAccumulatedDeltaRangeMeters", adrMeters)
+                put("setAccumulatedDeltaRangeMeters", -rate * adrSeconds)
                 put("setAccumulatedDeltaRangeUncertaintyMeters", 0.1)
             }
         }
@@ -285,8 +317,10 @@ class GnssStream(
     // ---- NMEA ---------------------------------------------------------------------------------
 
     /** Sentences are built by the pure Nmea object so their format can be checked off-device. */
-    private fun nmeaSentences(nowMillis: Long): List<String> =
-        Nmea.sentences(Config.currentLat, Config.currentLng, nowMillis, Sky.SATS, ALTITUDE_M, HDOP)
+    private fun nmeaSentences(nowMillis: Long): List<String> = Nmea.sentences(
+        Config.currentLat, Config.currentLng, nowMillis, Sky.SATS, ALTITUDE_M, HDOP,
+        Config.currentSpeedMps, Config.currentBearingDeg,
+    )
 
     private fun gpsSecondsSinceEpoch(): Long =
         (System.currentTimeMillis() / 1000L) - GPS_EPOCH_OFFSET_SECONDS

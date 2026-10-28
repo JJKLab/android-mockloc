@@ -32,7 +32,8 @@ object Nmea {
     /**
      * GGA (position + fix quality), RMC (position + speed + date), GSA (satellites used and DOP),
      * GLL (lat/lon/time), GST (pseudo-range error). A stationary receiver reports zero speed and
-     * course, which is what lets a consumer cross-check the measurement stream's zero Doppler.
+     * course, which is what lets a consumer cross-check the measurement stream's Doppler; route
+     * mode feeds the real configured speed/course so all three layers stay in one story.
      */
     fun sentences(
         latitude: Double,
@@ -41,6 +42,8 @@ object Nmea {
         satellites: List<Sky.Sat>,
         altitudeMeters: Double = 4.0,
         hdop: Double = 0.9,
+        speedMps: Double = 0.0,
+        courseDeg: Double = 0.0,
     ): List<String> {
         val cal = Calendar.getInstance().apply { timeInMillis = utcMillis }
         val time = String.format(
@@ -57,10 +60,13 @@ object Nmea {
         val prns = satellites.joinToString(",") { String.format(Locale.ROOT, "%02d", it.svid) }
         val slots = prns + ",,".repeat((12 - used).coerceAtLeast(0))
         val hdopText = String.format(Locale.ROOT, "%.1f", hdop)
+        // RMC carries speed in knots and course over ground in degrees.
+        val knots = String.format(Locale.ROOT, "%.1f", speedMps / 0.514444)
+        val course = String.format(Locale.ROOT, "%.1f", ((courseDeg % 360.0) + 360.0) % 360.0)
         return listOf(
             frame("GPGGA", "$time,$lat,$lon,1,$used,$hdopText," +
                 String.format(Locale.ROOT, "%.1f", altitudeMeters) + ",M,-32.0,M,,"),
-            frame("GPRMC", "$time,A,$lat,$lon,0.0,0.0,$date,0.0,E"),
+            frame("GPRMC", "$time,A,$lat,$lon,$knots,$course,$date,0.0,E"),
             frame("GPGSA", "A,3,$slots,1.6,$hdopText,1.3"),
             frame("GPGLL", "$lat,$lon,$time,A"),
             frame("GPGST", "$time,0.8,$hdopText,$hdopText,,,,,"),

@@ -34,8 +34,81 @@ object Config {
     var radius: Double = 0.0
         private set
 
+    /**
+     * Route mode (REFACTOR-PLAN 2.1): when waypoints and an epoch anchor are present, the "current
+     * point" advances along the route at [speedMps] instead of sitting on the centre. The anchor is
+     * wall-clock, so the root module's shell loop, the tier-0 provider and every hooked process
+     * sample the same position from the same clock.
+     */
+    @Volatile
+    var speedMps: Double = 1.4
+        private set
+
+    @Volatile
+    var routeWaypoints: List<Route.Pt> = emptyList()
+        private set
+
+    /** Epoch ms the route started at; 0 = not running. */
+    @Volatile
+    var routeStartedMs: Long = 0L
+        private set
+
+    @Volatile
+    var routeLoop: Boolean = false
+        private set
+
+    /**
+     * Per-app fixed points (REFACTOR-PLAN 2.2): `MOCKLOC_APP.<pkg>=lat,lng[,acc]`. A listed app
+     * reads its own point instead of the global one, so WeChat can sit in Beijing while Meituan
+     * sits in Shanghai. Routes do not compose with these - a per-app point is deliberately static.
+     */
+    @Volatile
+    var appPoints: Map<String, DoubleArray> = emptyMap()
+        private set
+
+    /** Phase-3 anti-detection surfaces; each is individually switchable and diagnostics-logged. */
+    @Volatile
+    var stackClean: Boolean = true
+        private set
+
+    /** Packages hidden from PackageManager enumeration inside hooked processes. Empty = no hooks. */
+    @Volatile
+    var hidePkgs: Set<String> = emptySet()
+        private set
+
+    @Volatile
+    var sensorFreeze: Boolean = false
+        private set
+
+    /** true = fabricate a self-consistent AP list; false = return empty (the measured default). */
+    @Volatile
+    var forgeWifi: Boolean = false
+        private set
+
+    @Volatile
+    var gmsSpoof: Boolean = true
+        private set
+
     @Volatile
     var accuracy: Float = 5f
+        private set
+
+    /**
+     * Fix altitude in metres. `-1` means "not pinned": the publisher (App or CLI) is expected to
+     * resolve the real terrain value itself, and the config carries whatever it decided.
+     */
+    @Volatile
+    var alt: Double = -1.0
+        private set
+
+    /**
+     * The root module's own re-injection cadence, decoupled from the in-app provider's interval
+     * (the module forks one `cmd` per provider per tick, so it has a different cost profile than
+     * an in-process `setTestProviderLocation`). Missing key falls back to 1s, matching what every
+     * reference project converged on.
+     */
+    @Volatile
+    var loopIntervalSec: Int = 1
         private set
 
     @Volatile
@@ -133,6 +206,18 @@ object Config {
         var nextLng = 0.0
         var nextRadius = 0.0
         var nextAccuracy = 5f
+        var nextAlt = -1.0
+        var nextLoopInterval = 1
+        var nextSpeed = 1.4
+        var nextRoute = emptyList<Route.Pt>()
+        var nextRouteStarted = 0L
+        var nextRouteLoop = false
+        val nextAppPoints = HashMap<String, DoubleArray>()
+        var nextStackClean = true
+        val nextHide = LinkedHashSet<String>()
+        var nextSensorFreeze = false
+        var nextForgeWifi = false
+        var nextGms = true
         var nextProviders = listOf(
             LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER, "fused",
         )
@@ -155,6 +240,9 @@ object Config {
                 "MOCKLOC_LNG" -> nextLng = value.toDoubleOrNull() ?: nextLng
                 "MOCKLOC_RADIUS" -> nextRadius = value.toDoubleOrNull() ?: nextRadius
                 "MOCKLOC_ACC" -> nextAccuracy = value.toFloatOrNull() ?: nextAccuracy
+                "MOCKLOC_ALT" -> nextAlt = value.toDoubleOrNull() ?: nextAlt
+                "MOCKLOC_LOOP_INTERVAL" -> nextLoopInterval = value.toIntOrNull()?.coerceAtLeast(1)
+                    ?: nextLoopInterval
                 "MOCKLOC_PROVIDERS" -> value.split(',').map { it.trim() }.filter { it.isNotEmpty() }
                     .takeIf { it.isNotEmpty() }?.let { nextProviders = it }
                 "MOCKLOC_LABEL" -> nextLabel = value
@@ -164,6 +252,29 @@ object Config {
                 "MOCKLOC_BLIND_WIFI" -> nextBlindWifi = Scope.parse(value)
                 "MOCKLOC_BLIND_CELL" -> nextBlindCell = Scope.parse(value)
                 "MOCKLOC_PROBE" -> nextProbe = value == "true" || value == "1"
+                "MOCKLOC_SPEED_MPS" -> nextSpeed = value.toDoubleOrNull()?.coerceIn(0.1, 60.0) ?: nextSpeed
+                "MOCKLOC_ROUTE_WAYPOINTS" -> nextRoute = Route.decode(value)
+                "MOCKLOC_ROUTE_STARTED" -> nextRouteStarted = value.toLongOrNull() ?: nextRouteStarted
+                "MOCKLOC_ROUTE_LOOP" -> nextRouteLoop = value == "true" || value == "1"
+                "MOCKLOC_STACK_CLEAN" -> nextStackClean = value != "false" && value != "0"
+                "MOCKLOC_SENSOR_FREEZE" -> nextSensorFreeze = value == "true" || value == "1"
+                "MOCKLOC_FORGE_WIFI" -> nextForgeWifi = value == "true" || value == "1"
+                "MOCKLOC_GMS" -> nextGms = value != "false" && value != "0"
+                "MOCKLOC_HIDE_PKGS" -> value.split(',').map { it.trim() }
+                    .filter { it.isNotEmpty() }.forEach { nextHide.add(it) }
+                else -> {
+                    // Per-app fixed points: MOCKLOC_APP.<pkg>=lat,lng[,acc]. The key contains a dot
+                    // by design, which the indexOf('=') split above handles natively.
+                    if (key.startsWith("MOCKLOC_APP.")) {
+                        val pkg = key.removePrefix("MOCKLOC_APP.")
+                        val parts = value.split(',').map { it.trim().toDoubleOrNull() }
+                        val lat = parts.getOrNull(0)
+                        val lng = parts.getOrNull(1)
+                        if (pkg.isNotEmpty() && lat != null && lng != null) {
+                            nextAppPoints[pkg] = doubleArrayOf(lat, lng, parts.getOrNull(2) ?: 5.0)
+                        }
+                    }
+                }
             }
         }
         enabled = nextEnabled
@@ -171,6 +282,18 @@ object Config {
         centerLng = nextLng
         radius = nextRadius
         accuracy = nextAccuracy
+        alt = nextAlt
+        loopIntervalSec = nextLoopInterval
+        speedMps = nextSpeed
+        routeWaypoints = nextRoute
+        routeStartedMs = nextRouteStarted
+        routeLoop = nextRouteLoop
+        appPoints = nextAppPoints
+        stackClean = nextStackClean
+        hidePkgs = nextHide
+        sensorFreeze = nextSensorFreeze
+        forgeWifi = nextForgeWifi
+        gmsSpoof = nextGms
         providers = nextProviders
         provider = nextProviders.first()
         global = nextGlobal
@@ -197,19 +320,76 @@ object Config {
     var currentLng: Double = 0.0
         private set
 
+    /** The route is live only when there is a path AND a start anchor to sample from. */
+    val routeActive: Boolean
+        get() = routeWaypoints.size >= 2 && routeStartedMs > 0L
+
+    /**
+     * Speed over ground and course the route engine is currently producing; zero when parked.
+     * The NMEA and GNSS-rate layers read these so their story matches the position's.
+     */
+    @Volatile
+    var currentSpeedMps: Double = 0.0
+        private set
+
+    @Volatile
+    var currentBearingDeg: Double = 0.0
+        private set
+
+    // One shared jitter offset per refresh: a per-app point and the global point then wobble
+    // together instead of each running its own random walk.
+    @Volatile
+    private var jitterDLat = 0.0
+
+    @Volatile
+    private var jitterDLng = 0.0
+
     private fun applyJitter() {
-        if (radius <= 0.0) {
-            currentLat = centerLat
-            currentLng = centerLng
-            return
+        var baseLat = centerLat
+        var baseLng = centerLng
+        // Route mode replaces the centre with the position along the route (REFACTOR-PLAN 2.1);
+        // the anchor is wall-clock, so tier-0/2/3 all land on the same spot at the same second.
+        if (routeActive) {
+            val s = Route.sampleElapsed(
+                routeWaypoints, speedMps, routeLoop, routeStartedMs, System.currentTimeMillis(),
+            )
+            if (s != null) {
+                baseLat = s.lat
+                baseLng = s.lng
+                currentSpeedMps = s.speedMps
+                currentBearingDeg = s.bearingDeg
+            } else {
+                currentSpeedMps = 0.0
+                currentBearingDeg = 0.0
+            }
+        } else {
+            currentSpeedMps = 0.0
+            currentBearingDeg = 0.0
         }
-        // sqrt keeps the sample uniform over the disc instead of piling up at the centre.
-        val dist = radius * kotlin.math.sqrt(Random.nextDouble())
-        val bearing = Random.nextDouble() * 2.0 * Math.PI
-        val dLat = dist * cos(bearing) / 111132.0
-        val dLng = dist * sin(bearing) / (111412.8 * cos(Math.toRadians(centerLat)))
-        currentLat = centerLat + dLat
-        currentLng = centerLng + dLng
+        if (radius <= 0.0) {
+            jitterDLat = 0.0
+            jitterDLng = 0.0
+        } else {
+            // sqrt keeps the sample uniform over the disc instead of piling up at the centre.
+            val dist = radius * kotlin.math.sqrt(Random.nextDouble())
+            val bearing = Random.nextDouble() * 2.0 * Math.PI
+            jitterDLat = dist * cos(bearing) / 111132.0
+            jitterDLng = dist * sin(bearing) / (111412.8 * cos(Math.toRadians(centerLat)))
+        }
+        currentLat = baseLat + jitterDLat
+        currentLng = baseLng + jitterDLng
+    }
+
+    /** A per-app fixed point overrides the global one entirely (REFACTOR-PLAN 2.2). */
+    fun appPointFor(pkg: String?): DoubleArray? = pkg?.let { appPoints[it] }
+
+    fun currentLatFor(pkg: String?): Double = appPointFor(pkg)?.get(0)?.plus(jitterDLat) ?: currentLat
+
+    fun currentLngFor(pkg: String?): Double = appPointFor(pkg)?.get(1)?.plus(jitterDLng) ?: currentLng
+
+    fun accuracyFor(pkg: String?): Float {
+        val acc = appPointFor(pkg)?.getOrNull(2)?.toFloat() ?: return accuracy
+        return if (acc > 0f) acc else accuracy
     }
 }
 

@@ -337,13 +337,16 @@ def cmd_set(t, args):
             "MOCKLOC_LNG": f"{lng:.7f}",
             "MOCKLOC_ACC": f"{args.accuracy:.1f}",
             "MOCKLOC_RADIUS": f"{args.radius:.1f}",
+            "MOCKLOC_ALT": f"{args.alt:.1f}",
             "MOCKLOC_INTERVAL": f"{int(args.interval)}",
+            "MOCKLOC_LOOP_INTERVAL": f"{int(args.interval)}",
             "MOCKLOC_TARGETS": ",".join(args.target or []),
             "MOCKLOC_LABEL": label,
             "MOCKLOC_GNSS": "true" if args.gnss_spoof else "false",
             "MOCKLOC_BLIND_WIFI": blind_spec(args.blind_wifi),
             "MOCKLOC_BLIND_CELL": blind_spec(args.blind_cell),
             "MOCKLOC_PROBE": "true" if args.probe else "false",
+            "MOCKLOC_NETCUT": ",".join(args.netcut or []),
         })
         print(f"[ok] 开机自恢复配置已写入 {path}（root 模块会读它）")
     return lat, lng, label
@@ -692,6 +695,8 @@ def main():
     common.add_argument("--providers", default=PROVIDERS_DEFAULT,
                         help="逗号分隔，默认同时顶掉 gps/network/fused")
     common.add_argument("--accuracy", type=float, default=5.0)
+    common.add_argument("--alt", type=float, default=-1.0,
+                        help="fix altitude in metres; -1 = keep whatever the publisher resolved")
     common.add_argument("--dry-run", action="store_true", help="print the device commands, send nothing")
     common.add_argument("--global", dest="global_provider", action=argparse.BooleanOptionalAction,
                         default=True, help="--no-global: only the Xposed module path, no system provider")
@@ -714,6 +719,8 @@ def main():
     p_set.add_argument("--first", action="store_true", help="take geocode hit #1 (for scripts)")
     p_set.add_argument("--radius", type=float, default=0.0, help="jitter radius persisted for the module")
     p_set.add_argument("--interval", type=float, default=15.0, help="root-module refresh interval, seconds")
+    p_set.add_argument("--netcut", action="append", default=[], metavar="PKG",
+                       help="tier-2 per-uid network cut (the lever that moves Amap, A15)")
     p_set.add_argument("--target", action="append", default=[], metavar="PKG",
                        help="restrict the Xposed module to these packages (repeatable)")
     p_set.add_argument("--persist", action="store_true", help="write boot-module config too")

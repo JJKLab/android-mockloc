@@ -52,12 +52,24 @@ def main():
           ", ".join(sorted(p for p in permissions if p)))
     # Without it, Android 11+ package visibility hides most installed apps from the policy page.
     check("声明了 QUERY_ALL_PACKAGES", "android.permission.QUERY_ALL_PACKAGES" in permissions)
+    # Boot restore (REFACTOR-PLAN 1.1): without the permission the receiver is registered but the
+    # system never delivers BOOT_COMPLETED to it, which looks exactly like a dead feature.
+    check("声明了 RECEIVE_BOOT_COMPLETED", "android.permission.RECEIVE_BOOT_COMPLETED" in permissions)
 
     app = manifest.find("application")
     theme = attr(app, "theme") or ""
     # Regression guard for the duplicated title: a *ActionBar theme draws the app label above our
-    # own header band, so the name appeared twice on every screen.
-    check("主题是 NoActionBar", "NoActionBar" in theme, theme)
+    # own header band, so the name appeared twice on every screen. DayNight support moved the
+    # choice into MocklocTheme (values[-night]/themes.xml).
+    check("主题是 MocklocTheme（DayNight/NoActionBar）", theme == "@style/MocklocTheme", theme)
+    theme_files = sorted((ROOT / "app" / "src" / "main").rglob("themes.xml"))
+    check("两套 themes.xml 都在", len(theme_files) == 2,
+          ", ".join(str(p.relative_to(ROOT)) for p in theme_files))
+    theme_texts = {str(p.relative_to(ROOT)): p.read_text(encoding="utf-8") for p in theme_files}
+    check("日间主题 Light.NoActionBar",
+          any("Light.NoActionBar" in t for k, t in theme_texts.items() if "values-night" not in k))
+    check("夜间主题 NoActionBar",
+          any("NoActionBar" in t for k, t in theme_texts.items() if "values-night" in k))
 
     services = {attr(s, "name"): s for s in app.findall("service")}
     mock_service = services.get(".MockService")
@@ -69,6 +81,15 @@ def main():
     activities = {attr(a, "name"): a for a in app.findall("activity")}
     main_activity = activities.get(".MainActivity")
     check("MainActivity 已 exported", attr(main_activity, "exported") == "true")
+
+    receivers = {attr(r, "name"): r for r in app.findall("receiver")}
+    boot = receivers.get(".BootReceiver")
+    check("BootReceiver 已注册", boot is not None)
+    boot_actions = {a.get(f"{{{ANDROID_NS}}}name")
+                    for f in (boot.findall("intent-filter") if boot is not None else [])
+                    for a in f.findall("action")}
+    check("BootReceiver 监听 BOOT_COMPLETED",
+          "android.intent.action.BOOT_COMPLETED" in boot_actions, ", ".join(sorted(boot_actions)))
 
     strings = trees.get(ROOT / "app" / "src" / "main" / "res" / "values" / "strings.xml")
     names = {s.get("name") for s in strings.findall("string")} if strings is not None else set()

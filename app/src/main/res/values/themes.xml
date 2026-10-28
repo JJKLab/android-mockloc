@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- DayNight support (REFACTOR-PLAN 阶段四): the framework ships no DeviceDefault.DayNight
+     NoActionBar combination, so the variant is picked per configuration here. -->
+<resources>
+    <style name="MocklocTheme" parent="@android:style/Theme.DeviceDefault.Light.NoActionBar" />
+</resources>

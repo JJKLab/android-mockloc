@@ -1024,7 +1024,40 @@ FakeLoc/XposedFakeLocation 都有同样的取舍，并用"每个字段单独开�
    **没有可验证路径的客户端不盲编**，这一档现在由 `--mode adb` 承担（已实测）。要接真客户端，先让用户把 Rish 起来。
 30. **配置字段必须进渲染器**：`MOCKLOC_PROBE` 曾被 `ModuleBridge.render` 漏掉，于是每次 `sync` 都把探针静默关掉；
     致盲两个键也一度被写死成 `false`（0.5.2 修）。凡是「配置由渲染器唯一产生」的字段都要在 `ConfigCheck`
-    的往返断言里出现（现在 48 项）。
+    的往返断言里出现（现在 64 项）。
+31. **v0.7.0 的装机验收判据**（阶段一全部代码已完成，以下逐条待真机）：
+    a. **开机恢复**：注入 → 重启 → 不碰手机，1 分钟内 `dumpsys location` 重新出现 `[mock]`；
+       若 Android 16 拦 FGS 自启，应出现可点的「恢复注入」通知，点后 provider 回来。
+    b. **自愈巡检**：注入后 `su -c 'cmd location providers remove-test-provider gps'` 手动拆掉
+       一个 provider，≤10s 内日志出现自愈且读回恢复；连拆 5 次后巡检间隔变为 10s（防抖可观测）。
+    c. **通知操作**：下拉通知点「暂停」→ 目标 App 立刻回到真实位置、通知文案变「已暂停」；
+       点「继续」→ 回到注入点。
+    d. **RootInjector**：KernelSU 管理器给 mockloc 授权后，App 里选点不接电脑：`dumpsys location`
+       出现 `identity=0/android[LocationService]` 的三个 `[mock]`，且 `/data/adb/mockloc/config.prop`
+       与 `/data/local/tmp/mockloc.conf` 内容一致；App 杀掉重启后模块循环接管（若已刷模块）。
+    e. **海拔**：注入高海拔城市（拉萨/昆明）后 `dumpsys location` 的 fix altitude ≈ 真实地形值
+       （±50m）；断网时回退 20m 且注入不失败。
+    f. **LOOP_INTERVAL**：conf 写 `MOCKLOC_LOOP_INTERVAL=1` 后，模块循环每秒重注入（logcat 时间戳
+       间隔 ~1s）；删掉该键回退 `MOCKLOC_INTERVAL`。
+32. **v0.8.0 的装机验收判据**（阶段二/三/四代码完成，以下逐条待真机）：
+    a. **路线三档推进**：路线页点 3 个航点 → 步行速度开始 → 高德蓝点沿路线连续移动、速度栏非 0；
+       root 模式下 `dumpsys location` 每 tick 的坐标与 App 内 `Config.currentLat` 同一秒一致（同一锚点）。
+    b. **GPX**：从 GoGoGo 导出一份 GPX 导入成功（航点数一致）；导出的 GPX 能被 gps-locator 读回。
+    c. **per-App 双点**：微信独立点设北京、全局点上海 → LSPosed 作用域内微信 SelfTest 读回北京且
+       `mock=false`，未列出的 App 读回上海。
+    d. **NETCUT**：conf 填 `MOCKLOC_NETCUT=com.autonavi.minimap` → `appops get --uid` 的 WIFI_SCAN
+       停止增长、高德蓝点落注入点；`iptables -S OUTPUT | grep mockloc` 可见规则；卸载模块后网络恢复。
+    e. **栈清洗**：hook 进程内 `new Throwable().getStackTrace()` 无 libxposed/lsposed 帧（SelfTest 里
+       加打一次即可核）。
+    f. **泄露反推**：probe 开 → 重启目标 App → logcat 的 SelfTest 行给出 AP/基站计数与"致盲面闭合/
+       有真实射频证据泄露"判定；致盲开关切换后判定跟着变。
+    g. **传感器冻结**：计步类 App 读数冻结在首次值；加速度模长 ≈9.81；步数事件不再触发。
+    h. **WiFi 伪造**：扫出 4 个确定性 AP（02: MAC、RSSI -48 起衰减）；换注入点后 AP 集随点变；连续
+       两次扫描结果相同（确定性）。
+    i. **GMS**：带 GMS 的机器上 `FusedLocationProviderClient.getLastLocation` 读回注入点；无 GMS 机器
+       日志零新增。
+    j. **暗色**：系统深色下五页逐页可读（卡片/正文/徽章/状态条），无白底残留。
+
 
 ## 附录 D 版本历史
 
@@ -1209,3 +1242,75 @@ FakeLoc/XposedFakeLocation 都有同样的取舍，并用"每个字段单独开�
   MockService 的 DUMP 与 FGS 类型、字符串引用存在），并挂进 CI 的 `logic` 任务，让这类错误在 20 毫秒内
   报出来而不是烧掉一次 Gradle 构建。**负向验证做过**：把 `//` 塞回属性之间，测试确实 exit 1。
   （顺带一个反直觉的事实：`//` 放在元素内容位置是**合法** XML，`/` 不是特殊字符——所以只有夹在属性之间才会炸。）
+
+- **v0.7.0**（2026-10-28）重构阶段一（方案见 `docs/REFACTOR-PLAN.md`）——稳定性与免 PC 闭环：
+  ① **档 0 自愈巡检**（1.1）：`MockService` 每 5s 读回验收，provider 消失或偏差 >200m 就地重装
+  +补针，连续失败 5 次巡检间隔拉长到 10s 防抖；通知栏新增「暂停/继续/停止」操作（暂停 = 关
+  provider 保留前台服务）；新增 `BootReceiver` 开机恢复上次注入（spec 每次启动都落 prefs），
+  Android 15+ 拦截 FGS 自启时降级为可点的「恢复注入」通知。**全部待装机验证**（附录 C31）。
+  ② **RootInjector**（1.3）：App 内 `su`（stdin 喂命令，免引号层）直写 `/data/adb/mockloc/config.prop`
+  + `/data/local/tmp/mockloc.conf` 并跑与 service.sh 相同的 `cmd location` 命令集——
+  "App 选点 → sync → 模块"这条 mtime 轮询链在有 root 的机器上变成一步。选档逻辑：su 可用走档 2，
+  否则档 0；档 3 仍由 LSPosed 作用域决定。`publish()` 现在带 `global=true`，模块循环会接管维护。
+  ③ **海拔真实化**（1.5）：新增 `Elevation.kt`（OpenTopoData aster30m，免 key，0.002° 网格缓存，
+  2.5s 超时，任何失败回退旧值 20m），替代硬编码海拔——修掉"注入拉萨报 20m"的免费一致性破绽。
+  ④ **配置 v2 前置键**（1.4）：conf 新增 `MOCKLOC_ALT` / `MOCKLOC_LOOP_INTERVAL`（root 模块节奏与
+  档 0 注入间隔解耦），`ModuleBridge.render` 的 ACC/RADIUS/INTERVAL 从硬编码改参数化（INTERVAL
+  默认 15→1，与 MockService 对齐——原先渲染体写 15 而服务按 1s 推，两头矛盾）；CLI 加 `--alt`，
+  写入字典同步两个新键；`ConfigCheck` 48→64 项断言全过。
+  ⑤ **rootmodule 三修**（1.2）：jitter 种子改 `/dev/urandom`（原 `srand()` 秒粒度，同一秒两次
+  抖动坐标相同，正是检测者要找的重复）；删掉永远静默失败的 `chcon`（A0.1 实测无 label 也能读）；
+  `INTERVAL` 读 `LOOP_INTERVAL` 优先并 clamp ≥1。
+  ⑥ **UI 小件**（1.6）：顶部常驻状态条（模拟中/模块配置生效/未注入三态着色，点击进状态页）、
+  首次注入后的「怎么确认注入真的生效」三步向导（可勾不再显示）、POST_NOTIFICATIONS 运行时申请
+  （C11：无授权时通知不显示，之前与"服务停了"不可区分）。
+  本地验证：kotlinc 全量类型检查 0 error；ConfigCheck 64 项、CoordCheck、NmeaCheck、
+  test_coords、test_manifest（新增 BOOT 权限/receiver 断言）全过；`sh -n` 三个脚本通过。
+  **NOT RUN（装机项，判据见附录 C31）**：开机恢复、通知操作、RootInjector 在 KernelSU 的 su、
+  海拔 API 真实返回。
+
+- **v0.8.0**（2026-10-28）重构阶段二/三/四（方案 `docs/REFACTOR-PLAN.md`）——覆盖层、无痕一致性层、界面小重做：
+  **阶段二（覆盖层）**：
+  ① `Route.kt`（2.1）：Catmull-Rom 样条采样成稠密折线 + 按速度推进，纯 Kotlin，`tools/kotlin/RouteCheck.kt`
+  22 项 JVM 断言（过控制点/里程单调/速度=配置值/循环绕回/GPX 往返/三方 GPX 解析）全过。
+  推进锚点是 `MOCKLOC_ROUTE_STARTED`（纪元毫秒），档 0（MockService 逐 tick 采样）、档 2（root 模块
+  `route_pos` awk 线性推进）、档 3（Config.refresh 按同一锚点采样）三层读同一口钟，不会各走各的。
+  ② **per-App 独立点位**（2.2）：conf 新增 `MOCKLOC_APP.<pkg>=lat,lng[,acc]`，`Config.currentLatFor(pkg)`
+  分流（共享同一抖动偏移）；策略页每行加「📍」按钮（用最近注入的点 / 清除）。
+  ③ 路线页（2.3）：6 tab 新增「路线」——地图点航点、速度预设（步行/骑行/驾车/自定义）、循环开关、
+  开始/停止；`Location.speed/bearing` 填真实值，NMEA RMC 同步速度航向（`Nmea.sentences` 加参）。
+  ④ GPX 导入导出（2.4）：`Gpx.kt`（DOM 解析，命名空间免疫）+ 系统文件选择器。
+  ⑤ **NETCUT 产品化**（2.5）：conf 键 `MOCKLOC_NETCUT=包名`，service.sh 解析 uid（stat/dumpsys 兜底）→
+  iptables owner-match DROP（带 mockloc-netcut 注释便于清理）；包名清单变化才重算；uninstall.sh 刷规则；
+  CLI `--netcut` 写键。这是 A15 实测"档 2 拿下高德"那条杠杆的产品化。
+  **阶段三（无痕一致性，全部带 conf 键 + Diagnostics，绝不静默吞）**：
+  ⑥ `StackClean.kt`（3.1，默认开）：Throwable/Thread.getStackTrace + Log.getStackTraceString 过滤
+  xposed/lsposed/libxposed/lsplant 等 10 个指纹；过滤后为空则返回原栈（空栈是更响的 tell）。README E.3 关闭。
+  ⑦ 多普勒非零（3.3，默认生效）：`Sky.pseudorangeRateMps` 按高度角包络（±800 m/s 带内、逐星互异、
+  慢漂移）+ 路线模式叠加接收机自身运动投影；ADR 从恒 0 改为按速率积分漂移（锚定首次投递）。README E.2 部分关闭
+  （仍是包络对齐，不是严格星历解算——照旧写明）。
+  ⑧ `Sensors` WiFi 伪造模式（3.4，`MOCKLOC_FORGE_WIFI` 默认关）：不再"返回空列表"（0 个 AP 本身是异常），
+  改为按注入点确定性派生 4 个自洽 AP（02: 本地管理位 MAC、RSSI 衰减、混合 2.4/5G 频段、已连 BSSID 跟随）；
+  **CellInfo 伪造明确不做**——CellIdentity/CellInfo 跨 API 28→36 反射构造是版本雷区，构造坏一个就崩宿主，
+  基站仍走致盲（空表），取舍记录在案。
+  ⑨ 传感器冻结（3.5，`MOCKLOC_SENSOR_FREEZE` 默认关）：registerListener 的 listener 换成动态代理，
+  就地改写公开的 `SensorEvent.values`（加速度静止姿态/陀螺零/旋转矢量单位/步数冻结/步数事件吞掉），
+  磁力计按纬度偶极子模型给值（与"设备平放"的加速度故事自洽），不构造任何 SensorEvent。
+  ⑩ `PkgHide.kt`（3.7，`MOCKLOC_HIDE_PKGS` 默认空=不挂钩）：getInstalledPackages/Applications 过滤 +
+  getPackageInfo/ApplicationInfo 对隐藏包按契约抛 NameNotFoundException。README E.4 关闭。
+  ⑪ `GmsHooks.kt`（3.6，默认开、类不存在静默跳过）：GMS `LocationResult.getLocations/getLastLocation`
+  补一层——android.location getter 钩子已覆盖投递值，这层封"它自己再读一次"的口。
+  ⑫ 泄露反推探测器（3.2）：`SelfTest` 在被 hook 进程里（probe 开时）自读 `getScanResults/getAllCellInfo/
+  connectionInfo`，日志给出"AP=n 基站=m → 致盲面闭合/有真实射频证据泄露"——全域那套泄露探测的档 3 版。
+  **阶段四（界面，有界版）**：
+  ⑬ 暗色模式：`MocklocTheme`（values/themes.xml=Light.NoActionBar、values-night=NoActionBar）+ `Ui`
+  全部颜色 token 化（页面底/卡片/正文/提示/状态条三态各有日夜两套）；test_manifest 新增主题断言。
+  ⑭ 状态页顶部加**暴露风险卡**（全域 16 维评分的可观测子集：注入/配置一致/致盲/挂钩台账/卫星视图
+  五枚徽章 → 低/中/高；明确标注它评的是暴露面不是效果）；模块配置区补路线/独立点位/栈清洗/传感器/伪 WiFi/GMS 六行。
+  **明确没做（写死，防 scope creep）**：App 内 Shizuku 客户端（C29 结论不变：无可验证路径不盲编）、
+  getRemotePreferences 通道（需真机验可靠性，文件通道实测可靠）、悬浮摇杆（路线已覆盖其主场景）、
+  CellInfo 伪造（见⑧）、16 维评分完整版。
+  本地验证：kotlinc 全量类型检查 0 error；ConfigCheck **76 项**、RouteCheck 22 项、NmeaCheck、CoordCheck、
+  test_coords、test_manifest（新增 DayNight 断言）全过；三个 rootmodule 脚本 `sh -n` 通过。
+  **NOT RUN（装机项，判据见附录 C32）**：路线三档推进、per-App 双点、NETCUT、栈清洗、泄露反推、
+  传感器冻结、WiFi 伪造、GMS、暗色走查。

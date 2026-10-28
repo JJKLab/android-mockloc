@@ -29,7 +29,9 @@ private val sample = """
     MOCKLOC_LNG=121.4600000
     MOCKLOC_ACC=5.0
     MOCKLOC_RADIUS=0.0
+    MOCKLOC_ALT=12.5
     MOCKLOC_INTERVAL=15
+    MOCKLOC_LOOP_INTERVAL=3
     MOCKLOC_TARGETS=com.tencent.mm
     MOCKLOC_LABEL=31.240000,121.460000
     MOCKLOC_GNSS=true
@@ -80,6 +82,8 @@ fun main() {
     check("blindCell 不覆盖任何包", Config.blindCellFor("com.autonavi.minimap"), false)
     check("probe", Config.probe, true)
     check("lastError", Config.lastError, null)
+    check("alt", Config.alt, 12.5)
+    check("loopInterval", Config.loopIntervalSec, 3)
 
     // shouldSpoof is the gate every hook consults per call.
     check("spoof listed pkg", Config.shouldSpoof("com.tencent.mm"), true)
@@ -96,6 +100,12 @@ fun main() {
     check("legacy gnss default", Config.gnssSpoof, true)
     check("legacy blindWifi default", Config.blindWifi.render(), "false")
     check("legacy probe default", Config.probe, false)
+    check("legacy alt default=-1 自动", Config.alt, -1.0)
+    check("legacy loopInterval default=1", Config.loopIntervalSec, 1)
+    check("legacy route 未激活", Config.routeActive, false)
+    check("legacy per-app 点位为空", Config.appPoints.isEmpty(), true)
+    check("legacy 阶段三默认", Config.stackClean && Config.gmsSpoof &&
+        !Config.sensorFreeze && !Config.forgeWifi && Config.hidePkgs.isEmpty(), true)
 
     Thread.sleep(1100)
     file.writeText(sample.replace("MOCKLOC_GNSS=true", "MOCKLOC_GNSS=false")
@@ -173,6 +183,75 @@ fun main() {
     check("按包致盲 不命中微信", Config.blindWifiFor("com.tencent.mm"), false)
     check("按包致盲 不命中 null", Config.blindWifiFor(null), false)
     check("空 targets 仍对任意包生效", Config.shouldSpoof("com.autonavi.minimap"), true)
+
+    // The new v2 keys must survive the same round trip: whatever render() emits, the parser reads
+    // back - and LOOP_INTERVAL is the key the root module's boot loop now owns, so a renderer that
+    // drops it would silently put the module back on its own fallback.
+    Thread.sleep(1100)
+    file.writeText(
+        com.mockloc.ModuleBridge.render(
+            enabled = true,
+            lat = "29.6519846",
+            lng = "91.1401397",
+            label = "拉萨",
+            targets = emptyList(),
+            global = true,
+            acc = "8.0",
+            radius = "12.0",
+            interval = "2",
+            alt = "3650.0",
+        )
+    )
+    Config.refresh()
+    check("渲染 alt", Config.alt, 3650.0)
+    check("渲染 loopInterval", Config.loopIntervalSec, 2)
+    check("渲染 acc", Config.accuracy, 8.0f)
+    check("渲染 radius", Config.radius, 12.0)
+    check("渲染 global", Config.global, true)
+    check("渲染 interval 同步 loopInterval", Config.loopIntervalSec, 2)
+
+    // v2 route / per-app / phase-3 keys live under the same rule: whatever render() emits must
+    // parse back, or a sync silently resets a layer someone turned on.
+    Thread.sleep(1100)
+    file.writeText(
+        com.mockloc.ModuleBridge.render(
+            enabled = true,
+            lat = "31.2229000",
+            lng = "121.4644000",
+            label = "路线",
+            targets = emptyList(),
+            speed = "2.5",
+            routeWaypoints = "31.2229000,121.4644000;31.2260000,121.4680000",
+            routeStarted = "1700000000000",
+            routeLoop = true,
+            appPoints = listOf("com.tencent.mm" to "39.9087220,116.3974990,25.0"),
+            stackClean = false,
+            hidePkgs = listOf("roro.stellar.manager", "com.mockloc"),
+            sensorFreeze = true,
+            forgeWifi = true,
+            gms = false,
+        ),
+    )
+    Config.refresh()
+    check("渲染 route 航点数", Config.routeWaypoints.size, 2)
+    check("渲染 route 锚点", Config.routeStartedMs, 1700000000000L)
+    check("渲染 route 循环", Config.routeLoop, true)
+    check("渲染 route 速度", Config.speedMps, 2.5)
+    check("渲染 route 激活", Config.routeActive, true)
+    val stepped = com.mockloc.Route.sampleElapsed(
+        Config.routeWaypoints, Config.speedMps, Config.routeLoop,
+        Config.routeStartedMs, Config.routeStartedMs + 10_000,
+    )
+    check("路线 10s 后有推进", stepped != null && stepped.speedMps == 2.5, true)
+    check("per-app 点位已解析", Config.appPoints.containsKey("com.tencent.mm"), true)
+    check("per-app 纬度", Config.currentLatFor("com.tencent.mm"), 39.9087220)
+    check("per-app 精度", Config.accuracyFor("com.tencent.mm"), 25.0f)
+    check("未列出 App 用全局点", Config.currentLatFor("com.autonavi.minimap"), Config.currentLat)
+    check("渲染 stackClean off", Config.stackClean, false)
+    check("渲染 hidePkgs", Config.hidePkgs, setOf("roro.stellar.manager", "com.mockloc"))
+    check("渲染 sensorFreeze on", Config.sensorFreeze, true)
+    check("渲染 forgeWifi on", Config.forgeWifi, true)
+    check("渲染 gms off", Config.gmsSpoof, false)
 
     Thread.sleep(1100)
     file.delete()

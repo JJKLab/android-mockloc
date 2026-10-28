@@ -5,6 +5,7 @@
 CFG=/data/adb/mockloc/config.prop
 INBOX=/data/local/tmp/mockloc.in
 PUB=/data/local/tmp/mockloc.conf
+NETCUT_STATE=/data/adb/mockloc/netcut.pkgs
 
 # The inbox is world-writable-by-shell on purpose: KernelSU does not expose su to `adb shell`, so
 # a PC must be able to hand the module a config without any root channel. The module then mirrors
@@ -38,13 +39,98 @@ jitter() {
     printf '%s %s' "$_lat" "$_lng"
     return
   fi
-  awk -v lat="$_lat" -v lng="$_lng" -v r="$_r" 'BEGIN {
-    srand()
+  # srand() with no seed keys on whole seconds: two calls inside the same second produce the same
+  # offset, exactly the repetition a detector looks for (README C7). /dev/urandom gives a real
+  # seed; a missing od falls back to time seeding rather than killing the loop.
+  _seed=$(od -An -N4 -tu4 /dev/urandom 2>/dev/null | tr -d ' \n')
+  awk -v lat="$_lat" -v lng="$_lng" -v r="$_r" -v seed="$_seed" 'BEGIN {
+    if (seed != "") srand(seed + 0); else srand()
     d = r * sqrt(rand())
     b = rand() * 2 * 3.14159265358979
     pi = 3.14159265358979
     printf "%.7f %.7f", lat + d * cos(b) / 111132.0, lng + d * sin(b) / (111412.8 * cos(lat * pi / 180.0))
   }'
+}
+
+# route_pos <waypoints> <speed_mps> <started_ms> <now_ms> <loop> -> "lat lng"
+# Shell-side mirror of Route.kt's progression: walk the waypoint chain linearly at speed from the
+# epoch anchor. The App's tiers sample the same anchor with Catmull-Rom smoothing between points;
+# the shell walks the straight segments - same waypoints, same speed, same clock, so the layers
+# never disagree about "where along the route now is" by more than one segment's curvature.
+route_pos() {
+  _w=$1
+  _s=$2
+  _t0=$3
+  _tn=$4
+  _loop=$5
+  [ -n "$_w" ] || return 0
+  command -v awk >/dev/null 2>&1 || return 0
+  awk -v w="$_w" -v sp="$_s" -v t0="$_t0" -v tn="$_tn" -v lp="$_loop" 'BEGIN {
+    n = split(w, P, ";")
+    if (n < 2) exit 0
+    for (i = 1; i <= n; i++) { split(P[i], c, ","); lat[i] = c[1] + 0; lng[i] = c[2] + 0 }
+    pi = 3.14159265358979
+    KLAT = 111132.0
+    KLng = 111412.8 * cos(((lat[1] + lat[n]) / 2.0) * pi / 180.0)
+    total = 0
+    for (i = 1; i < n; i++) {
+      dlat = (lat[i + 1] - lat[i]) * KLAT
+      dlng = (lng[i + 1] - lng[i]) * KLng
+      seg[i] = sqrt(dlat * dlat + dlng * dlng)
+      total += seg[i]
+    }
+    if (total < 1e-6) { printf "%.7f %.7f", lat[1], lng[1]; exit 0 }
+    dist = sp * (tn - t0) / 1000.0
+    if (dist < 0) dist = 0
+    if (lp == "true" || lp == "1") dist = dist % total
+    else if (dist > total) dist = total
+    acc = 0
+    for (i = 1; i < n; i++) {
+      if (acc + seg[i] >= dist || i == n - 1) {
+        f = (seg[i] > 1e-9) ? (dist - acc) / seg[i] : 0
+        if (f > 1) f = 1
+        if (f < 0) f = 0
+        printf "%.7f %.7f", lat[i] + (lat[i + 1] - lat[i]) * f, lng[i] + (lng[i + 1] - lng[i]) * f
+        exit 0
+      }
+      acc += seg[i]
+    }
+  }'
+}
+
+# NETCUT (REFACTOR-PLAN 2.5): the per-uid network cut that A15 measured as the tier-2 lever that
+# moves Amap. Rules carry a marker comment so teardown can find exactly ours; the package list is
+# cached and only re-resolved when the config changes (stat per app per second would churn).
+netcut_teardown() {
+  iptables -S OUTPUT 2>/dev/null | grep 'mockloc-netcut' | sed 's/^-A/-D/' | while read -r rule; do
+    sh -c "iptables $rule" 2>/dev/null
+  done
+  rm -f "$NETCUT_STATE"
+}
+
+netcut_apply() {
+  _pkgs=$1
+  _prev=$(cat "$NETCUT_STATE" 2>/dev/null)
+  [ "$_prev" = "$_pkgs" ] && return 0
+  netcut_teardown
+  mkdir -p "$(dirname "$NETCUT_STATE")" 2>/dev/null
+  printf '%s' "$_pkgs" > "$NETCUT_STATE"
+  [ -n "$_pkgs" ] || return 0
+  if ! command -v iptables >/dev/null 2>&1; then
+    echo "mockloc: netcut skipped, no iptables" >> /data/adb/mockloc/service.log
+    return 1
+  fi
+  echo "$_pkgs" | tr ',' '\n' | while read -r pkg; do
+    [ -n "$pkg" ] || continue
+    _uid=$(stat -c %u "/data/data/$pkg" 2>/dev/null)
+    [ -n "$_uid" ] || _uid=$(dumpsys package "$pkg" 2>/dev/null | sed -n 's/.*userId=\([0-9]*\).*/\1/p' | head -n 1)
+    if [ -z "$_uid" ]; then
+      echo "mockloc: netcut cannot resolve uid for $pkg" >> /data/adb/mockloc/service.log
+      continue
+    fi
+    iptables -I OUTPUT -m owner --uid-owner "$_uid" -m comment --comment mockloc-netcut -j DROP 2>/dev/null ||
+      echo "mockloc: netcut iptables failed for $pkg (uid=$_uid)" >> /data/adb/mockloc/service.log
+  done
 }
 
 # The App cannot write /data/local/tmp (an app process has no write access there), so the App
@@ -71,11 +157,12 @@ sync_app_prefs() {
 
 publish() {
   # The Xposed module runs in an app SELinux domain and cannot read /data/adb, so mirror the
-  # effective config to /data/local/tmp with the shelldatafile label. Keys match 1:1, and the
-  # module does its own jitter, so the centre is what gets published.
+  # effective config to /data/local/tmp. Keys match 1:1, and the module does its own jitter, so
+  # the centre is what gets published.
   cp "$(cfg_src)" "$PUB" 2>/dev/null || return 1
   chmod 664 "$PUB"
-  chcon u:object_r:shelldatafile:s0 "$PUB" 2>/dev/null
+  # chcon is gone (2026-10-28): this ROM ships no chcon in shell and the module read the mirror
+  # fine without any relabel (A0.1), so the line was dead weight pretending to do work.
   return 0
 }
 
