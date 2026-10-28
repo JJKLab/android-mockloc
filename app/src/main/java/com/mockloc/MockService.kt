@@ -265,10 +265,13 @@ class MockService : Service() {
     }
 
     private fun startLoop(spec: Spec) {
-        if (checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION)
-                != PackageManager.PERMISSION_GRANTED) {
-            // Without the runtime grant addTestProvider still works, but nothing downstream reads us.
-            Log.w(TAG, "no location permission; provider will be invisible to apps")
+        if (!hasLocationPermission()) {
+            // Without the runtime grant addTestProvider still works, but nothing downstream reads
+            // us - and a location-type FGS cannot even start. Say so where the user can see it.
+            Log.w(TAG, "no location permission; refusing to inject")
+            postPlainNotification("mockloc 无法注入", "先授予定位权限（设置→应用→mockloc→权限）")
+            stopSelf()
+            return
         }
         lat = spec.lat
         lng = spec.lng
@@ -425,7 +428,41 @@ class MockService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        // A location-type FGS hard-fails at startForeground without the while-in-use grant
+        // (API 34+). Callers must not start us without it; this guard keeps a stale BOOT/adb
+        // start from turning the swallowed exception into the 5s "did not call startForeground"
+        // crash instead.
+        if (!hasLocationPermission()) {
+            Log.e(TAG, "started without ACCESS_FINE_LOCATION; refusing to go foreground")
+            stopSelf()
+            return
+        }
         notify(buildNotification())
+    }
+
+    private fun hasLocationPermission(): Boolean =
+        checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED
+
+    /** Regular (non-FGS) notification: the only way to talk when we cannot go foreground. */
+    private fun postPlainNotification(title: String, text: String) {
+        val nm = getSystemService(NotificationManager::class.java) ?: return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            nm.createNotificationChannel(
+                NotificationChannel(CHAN, "虚拟定位", NotificationManager.IMPORTANCE_LOW)
+            )
+        }
+        runCatching {
+            nm.notify(
+                NOTIF_ID + 2,
+                Notification.Builder(this, CHAN)
+                    .setContentTitle(title)
+                    .setContentText(text)
+                    .setSmallIcon(android.R.drawable.ic_menu_mylocation)
+                    .setAutoCancel(true)
+                    .build(),
+            )
+        }
     }
 
     companion object {

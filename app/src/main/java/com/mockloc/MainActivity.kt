@@ -57,7 +57,10 @@ class MainActivity : Activity() {
     private lateinit var keyField: EditText
     private lateinit var queryField: EditText
     private lateinit var pasteField: EditText
-    private lateinit var policyRows: LinearLayout
+    private lateinit var policyList: ListView
+    private val policyAdapter = PolicyAdapter()
+    private var policyPointed: Set<String> = emptySet()
+    private var policyLoadMs = 0L
     private lateinit var policyFilter: EditText
     private lateinit var policyCount: TextView
     private lateinit var appOpChipRow: LinearLayout
@@ -85,6 +88,9 @@ class MainActivity : Activity() {
     private var policyIncludeSystem = false
     private var policyLoaded = false
 
+    /** The route page carries a whole second MapView; built lazily on first tab show. */
+    private var routePageBuilt = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Configuration.getInstance().load(applicationContext, prefs)
@@ -93,9 +99,6 @@ class MainActivity : Activity() {
         map.setTileSource(AmapTiles())
         map.setMultiTouchControls(true)
         map.controller.setZoom(11.0)
-        routeMap.setTileSource(AmapTiles())
-        routeMap.setMultiTouchControls(true)
-        routeMap.controller.setZoom(13.0)
         // setCenter before the first layout is dropped by osmdroid, which leaves the view parked at
         // 0,0 in the Gulf of Guinea.
         map.post { centerOn(31.2304, 121.4737) }
@@ -109,31 +112,39 @@ class MainActivity : Activity() {
                 override fun longPressHelper(p: GeoPoint): Boolean = false
             })
         )
-        // Without this grant the tier-0 service runs fine but its notification never shows
-        // (README C11), which made "it stopped working?" indistinguishable from "paused".
-        requestNotificationPermissionIfNeeded()
+        // Without the notification grant the tier-0 service runs fine but its notification never
+        // shows (README C11); without the location grant the provider is invisible AND an API-34+
+        // location FGS hard-fails. Fresh installs get all three asked up front, in one dialog.
+        requestPermissionsIfNeeded()
     }
 
-    private fun requestNotificationPermissionIfNeeded() {
-        if (Build.VERSION.SDK_INT >= 33 &&
-            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) !=
-            android.content.pm.PackageManager.PERMISSION_GRANTED
-        ) {
-            requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 41)
+    private fun requestPermissionsIfNeeded() {
+        val wanted = buildList {
+            if (Build.VERSION.SDK_INT >= 33 &&
+                checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) !=
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) add(android.Manifest.permission.POST_NOTIFICATIONS)
+            if (checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) !=
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) add(android.Manifest.permission.ACCESS_FINE_LOCATION)
+            if (checkSelfPermission(android.Manifest.permission.ACCESS_COARSE_LOCATION) !=
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) add(android.Manifest.permission.ACCESS_COARSE_LOCATION)
         }
+        if (wanted.isNotEmpty()) requestPermissions(wanted.toTypedArray(), 41)
     }
 
     override fun onResume() {
         super.onResume()
         map.onResume()
-        routeMap.onResume()
+        if (routePageBuilt) routeMap.onResume()
         reloadPlaces()
         refreshStatus()
     }
 
     override fun onPause() {
         map.onPause()
-        routeMap.onPause()
+        if (routePageBuilt) routeMap.onPause()
         super.onPause()
     }
 
@@ -156,7 +167,9 @@ class MainActivity : Activity() {
         // zero pixels and the app looked blank.
         flipper.addView(searchPage(), pageParams())
         flipper.addView(mapPage(), pageParams())
-        flipper.addView(routePage(), pageParams())
+        // Placeholder: the route page owns a full second MapView, and building it here put two
+        // tile stacks on the cold-start path. It is swapped in on first tab show (buildRoutePage).
+        flipper.addView(FrameLayout(this), pageParams())
         flipper.addView(placesPage(), pageParams())
         flipper.addView(policyPage(), pageParams())
         flipper.addView(statusPage(), pageParams())
@@ -189,7 +202,9 @@ class MainActivity : Activity() {
                             loadPolicyList()
                         }
                     }
-                    if (index == TABS.indexOf("路线")) renderRouteWaypoints()
+                    if (index == TABS.indexOf("路线")) {
+                        if (!routePageBuilt) buildRoutePage() else renderRouteWaypoints()
+                    }
                     if (index == TABS.lastIndex) refreshStatus()
                 }
             }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
@@ -366,7 +381,12 @@ class MainActivity : Activity() {
     }
 
     private fun policyPage(): View {
-        val (scroll, column) = scrollColumn()
+        // The app list is a real ListView, not rows built into a scroll column: rebuilding up to
+        // 593 CheckBoxes per filter keystroke was the 950ms frame the on-device baseline caught.
+        // The list gets its own scroll region (a ListView inside a ScrollView fights the parent
+        // for the drag - the trap the first version fell into), and the informational cards ride
+        // as list headers so they keep their place without stealing fixed height.
+        val page = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
 
         val preflight = ui.card()
         preflight.addView(ui.title("免 root 档自检"))
@@ -390,15 +410,9 @@ class MainActivity : Activity() {
             "「选择虚拟定位应用」只能由设置进程授权（本机 shell 被摘了 MANAGE_APP_OPS_MODES）；" +
                 "重装 App 会清掉那次授权，所以这一栏每次进来都重读。",
         ))
-        column.addView(preflight)
+        page.addView(preflight)
 
-        val policy = ui.card()
-        policy.addView(ui.title("哪些 App 要抽空输入"))
-        policy.addView(ui.body(
-            "勾上的包会屏蔽自己的 WiFi/基站扫描结果，逼它落回系统定位——实测只有高德这类" +
-                "「自己算路」的 App 需要。没勾的 App 不受影响。",
-        ))
-        val filterRow = ui.row()
+        val filterRow = ui.row().apply { setPadding(ui.dp(12), ui.dp(4), ui.dp(12), 0) }
         policyFilter = EditText(this).apply {
             hint = "过滤名称或包名"
             isSingleLine = true
@@ -417,19 +431,41 @@ class MainActivity : Activity() {
                 renderPolicyRows()
             }
         })
-        policy.addView(filterRow)
+        page.addView(filterRow)
         policyCount = TextView(this).apply {
             textSize = 12f
-            setTextColor(0xFF6B6B6B.toInt())
-            setPadding(0, ui.dp(4), 0, ui.dp(4))
+            setTextColor(ui.hintColor())
+            setPadding(ui.dp(14), ui.dp(4), ui.dp(14), ui.dp(4))
         }
-        policy.addView(policyCount)
-        // Rows live directly in the page's scroll column. A ListView inside a ScrollView measures
-        // itself to one screenful and then fights the parent for the drag, which is how the first
-        // version ended up showing about six apps with no way to scroll.
-        policyRows = ui.column()
-        policy.addView(policyRows)
-        val policyButtons = ui.row()
+        page.addView(policyCount)
+
+        policyList = ListView(this).apply {
+            adapter = policyAdapter
+            divider = null
+            cacheColorHint = 0
+        }
+        val intro = ui.card()
+        intro.addView(ui.title("哪些 App 要抽空输入"))
+        intro.addView(ui.body(
+            "勾上的包会屏蔽自己的 WiFi/基站扫描结果，逼它落回系统定位——实测只有高德这类" +
+                "「自己算路」的 App 需要。没勾的 App 不受影响。「位置」按钮给它设独立点位。",
+        ))
+        policyList.addHeaderView(intro)
+        val legend = ui.card()
+        legend.addView(ui.title("三件事互相独立"))
+        legend.addView(ui.body(Tiers.summary().trim()))
+        legend.addView(ui.hint(
+            "①/②/③ 不是「权限越高越有效」的阶梯：0、1、2 档给目标 App 的是同一个系统 provider，" +
+                "所以 Tier 0 推不动的 App，Tier 2 也推不动。",
+        ))
+        policyList.addHeaderView(legend)
+        val limits = ui.card()
+        limits.addView(ui.title("这几样定位层改不了"))
+        limits.addView(ui.body(Tiers.outsideScope.joinToString("\n")))
+        policyList.addHeaderView(limits)
+        page.addView(policyList, weightParams())
+
+        val policyButtons = ui.row().apply { setPadding(ui.dp(10), ui.dp(4), ui.dp(10), ui.dp(8)) }
         policyButtons.addView(Button(this).apply {
             text = "保存"
             isAllCaps = false
@@ -443,97 +479,127 @@ class MainActivity : Activity() {
                 renderPolicyRows()
             }
         }, ui.fill())
-        policy.addView(policyButtons)
-        column.addView(policy)
-
-        val legend = ui.card()
-        legend.addView(ui.title("三件事互相独立"))
-        legend.addView(ui.body(Tiers.summary().trim()))
-        legend.addView(ui.hint(
-            "①/②/③ 不是「权限越高越有效」的阶梯：0、1、2 档给目标 App 的是同一个系统 provider，" +
-                "所以 Tier 0 推不动的 App，Tier 2 也推不动。",
-        ))
-        column.addView(legend)
-
-        val limits = ui.card()
-        limits.addView(ui.title("这几样定位层改不了"))
-        limits.addView(ui.body(Tiers.outsideScope.joinToString("\n")))
-        column.addView(limits)
-        return scroll
+        page.addView(policyButtons)
+        return page
     }
 
+    /**
+     * Enumerating 593 packages with permissions + resolving every label is a multi-hundred-ms
+     * binder grind; on the UI thread it was the frozen frame on first entry. Runs off-thread and
+     * fills the adapter when done - the count line shows progress meanwhile.
+     */
     private fun loadPolicyList() {
-        val packages = runCatching {
-            packageManager.getInstalledPackages(android.content.pm.PackageManager.GET_PERMISSIONS)
-        }.getOrElse { emptyList() }
-        policyAll = packages.mapNotNull { info ->
-            val pkg = info.packageName
-            if (pkg == packageName) return@mapNotNull null
-            val permissions = info.requestedPermissions ?: return@mapNotNull null
-            val asksForLocation =
-                android.Manifest.permission.ACCESS_FINE_LOCATION in permissions ||
-                    android.Manifest.permission.ACCESS_COARSE_LOCATION in permissions
-            if (!asksForLocation) return@mapNotNull null
-            val appInfo = info.applicationInfo
-            // A phone has hundreds of platform packages that nominally ask for location; listing
-            // them buries the handful the user could possibly mean. Updated system apps stay in,
-            // because preinstalled OEM maps and delivery apps are exactly those.
-            val system = appInfo != null &&
-                (appInfo.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0 &&
-                (appInfo.flags and android.content.pm.ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) == 0
-            if (system && !policyIncludeSystem) return@mapNotNull null
-            val label = runCatching {
-                packageManager.getApplicationLabel(appInfo!!).toString()
-            }.getOrDefault(pkg)
-            pkg to label
-        }.sortedBy { it.second }
-        renderPolicyRows()
+        policyCount.text = "正在读取应用列表…"
+        thread {
+            runCatching {
+                val t0 = System.currentTimeMillis()
+                val packages = runCatching {
+                    packageManager.getInstalledPackages(android.content.pm.PackageManager.GET_PERMISSIONS)
+                }.getOrElse { emptyList() }
+                val result = packages.mapNotNull { info ->
+                    val pkg = info.packageName
+                    if (pkg == packageName) return@mapNotNull null
+                    val permissions = info.requestedPermissions ?: return@mapNotNull null
+                    val asksForLocation =
+                        android.Manifest.permission.ACCESS_FINE_LOCATION in permissions ||
+                            android.Manifest.permission.ACCESS_COARSE_LOCATION in permissions
+                    if (!asksForLocation) return@mapNotNull null
+                    val appInfo = info.applicationInfo
+                    // A phone has hundreds of platform packages that nominally ask for location;
+                    // listing them buries the handful the user could possibly mean. Updated system
+                    // apps stay in, because preinstalled OEM maps and delivery apps are exactly those.
+                    val system = appInfo != null &&
+                        (appInfo.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0 &&
+                        (appInfo.flags and android.content.pm.ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) == 0
+                    if (system && !policyIncludeSystem) return@mapNotNull null
+                    val label = runCatching {
+                        packageManager.getApplicationLabel(appInfo!!).toString()
+                    }.getOrDefault(pkg)
+                    pkg to label
+                }.sortedBy { it.second }
+                val elapsed = System.currentTimeMillis() - t0
+                runOnUiThread {
+                    policyAll = result
+                    policyLoaded = true
+                    policyLoadMs = elapsed
+                    policyPointed = bridge.appPoints().keys
+                    renderPolicyRows()
+                }
+            }
+        }
     }
 
     private fun renderPolicyRows() {
         val needle = policyFilter.text.toString().trim().lowercase()
-        val shown = policyAll.filter { (pkg, label) ->
+        policyAdapter.refill(policyAll.filter { (pkg, label) ->
             needle.isEmpty() || label.lowercase().contains(needle) || pkg.lowercase().contains(needle)
-        }
-        policyRows.removeAllViews()
-        val appPoints = bridge.appPoints()
-        shown.forEach { (pkg, label) ->
-            val row = ui.row().apply { gravity = Gravity.CENTER_VERTICAL }
-            row.addView(android.widget.CheckBox(this).apply {
-                text = "$label  ${Tiers.needsOf(pkg).label.take(1)}\n$pkg"
-                textSize = 13f
-                isChecked = pkg in policyChecked
-                setPadding(0, ui.dp(6), 0, ui.dp(6))
-                setOnCheckedChangeListener { _, on ->
-                    if (on) policyChecked.add(pkg) else policyChecked.remove(pkg)
-                }
-            }, ui.fill())
-            // Per-app fixed point (REFACTOR-PLAN 2.2): the pill marks apps that have one, and the
-            // tap offers "reuse the last injected point / clear" - no second map picker needed.
-            row.addView(Button(this).apply {
-                text = if (pkg in appPoints) "📍" else "位置"
-                isAllCaps = false
-                setTextSize(11f)
-                setOnClickListener { promptAppPoint(pkg, label) }
-            })
-            policyRows.addView(row, LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT,
-            ))
-        }
-        if (shown.isEmpty()) {
-            policyRows.addView(ui.body("没有匹配的 App（试试勾「含系统」）"))
-        }
+        })
         policyCount.text = buildString {
-            append("共 ${shown.size} 个可选项，已选 ${policyChecked.size} 个致盲")
-            val withPoint = appPoints.size
-            if (withPoint > 0) append("，$withPoint 个独立点位")
+            append("共 ${policyAdapter.shown.size} 个可选项，已选 ${policyChecked.size} 个致盲")
+            if (policyPointed.isNotEmpty()) append("，${policyPointed.size} 个独立点位")
             if (!policyIncludeSystem) append("（已隐藏系统 App）")
+            if (policyLoadMs > 0) append(" · 列表加载 ${policyLoadMs}ms")
             // "作用域内全部" is not expressible as a ticked list, so saving from here would quietly
             // narrow it. Say so instead of letting the write look like a no-op that lost their setting.
             if (bridge.blindScope().mode == com.mockloc.Scope.Mode.ALL) {
                 append("\n当前生效的是「作用域内全部」；在这里保存会改成只致盲勾上的包")
             }
         }
+    }
+
+    /**
+     * RecyclerView would be the modern pick; ListView with a ViewHolder buys the same property -
+     * only visible rows get bound, so a keystroke rebinds ~7 rows instead of rebuilding 593 -
+     * without adding a dependency this project's local typecheck would have to carry.
+     */
+    private inner class PolicyAdapter : android.widget.BaseAdapter() {
+        var shown: List<Pair<String, String>> = emptyList()
+
+        fun refill(list: List<Pair<String, String>>) {
+            shown = list
+            notifyDataSetChanged()
+        }
+
+        override fun getCount(): Int = shown.size
+        override fun getItem(position: Int): Pair<String, String> = shown[position]
+        override fun getItemId(position: Int): Long = position.toLong()
+
+        override fun getView(position: Int, convertView: View?, parent: android.view.ViewGroup): View {
+            val holder = (convertView?.tag as? Holder) ?: Holder().also { vh ->
+                vh.row = ui.row().apply { gravity = Gravity.CENTER_VERTICAL }
+                vh.box = android.widget.CheckBox(this@MainActivity).apply {
+                    textSize = 13f
+                    setPadding(0, ui.dp(6), 0, ui.dp(6))
+                }
+                vh.point = Button(this@MainActivity).apply {
+                    isAllCaps = false
+                    setTextSize(11f)
+                }
+                vh.row.addView(vh.box, ui.fill())
+                vh.row.addView(vh.point)
+                vh.row.tag = vh
+            }
+            val (pkg, label) = getItem(position)
+            // Recycled views carry the previous row's state and listener: reset in the fixed
+            // order (listener off → state on → listener on) or ticks migrate between rows.
+            holder.box.setOnCheckedChangeListener(null)
+            holder.box.text = "$label  ${Tiers.needsOf(pkg).label.take(1)}\n$pkg"
+            holder.box.isChecked = pkg in policyChecked
+            holder.box.setOnCheckedChangeListener { _, on ->
+                if (on) policyChecked.add(pkg) else policyChecked.remove(pkg)
+            }
+            // Per-app fixed point (REFACTOR-PLAN 2.2): the pill marks apps that have one, and the
+            // tap offers "reuse the last injected point / clear" - no second map picker needed.
+            holder.point.text = if (pkg in policyPointed) "📍" else "位置"
+            holder.point.setOnClickListener { promptAppPoint(pkg, label) }
+            return holder.row
+        }
+    }
+
+    private class Holder {
+        lateinit var row: LinearLayout
+        lateinit var box: android.widget.CheckBox
+        lateinit var point: Button
     }
 
     private fun saveBlindScope() {
@@ -837,11 +903,31 @@ class MainActivity : Activity() {
 
     // ---------------------------------------------------------------- route page (2.3)
 
+    /** Swap the placeholder for the real route page on first tab show - one MapView less on the
+     *  cold-start path, and saved waypoints (if any) come back with it. */
+    private fun buildRoutePage() {
+        val index = TABS.indexOf("路线")
+        routePageBuilt = true
+        // A saved route survives process death: the conf keys are the source of truth, so the
+        // editor comes back pre-filled instead of silently empty.
+        if (routeWaypoints.isEmpty()) routeWaypoints.addAll(bridge.routeWaypoints())
+        val page = routePage()
+        flipper.removeViewAt(index)
+        flipper.addView(page, index, pageParams())
+        flipper.displayedChild = index
+        renderRouteWaypoints()
+    }
+
     /** 路线 tab: tap waypoints on the map, pick a speed, press start - every tier shares the epoch
      *  anchor, so the route reads as one movement no matter which tier carries it. */
     private fun routePage(): View {
         val page = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        routeMap = MapView(this)
+        routeMap = MapView(this).apply {
+            setTileSource(AmapTiles())
+            setMultiTouchControls(true)
+            controller.setZoom(13.0)
+            post { controller.setCenter(GeoPoint(31.2304, 121.4737)) }
+        }
         routeMap.getOverlays().add(
             MapEventsOverlay(object : MapEventsReceiver {
                 override fun singleTapConfirmedHelper(p: GeoPoint): Boolean {
@@ -1027,37 +1113,41 @@ class MainActivity : Activity() {
         val first = routeWaypoints.first()
         toast("启动路线…")
         thread {
-            val alt = Elevation.resolve(this@MainActivity, first.lat, first.lng)
-                ?: MockService.DEFAULT_ALT
-            val useRoot = RootInjector.rootAvailable()
-            runOnUiThread {
-                bridge.setRoute(routeWaypoints.toList(), speed, loop, started)
-                if (useRoot) {
-                    bridge.publish(first.lat, first.lng, label, global = true)
-                    val published = RootInjector.publishConfig(this@MainActivity, bridge.render())
-                    RootInjector.apply(
-                        first.lat, first.lng, bridge.injectionAcc(),
-                        DEFAULT_PROVIDERS.split(','), alt,
-                    )
-                    toast(if (published) "路线启动（root 档2，模块循环推进）" else "root 配置写入失败")
-                } else {
-                    bridge.publish(first.lat, first.lng, label, global = false)
-                    startForegroundService(
-                        Intent(this, MockService::class.java)
-                            .putExtra(MockService.EXTRA_CMD, "start")
-                            .putExtra(MockService.EXTRA_PROVIDERS, DEFAULT_PROVIDERS)
-                            .putExtra(MockService.EXTRA_LAT, "%.7f".format(first.lat))
-                            .putExtra(MockService.EXTRA_LNG, "%.7f".format(first.lng))
-                            .putExtra(MockService.EXTRA_ACC, "%.1f".format(bridge.injectionAcc()))
-                            .putExtra(MockService.EXTRA_RADIUS, "0.0")
-                            .putExtra(MockService.EXTRA_ALT, "%.1f".format(alt))
-                            .putExtra(MockService.EXTRA_INTERVAL, bridge.injectionIntervalSec().toString()),
-                    )
-                    toast("路线启动（档0，按 ${bridge.injectionIntervalSec()}s 推进）")
+            runCatching {
+                val alt = Elevation.resolve(this@MainActivity, first.lat, first.lng)
+                    ?: MockService.DEFAULT_ALT
+                val useRoot = RootInjector.rootAvailable()
+                runOnUiThread {
+                    bridge.setRoute(routeWaypoints.toList(), speed, loop, started)
+                    if (useRoot) {
+                        bridge.publish(first.lat, first.lng, label, global = true)
+                        val published = RootInjector.publishConfig(this@MainActivity, bridge.render())
+                        RootInjector.apply(
+                            first.lat, first.lng, bridge.injectionAcc(),
+                            DEFAULT_PROVIDERS.split(','), alt,
+                        )
+                        toast(if (published) "路线启动（root 档2，模块循环推进）" else "root 配置写入失败")
+                    } else {
+                        bridge.publish(first.lat, first.lng, label, global = false)
+                        startForegroundService(
+                            Intent(this, MockService::class.java)
+                                .putExtra(MockService.EXTRA_CMD, "start")
+                                .putExtra(MockService.EXTRA_PROVIDERS, DEFAULT_PROVIDERS)
+                                .putExtra(MockService.EXTRA_LAT, "%.7f".format(first.lat))
+                                .putExtra(MockService.EXTRA_LNG, "%.7f".format(first.lng))
+                                .putExtra(MockService.EXTRA_ACC, "%.1f".format(bridge.injectionAcc()))
+                                .putExtra(MockService.EXTRA_RADIUS, "0.0")
+                                .putExtra(MockService.EXTRA_ALT, "%.1f".format(alt))
+                                .putExtra(MockService.EXTRA_INTERVAL, bridge.injectionIntervalSec().toString()),
+                        )
+                        toast("路线启动（档0，按 ${bridge.injectionIntervalSec()}s 推进）")
+                    }
+                    showWizardIfNeeded()
+                    renderRouteWaypoints()
+                    refreshStatus()
                 }
-                showWizardIfNeeded()
-                renderRouteWaypoints()
-                refreshStatus()
+            }.onFailure {
+                runOnUiThread { toast("路线启动失败：${it.javaClass.simpleName} ${it.message.orEmpty().take(60)}") }
             }
         }
     }
@@ -1127,6 +1217,8 @@ class MainActivity : Activity() {
                     bridge.clearAppPoint(pkg)
                     toast("已清除 $label 的独立点位")
                 }
+                policyPointed = bridge.appPoints().keys
+                renderPolicyRows()
                 refreshStatus()
             }
             .setNegativeButton("取消", null)
@@ -1143,43 +1235,59 @@ class MainActivity : Activity() {
             .putString(KEY_LAST_LABEL, label)
             .putString(KEY_LAST, "%.7f,%.7f".format(lat, lng))
             .apply()
+        // A tier-0 provider is invisible to every app without this grant, and an API-34+ FGS with
+        // the location type hard-fails without it - refuse here with a pointer instead of crashing
+        // inside the service.
+        if (!hasLocationGrant()) {
+            showWizardIfNeeded()
+            return toast("先授予本 App 定位权限（开发者选项选 mockloc 也要重选；见状态页徽章）")
+        }
         toast("已注入 $label")
+        // The whole body runs on a worker thread: anything uncaught here kills the process from
+        // outside the UI thread. A worker failure is a toast, never a crash - the Elevation cache
+        // bug took the app down exactly this way on every fresh install (README C33a).
         thread {
-            // Altitude resolves off the main thread: a cache miss is one HTTP round trip, and the
-            // fallback must never block or break the injection itself.
-            val pinnedAlt = bridge.injectionAlt()
-            val alt = if (pinnedAlt >= 0.0) pinnedAlt
-            else Elevation.resolve(this@MainActivity, lat, lng) ?: MockService.DEFAULT_ALT
-            // Tier selection, measured on this ROM (README A15): su available -> tier 2 (root
-            // publishes the conf AND builds the providers itself); otherwise tier 0 in-app
-            // provider. Tier 3 stacks on top of either, through LSPosed scope only.
-            val useRoot = RootInjector.rootAvailable()
-            runOnUiThread {
-                if (useRoot) {
-                    bridge.publish(lat, lng, label, global = true)
-                    val published = RootInjector.publishConfig(this@MainActivity, bridge.render())
-                    val out = RootInjector.apply(
-                        lat, lng, bridge.injectionAcc(),
-                        DEFAULT_PROVIDERS.split(','), alt,
-                    )
-                    if (published) toast("已注入（root 直写，档2）") else toast("root 配置写入失败：${out.take(60)}")
-                } else {
-                    // Same point into the module's channel, so 档 3 stops disagreeing with 档 1 (ModuleBridge).
-                    bridge.publish(lat, lng, label, global = false)
-                    startForegroundService(
-                        Intent(this, MockService::class.java)
-                            .putExtra(MockService.EXTRA_CMD, "start")
-                            .putExtra(MockService.EXTRA_PROVIDERS, DEFAULT_PROVIDERS)
-                            .putExtra(MockService.EXTRA_LAT, "%.7f".format(lat))
-                            .putExtra(MockService.EXTRA_LNG, "%.7f".format(lng))
-                            .putExtra(MockService.EXTRA_ACC, "%.1f".format(bridge.injectionAcc()))
-                            .putExtra(MockService.EXTRA_RADIUS, "%.1f".format(bridge.injectionRadius()))
-                            .putExtra(MockService.EXTRA_ALT, "%.1f".format(alt))
-                            .putExtra(MockService.EXTRA_INTERVAL, bridge.injectionIntervalSec().toString())
-                    )
+            runCatching {
+                // Altitude resolves off the main thread: a cache miss is one HTTP round trip, and the
+                // fallback must never block or break the injection itself.
+                val pinnedAlt = bridge.injectionAlt()
+                val alt = if (pinnedAlt >= 0.0) pinnedAlt
+                else Elevation.resolve(this@MainActivity, lat, lng) ?: MockService.DEFAULT_ALT
+                // Tier selection, measured on this ROM (README A15): su available -> tier 2 (root
+                // publishes the conf AND builds the providers itself); otherwise tier 0 in-app
+                // provider. Tier 3 stacks on top of either, through LSPosed scope only.
+                val useRoot = RootInjector.rootAvailable()
+                runOnUiThread {
+                    if (useRoot) {
+                        bridge.publish(lat, lng, label, global = true)
+                        val published = RootInjector.publishConfig(this@MainActivity, bridge.render())
+                        val out = RootInjector.apply(
+                            lat, lng, bridge.injectionAcc(),
+                            DEFAULT_PROVIDERS.split(','), alt,
+                        )
+                        if (published) toast("已注入（root 直写，档2）") else toast("root 配置写入失败：${out.take(60)}")
+                    } else {
+                        // Same point into the module's channel, so 档 3 stops disagreeing with 档 1 (ModuleBridge).
+                        bridge.publish(lat, lng, label, global = false)
+                        startForegroundService(
+                            Intent(this, MockService::class.java)
+                                .putExtra(MockService.EXTRA_CMD, "start")
+                                .putExtra(MockService.EXTRA_PROVIDERS, DEFAULT_PROVIDERS)
+                                .putExtra(MockService.EXTRA_LAT, "%.7f".format(lat))
+                                .putExtra(MockService.EXTRA_LNG, "%.7f".format(lng))
+                                .putExtra(MockService.EXTRA_ACC, "%.1f".format(bridge.injectionAcc()))
+                                .putExtra(MockService.EXTRA_RADIUS, "%.1f".format(bridge.injectionRadius()))
+                                .putExtra(MockService.EXTRA_ALT, "%.1f".format(alt))
+                                .putExtra(MockService.EXTRA_INTERVAL, bridge.injectionIntervalSec().toString())
+                        )
+                    }
+                    showWizardIfNeeded()
+                    refreshStatus()
                 }
-                showWizardIfNeeded()
-                refreshStatus()
+            }.onFailure {
+                runOnUiThread {
+                    toast("注入失败：${it.javaClass.simpleName} ${it.message.orEmpty().take(60)}")
+                }
             }
         }
     }

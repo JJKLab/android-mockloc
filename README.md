@@ -1057,6 +1057,16 @@ FakeLoc/XposedFakeLocation 都有同样的取舍，并用"每个字段单独开�
     i. **GMS**：带 GMS 的机器上 `FusedLocationProviderClient.getLastLocation` 读回注入点；无 GMS 机器
        日志零新增。
     j. **暗色**：系统深色下五页逐页可读（卡片/正文/徽章/状态条），无白底残留。
+33. **v0.8.1 的装机验收判据**（闪退修复 + 性能优化，真机 478e1f12/PJF110/Android 16 实测）：
+    a. **闪退**：全新安装（无海拔缓存）后第一次点「注入」不再崩——崩溃栈为
+       `Elevation.cached → FileNotFoundException → thread 未捕获`（0.8.0 实测复现），
+       修复后同路径应出 toast + provider 起来（`dumpsys location` 三 provider `[mock]`）。
+    b. **无权限路径**：撤掉定位权限后点注入 → toast 拒绝 + 普通通知提示，不崩（旧路径会在
+       FGS startForeground 被吞后 5s 以 "did not call startForeground" 二次崩）。
+    c. **冷启动**：`am start -W` TotalTime；0.8.0 基线 491ms（两个 MapView），惰性路线页后应下降。
+    d. **策略页**：进页/过滤键入的帧耗时（gfxinfo 95th）；0.8.0 基线 950ms/帧（UI 线程枚举 593 包
+       + 每键重建全部行），后台加载 + ListView 虚拟化后应到两位数 ms 量级；计数行显示加载耗时。
+    e. **路线页惰性**：冷启动不建第二个地图（首次点「路线」tab 才建），已存路线回填。
 
 
 ## 附录 D 版本历史
@@ -1314,3 +1324,29 @@ FakeLoc/XposedFakeLocation 都有同样的取舍，并用"每个字段单独开�
   test_coords、test_manifest（新增 DayNight 断言）全过；三个 rootmodule 脚本 `sh -n` 通过。
   **NOT RUN（装机项，判据见附录 C32）**：路线三档推进、per-App 双点、NETCUT、栈清洗、泄露反推、
   传感器冻结、WiFi 伪造、GMS、暗色走查。
+
+- **v0.8.1**（2026-10-29）真机闪退修复 + 启动/操作性能优化（设备 478e1f12 / 一加 Ace 3V / Android 16，
+  0.8.0-9d13e21 实测复现→修复→复测闭环）：
+  ① **闪退根因**（真机栈坐实）：`Elevation.cached()` 对不存在的缓存文件直接 `readText()` →
+  `FileNotFoundException` 在注入的后台线程未捕获 → 进程死亡。**全新安装的第一次「注入」必崩**
+  （0.8.1 装机复测通过，README C33a）。修法：`exists()` + runCatching，缺失即 null（首次注入本就是
+  无缓存状态）。
+  ② **防御纵深**：`inject()`/`startRoute()` 的整个后台线程体包 `runCatching`，失败降级为 toast——
+  后台线程的任何未捕获异常都不再能杀死进程。`inject()` 先查定位权限，无权限 toast 拒绝而非进服务。
+  ③ **FGS 二次崩堵住**：无定位权限时 location 型 FGS 的 `startForeground` 抛 SecurityException 被
+  吞掉后，系统会在 ~5s 以 "did not call startForeground" 再崩一次。`MockService.onCreate` 无权限直接
+  `stopSelf`，`startLoop` 无权限改发普通通知 + stopSelf，`BootReceiver` 无权限静默跳过 restore；
+  `MainActivity` 启动时把 POST_NOTIFICATIONS/FINE/COARSE 三项合并一次申请（全新安装必经）。
+  ④ **启动卡顿**：路线页携带整个第二 MapView，冷启动就建两个瓦片栈——改为**惰性构建**（首次点
+  「路线」tab 才建，已存路线回填；`onResume/onPause` 同步守卫）。
+  ⑤ **策略页卡顿**（真机 gfxinfo 基线：切页一帧 **950ms**）：两个来源，都修——
+  a) `loadPolicyList` 的 593 包枚举 + 逐包取 label 在 **UI 线程**跑 → 移后台线程，完成后回填，
+     计数行显示加载耗时；b) 过滤框每敲一键**重建全部行**（最多 593 个 CheckBox）→ 换 **ListView +
+  BaseAdapter + ViewHolder** 虚拟化（每键只绑定可见 ~7 行；回收视图按"先摘监听→置状态→再挂监听"
+  的顺序防勾选串行），说明卡片改为 ListView header 随列表滚动。
+  ⑥ **CI rolling release**：新增 `release` job（needs apk+root-module，`contents: write`），每次
+  main 构建成功把 `mockloc-debug.apk` + `mockloc-root.zip` 覆盖到 **`latest` Release**——Actions
+  artifact 下载要登录，Release 资产不用，从此"push → CI 绿 → 免登录直下安装"闭环：
+  https://github.com/JJKLab/android-mockloc/releases/latest
+  本地验证：kotlinc 0 error、四个 JVM 校验器全过、test_coords/test_manifest 全过。
+  真机复测结果见 C33 与本轮装机记录。

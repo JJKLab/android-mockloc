@@ -11,6 +11,12 @@ permissions:
 env:
   APK_NAME: mockloc-debug.apk
 
+# One rolling release, updated on every green build of main. Actions artifacts need a login to
+# download; release assets do not, which is what makes "push → CI → 直接下载安装" a no-auth loop.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   logic:
     # The coordinate layer is the one thing testable without an Android SDK, so it gates the build.
@@ -105,3 +111,41 @@ jobs:
         with:
           name: mockloc-root-module
           path: mockloc-root.zip
+
+  release:
+    # Publish both artifacts to the rolling "latest" release so the install URLs are stable and
+    # reachable without any GitHub login:
+    #   https://github.com/JJKLab/android-mockloc/releases/download/latest/mockloc-debug.apk
+    #   https://github.com/JJKLab/android-mockloc/releases/download/latest/mockloc-root.zip
+    needs: [apk, root-module]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: release-latest
+      cancel-in-progress: false
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: mockloc-apk
+      - uses: actions/download-artifact@v7
+        with:
+          name: mockloc-root-module
+      - name: Publish to the rolling latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view latest --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
+            || gh release create latest --repo "$GITHUB_REPOSITORY" \
+                 --title "最新构建（main 分支自动更新）" \
+                 --notes "main 每次构建成功后自动覆盖此 Release 的两个产物。"
+          gh release upload latest mockloc-debug.apk mockloc-root.zip \
+            --repo "$GITHUB_REPOSITORY" --clobber
+          # Point the notes at the exact commit these assets came from.
+          gh release edit latest --repo "$GITHUB_REPOSITORY" \
+            --title "最新构建（main 分支自动更新）" \
+            --notes "构建自 commit [$GITHUB_SHA](https://github.com/$GITHUB_REPOSITORY/commit/$GITHUB_SHA)（branch: $GITHUB_REF_NAME）。
+- \`mockloc-debug.apk\`：App + libxposed 模块（versionName 带 commit 短 SHA，dumpsys 可核对装的是哪版）
+- \`mockloc-root.zip\`：KernelSU/APatch/Magisk root 模块（开机自恢复 + NETCUT）
+
+装机验收判据见 README 附录 C31（阶段一）/ C32（阶段二三四）。"

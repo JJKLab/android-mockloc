@@ -31,9 +31,15 @@ object Elevation {
     private fun cacheFile(context: Context, key: String): File =
         File(File(context.filesDir, "elev").apply { mkdirs() }, key)
 
-    /** Cached altitude for a point, or null when it was never fetched (never a network call). */
-    fun cached(context: Context, lat: Double, lng: Double): Double? =
-        cacheFile(context, cellKey(lat, lng)).readText().trim().toDoubleOrNull()
+    /** Cached altitude for a point, or null when it was never fetched (never a network call).
+     *  A missing cache file is the normal first-run state, so its absence is a null, never an
+     *  exception - `readText()` on an absent file was exactly the crash every fresh install hit
+     *  on the first 注入 (README C33a). */
+    fun cached(context: Context, lat: Double, lng: Double): Double? {
+        val file = cacheFile(context, cellKey(lat, lng))
+        if (!file.exists()) return null
+        return runCatching { file.readText().trim().toDoubleOrNull() }.getOrNull()
+    }
 
     /**
      * Resolve altitude for a point: cache first, then one HTTP round trip. Blocking - call it from

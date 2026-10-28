@@ -14,6 +14,11 @@ class BootReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
+        // A location-type FGS cannot start without the grant; starting one anyway produces the
+        // "did not call startForeground" crash a few seconds later. Stay quiet instead.
+        if (context.checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) !=
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) return
         val prefs = context.getSharedPreferences(MockService.PREFS, Context.MODE_PRIVATE)
         if (!prefs.getBoolean(MockService.KEY_SERVICE_RUNNING, false)) return
         if (prefs.getString(MockService.KEY_LAT, null).isNullOrEmpty()) return
