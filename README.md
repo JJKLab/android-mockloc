@@ -1067,6 +1067,26 @@ FakeLoc/XposedFakeLocation 都有同样的取舍，并用"每个字段单独开�
     d. **策略页**：进页/过滤键入的帧耗时（gfxinfo 95th）；0.8.0 基线 950ms/帧（UI 线程枚举 593 包
        + 每键重建全部行），后台加载 + ListView 虚拟化后应到两位数 ms 量级；计数行显示加载耗时。
     e. **路线页惰性**：冷启动不建第二个地图（首次点「路线」tab 才建），已存路线回填。
+    **复测结果（0.8.1-40da088，同机 2026-10-29 实测，全过）**：
+    a ✓ 注入北京 39.9087,116.3975：无崩溃、gps/network/fused 三 provider `[mock]`、海拔缓存
+    `elev_19953_58195` 新增（网络取值 + 落盘正常）；
+    b ✓ 无权限路径走 toast 拒绝（未真机复测撤权分支——权限由 install -r 保留，代码路径已就位）；
+    c ✓ 冷启动 TotalTime 484–497ms，与 0.8.0 基线 491ms 持平——**惰性化的实测收益不在启动时钟上**
+    （第二个 MapView 的同步构造只有几十 ms），收益在路线页不打开就不起瓦片栈；诚实记录，不吹；
+    d ✓ 策略页：切换帧 950ms → **31ms**（95th）；过滤键入 **30ms**；列表滚动 15ms；计数行显示
+    "共 191 个可选项 · 列表加载 314ms"（后台完成，UI 零阻塞）；
+    e ✓ 路线页首次点 tab 才构建，正常渲染（速度/开始/停止/GPX 四件全在）。
+    **真机额外抓到并修掉的两个问题**：
+    f. **策略页二次进入崩溃**（`ClassCastException: LinearLayout$LayoutParams cannot be cast to
+    AbsListView$LayoutParams`，`ListView.removeUnusedFixedViews`）——ListView header 不能带预置
+    LayoutParams，首次进入碰不到、重进 tab 才崩，本地 typecheck 结构上抓不到；修法：header 包一层
+    裸 FrameLayout 让 ListView 自己生成 params。
+    g. **force-stop 后注入不恢复**：test provider 随宿主进程回收，重开 App 时标记说在跑、系统里
+    没了 mock——`refreshStatus` 增加 `maybeAutoResume`（10s 节流，暂停/停止有独立 prefs 标记不打架），
+    复测 force-stop → 重开 6s 内三 provider 回来。
+    **测试方法教训（又犯第三次）**：键盘弹出/列表滚动都会移动控件——**每次点击前必须重新
+    `uiautomator dump` 取坐标**；一次点到「去开发者选项」跳进系统设置、一次 tap 坐标系漂移，
+    白跑两轮。
 
 
 ## 附录 D 版本历史
