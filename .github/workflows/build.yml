@@ -141,11 +141,8 @@ jobs:
                  --notes "main 每次构建成功后自动覆盖此 Release 的两个产物。"
           gh release upload latest mockloc-debug.apk mockloc-root.zip \
             --repo "$GITHUB_REPOSITORY" --clobber
-          # Point the notes at the exact commit these assets came from.
+          # Point the notes at the exact commit these assets came from. Single line on purpose:
+          # a multi-line shell string wraps at column 0 and truncates the run block's YAML.
           gh release edit latest --repo "$GITHUB_REPOSITORY" \
             --title "最新构建（main 分支自动更新）" \
-            --notes "构建自 commit [$GITHUB_SHA](https://github.com/$GITHUB_REPOSITORY/commit/$GITHUB_SHA)（branch: $GITHUB_REF_NAME）。
-- \`mockloc-debug.apk\`：App + libxposed 模块（versionName 带 commit 短 SHA，dumpsys 可核对装的是哪版）
-- \`mockloc-root.zip\`：KernelSU/APatch/Magisk root 模块（开机自恢复 + NETCUT）
-
-装机验收判据见 README 附录 C31（阶段一）/ C32（阶段二三四）。"
+            --notes "构建自 commit ${GITHUB_SHA:0:7}（branch: $GITHUB_REF_NAME）。mockloc-debug.apk = App + libxposed 模块（versionName 带 commit 短 SHA）；mockloc-root.zip = KernelSU/APatch/Magisk 模块。装机验收判据见 README 附录 C31/C32。"
