@@ -53,7 +53,7 @@ class MockService : Service() {
         when (intent?.getStringExtra(EXTRA_CMD)) {
             CMD_STOP -> stopEverything()
             CMD_PAUSE -> pause()
-            CMD_RESUME -> startLoop(specFromPrefs())
+            CMD_RESUME -> startLoop(specFromPrefs())  // startLoop clears KEY_PAUSED
             "restore" -> {
                 // A stored spec with no point means we were running with nothing to replay; stop
                 // cleanly instead of pushing (0,0) into the Gulf of Guinea.
@@ -68,6 +68,7 @@ class MockService : Service() {
     private fun stopEverything() {
         running = false
         paused = false
+        getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_PAUSED, false).apply()
         handler.removeCallbacksAndMessages(null)
         val lm = getSystemService(LOCATION_SERVICE) as? LocationManager ?: return
         providerNames.forEach { name ->
@@ -93,6 +94,7 @@ class MockService : Service() {
         providerNames.forEach { name ->
             runCatching { lm.setTestProviderEnabled(name, false) }
         }
+        getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_PAUSED, true).apply()
         notify(buildNotification())
     }
 
@@ -293,6 +295,7 @@ class MockService : Service() {
         ticks = 0
         healFails = 0
         spec.store(this)
+        getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_PAUSED, false).apply()
         markRunning(true)
         notify(buildNotification())
 
@@ -471,6 +474,7 @@ class MockService : Service() {
         const val NOTIF_ID = 42
         const val PREFS = "settings"
         const val KEY_SERVICE_RUNNING = "service_running"
+        const val KEY_PAUSED = "service_paused"
         const val KEY_LAT = "svc_lat"
         const val KEY_LNG = "svc_lng"
         const val KEY_ACC = "svc_acc"

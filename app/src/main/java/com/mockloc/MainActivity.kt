@@ -450,7 +450,7 @@ class MainActivity : Activity() {
             "勾上的包会屏蔽自己的 WiFi/基站扫描结果，逼它落回系统定位——实测只有高德这类" +
                 "「自己算路」的 App 需要。没勾的 App 不受影响。「位置」按钮给它设独立点位。",
         ))
-        policyList.addHeaderView(intro)
+        policyList.addHeaderView(listHeader(intro))
         val legend = ui.card()
         legend.addView(ui.title("三件事互相独立"))
         legend.addView(ui.body(Tiers.summary().trim()))
@@ -458,11 +458,11 @@ class MainActivity : Activity() {
             "①/②/③ 不是「权限越高越有效」的阶梯：0、1、2 档给目标 App 的是同一个系统 provider，" +
                 "所以 Tier 0 推不动的 App，Tier 2 也推不动。",
         ))
-        policyList.addHeaderView(legend)
+        policyList.addHeaderView(listHeader(legend))
         val limits = ui.card()
         limits.addView(ui.title("这几样定位层改不了"))
         limits.addView(ui.body(Tiers.outsideScope.joinToString("\n")))
-        policyList.addHeaderView(limits)
+        policyList.addHeaderView(listHeader(limits))
         page.addView(policyList, weightParams())
 
         val policyButtons = ui.row().apply { setPadding(ui.dp(10), ui.dp(4), ui.dp(10), ui.dp(8)) }
@@ -482,6 +482,16 @@ class MainActivity : Activity() {
         page.addView(policyButtons)
         return page
     }
+
+    /**
+     * ListView headers must carry AbsListView.LayoutParams - `ui.card()` pre-sets a
+     * LinearLayout.LayoutParams, and ListView's removeUnusedFixedViews casts unconditionally,
+     * which is a ClassCastException on the second layout pass (found on device: first entry
+     * worked, re-entering the tab crashed). Wrapping in a bare FrameLayout defers the
+     * LayoutParams to ListView's own generator.
+     */
+    private fun listHeader(card: LinearLayout): android.view.View =
+        android.widget.FrameLayout(this).apply { addView(card) }
 
     /**
      * Enumerating 593 packages with permissions + resolving every label is a multi-hundred-ms
@@ -705,6 +715,7 @@ class MainActivity : Activity() {
         val mismatch = Config.enabled && last != "无" &&
             (abs(Config.centerLat - lastLat()) > 1e-3 || abs(Config.centerLng - lastLng()) > 1e-3)
         renderRisk(fixes.any { "mock=true" in it }, mismatch)
+        maybeAutoResume(fixes)
 
         statusText.text = buildString {
             append("当前坐标（本 App 读回）\n")
@@ -778,6 +789,27 @@ class MainActivity : Activity() {
         tierChips.addView(ui.chip("档3 无痕(本进程)", if (selfCheck()) Ui.State.OK else Ui.State.OFF))
         if (!selfCheck()) tierChips.addView(ui.chip("本 App 未入作用域＝正常", Ui.State.OFF))
     }
+
+    /**
+     * A force-stop or process reclaim takes the tier-0 provider with the app's own process, so
+     * "reopen the app" is the natural recovery point: the service_running marker says we were
+     * spoofing, the read-back says nothing is - replay the last injection (10s throttle). A user
+     * 暂停 or 停止 marks/clears the state so this never fights an explicit stop.
+     */
+    private fun maybeAutoResume(fixes: List<String>) {
+        if (!prefs.getBoolean(MockService.KEY_SERVICE_RUNNING, false)) return
+        if (prefs.getBoolean(MockService.KEY_PAUSED, false)) return
+        if (fixes.any { "mock=true" in it }) return
+        if (!hasLocationGrant()) return
+        val last = prefs.getString(KEY_LAST, "无") ?: return
+        if (last == "无") return
+        val now = System.currentTimeMillis()
+        if (now - lastAutoResume < 10_000L) return
+        lastAutoResume = now
+        inject(lastLat(), lastLng(), prefs.getString(KEY_LAST_LABEL, "恢复上次注入") ?: "恢复上次注入")
+    }
+
+    private var lastAutoResume = 0L
 
     /** One glanceable verdict, colored before it is worded (same rule as the chips). */
     private fun renderStatusBar(mockActive: Boolean, label: String) {
