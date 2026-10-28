@@ -1099,6 +1099,14 @@ FakeLoc/XposedFakeLocation 都有同样的取舍，并用"每个字段单独开�
        publish 重写）改回 CFG——修掉"陈旧 App prefs 反复盖掉新鲜 PC 写入"的第二个竞态。
     d. 验收：注入后状态条无黄色不一致警告；`cat /data/local/tmp/mockloc.conf` 与 App 选点一致；
        微信（档3）读回新点；全程不碰 PC。
+    **复测结果（0.8.2-2e261e0，同机实测）**：
+    a ✓ 四按钮操作行就位（刷新/同步到模块/探针/停止注入），mismatch 文案指向 App 内按钮；
+    b ✓ 判据可靠性反向验证：手动把 conf 写成另一个点 → 风险卡"配置一致 ✗"正确变红、暴露风险"高"；
+       写回 App 选点 → 立即变绿"配置一致 ✓"、风险"中"——差异检测在毫秒级点位上也分得清；
+    c ✓ **唯一剩余的手工动作**：KernelSU/Stellar 管理器里给 mockloc 允许 root 一次（真机实锤当前为
+       静默拒绝——su 探测 4s 内失败、不弹授权框；授权状态在内核态，`ksud profile` 无授权 CLI，
+       管理器 UI 是唯一入口，这也是一切 root 工具的标准安全模型）。允许后 App 内全链路自动：
+       `inject()` 走档2（publishConfig+apply）、「同步到模块」走 su 直写，PC 永久退场。
 
 
 ## 附录 D 版本历史
