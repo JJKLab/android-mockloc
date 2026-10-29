@@ -891,6 +891,10 @@ PC 端根本写不了 `/data/adb`——收件箱让"只刷模块、不依赖 su"
 | `app/.../SelfTest.kt` | 在**被 hook 的进程里**读回一次 LKL/providers/`mock_location` 并打日志——模块勾不进自己的作用域，这是唯一能证明"改写咬住了"的仪器 |
 | `app/.../MainActivity.kt` | 四页 View：搜索 / 地图点选 / 收藏 / 状态（`selfCheck` + 各 provider 回读） |
 | `app/.../CoordTransform.kt` | `coords.py` 的 Kotlin 移植，与 Python 版对同一批锚点数值一致（477.87 m） |
+| `app/.../Palette.kt` | MD3 色板层（纯 Kotlin，JVM 可测）：Google 蓝静态基线（亮/暗）+ Material You 动态取色的亮度带挑选数学 |
+| `app/.../Ui.kt` | MD3 设计系统（手写，零依赖）：`Md` token 容器 + 卡片/按钮/chip/文本框/导航栏/顶栏工厂 |
+| `res/drawable/ic_tab_*.xml` | 矢量图标（place/navigation/star/apps/dashboard/search/close），运行时按 token 着色 |
+| `.toolchain/stubs/com/mockloc/R.kt` | 本地 typecheck 用的 R 存根（CI 里由 AGP 生成真 R，勿移入 app 源码） |
 | `app/.../AmapSearch.kt` | 高德 REST（`HttpURLConnection` + `org.json`，零三方依赖） |
 | `app/.../AmapTiles.kt` | 高德瓦片源（GCJ-02 地理参考的 Web Mercator） |
 | `app/.../Places.kt` | 收藏点，JSON 存私有 prefs（不落 world-readable 镜像） |
@@ -1099,6 +1103,16 @@ FakeLoc/XposedFakeLocation 都有同样的取舍，并用"每个字段单独开�
     对比差 ~500m 属坐标系不同，不是偏移。
     e. **UI**：全部按钮换圆角工厂样式（实心蓝=主操作、浅蓝=次操作）；tab 选中态（一眼看出在哪页）；
     风险 chip 竖排文字气泡修复（单行+省略，"卫星视图!"短标签）；状态行单行省略。
+37. **v0.9.0 的装机验收判据**（MD3 重设计，设备离线，以下待装机勾）：
+    a. **动态取色**：Android 12+ 上换壁纸 → 重开 App，主色/容器色跟随壁纸（亮度带挑选 +
+    静态兜底；PaletteCheck 20 项数学断言在 JVM 已验：对比度底线 primary≥4.5、正文≥7）。
+    b. **底部导航**：5 目的地（地图/路线/收藏/策略/状态），选中态=图标胶囊 secondaryContainer +
+    加粗标签；搜索并入地图页（顶悬浮条 → 点击展开 55% 底部浮层：搜索/结果/粘贴/预览/key）。
+    c. **地图优先交互**：点图 → 底部选点面板浮起（GCJ/WGS 双行 + 注入/收藏）；注入后顶栏胶囊变
+    实色"模拟中 · <label>"；地图页常驻"当前注入点"蓝标。
+    d. **暗色模式**：系统深色下全页 token 化配色（surface/primary/outline 三级），无白底残留。
+    e. **旧功能全通**：注入/同步到模块/策略致盲/路线/GPX/force-stop 自恢复——本轮只动外观与导航，
+    逻辑零改动；若哪条断了以本条为准报回归。
 36. **dualPreview 的 TDD 记录**：CoordCheck 先写断言（红灯：函数未实现），实现后仍 2 项 FAIL——
     `dualPreview` 的转换方向写反（GCJ 输入调了 wgs84ToGcj02）。断言与锚点互查抓到，修正后 27 项
     CoordCheck 断言全过。教训与 A9 的"断言错、实现错要分开判"同源，这次是**实现错、断言对**。
@@ -1428,3 +1442,21 @@ FakeLoc/XposedFakeLocation 都有同样的取舍，并用"每个字段单独开�
   （maxLines=1+省略+短标签）；状态行单行。
   ⑤ CoordCheck 10 项新断言（parse 四长相 + preview 双系往返），TDD 过程抓到 dualPreview 方向反的实现
   bug（见 C36）。本地：typecheck 0 error、四校验器全过、test_coords/test_manifest 全过。
+
+- **v0.9.0**（2026-10-30）按 Material Design 3（Material You）重设计整套 UI 与导航（设备离线，
+  装机判据 C37；零第三方依赖——本地 typecheck 铁律不破）：
+  ① **色板层 `Palette.kt`**（纯 Kotlin，PaletteCheck 20 项 JVM 断言）：Google 蓝静态基线（亮/暗
+  各 19 角色色）+ Material You 动态组色——Android 12+ 系统调色板不做"后缀=角色"硬映射，而是
+  **按相对亮度带挑色**（每个角色给候选后缀+亮度区间，带内命中即用、全脱靶回退静态），亮度数学
+  （WCAG 传递函数）与对比度底线（primary≥4.5、正文≥7）在 JVM 上钉死；error 语义红不被壁纸染色。
+  ② **设计系统 `Ui.kt` 全量 MD3 化**：`Md` token 容器（resolve 一次全进程共享）+ 卡片（filled/
+  elevated，16dp）、按钮四型（filled/tonal/ghost/danger，pill 40dp）、assist chip 四态、filled
+  文本框、分割线、导航栏项（32dp 图标胶囊 + 12sp 标签）、MD3 顶栏、底部浮层（28dp 顶圆角）。
+  ③ **导航与交互重排**：6 tab → **5 tab 底部导航栏**（矢量图标 + 选中胶囊态）；搜索/粘贴/key 并入
+  **地图页悬浮搜索条 + 55% 底部浮层**（Google Maps 式）；点图 → 底部选点面板（双系坐标 + 动作）；
+  顶栏常驻状态胶囊（模拟中/待确认/未注入，点击进诊断）。
+  ④ **图标**：8 个手写 vector drawable（place/navigation/star/apps/dashboard/search/close/stop），
+  运行时按 token 着色。
+  ⑤ 本地 typecheck 需 R 存根（`.toolchain/stubs/com/mockloc/R.kt`，tc.sh 已挂；CI 用 AGP 真 R）。
+  本地：typecheck 0 error、五校验器（新增 PaletteCheck）全过、test_coords/test_manifest 全过。
+  真机验收 C37 待装机。

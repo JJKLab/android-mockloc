@@ -1,6 +1,7 @@
 package com.mockloc
 
 import android.app.Activity
+import android.graphics.drawable.GradientDrawable
 import android.content.Context
 import android.content.Intent
 import android.os.Build
@@ -48,8 +49,12 @@ class MainActivity : Activity() {
 
     private lateinit var flipper: ViewFlipper
     private lateinit var map: MapView
-    private lateinit var mapInfo: TextView
-    private lateinit var statusLine: TextView
+    private lateinit var statusPillView: TextView
+    private lateinit var pickGcjView: TextView
+    private lateinit var pickWgsView: TextView
+    private lateinit var searchSheet: View
+    private lateinit var searchBar: View
+    private lateinit var pickPanel: View
     private lateinit var statusText: TextView
     private lateinit var tierChips: LinearLayout
     private lateinit var riskChips: LinearLayout
@@ -93,11 +98,11 @@ class MainActivity : Activity() {
     /** The route page carries a whole second MapView; built lazily on first tab show. */
     private var routePageBuilt = false
 
-    private val tabButtons = mutableListOf<Button>()
+    private val navItems = mutableListOf<Ui.NavItem>()
 
-    /** 选中态是用户判断"我在哪一页"的唯一线索，旧版六个实心蓝块分不出来。 */
-    private fun styleTabs(selected: Int) {
-        tabButtons.forEachIndexed { index, button -> ui.styleSegment(button, index == selected) }
+    /** 选中态是用户判断"我在哪一页"的唯一线索。 */
+    private fun styleNav(selected: Int) {
+        navItems.forEachIndexed { index, item -> item.restyle(index == selected) }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -162,19 +167,28 @@ class MainActivity : Activity() {
     private fun buildUi(): View {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            // targetSdk 35+ forces edge-to-edge on Android 15/16: without this the tab row is drawn
-            // under the status bar and the app looks like it has no navigation at all.
+            // targetSdk 35+ forces edge-to-edge on Android 15/16: without this the nav bar is drawn
+            // under the system bar and the app looks like it has no navigation at all.
             fitsSystemWindows = true
             setBackgroundColor(ui.pageBg())
         }
-        root.addView(header())
-        root.addView(statusBar())
+
+        // MD3 顶栏：标题 + 常驻状态胶囊（点击进诊断页）。
+        statusPillView = TextView(this).apply {
+            textSize = 12f
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            setPadding(ui.dp(12), ui.dp(6), ui.dp(12), ui.dp(6))
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            setOnClickListener { openTab(TABS.lastIndex) }
+        }
+        ui.styleStatusPill(statusPillView, "初始化…", running = false)
+        root.addView(ui.topBar("mockloc", statusPillView))
 
         flipper = ViewFlipper(this)
         // ViewFlipper is a FrameLayout: passing LinearLayout.LayoutParams here gets converted and
         // the conversion keeps height=0 while dropping weight, which is how a whole page measured
         // zero pixels and the app looked blank.
-        flipper.addView(searchPage(), pageParams())
         flipper.addView(mapPage(), pageParams())
         // Placeholder: the route page owns a full second MapView, and building it here put two
         // tile stacks on the cold-start path. It is swapped in on first tab show (buildRoutePage).
@@ -182,76 +196,43 @@ class MainActivity : Activity() {
         flipper.addView(placesPage(), pageParams())
         flipper.addView(policyPage(), pageParams())
         flipper.addView(statusPage(), pageParams())
-
-        val tabRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setPadding(ui.dp(6), 0, ui.dp(6), 0)
-        }
-        TABS.forEachIndexed { index, title ->
-            val tab = Button(this)
-            tabButtons.add(tab)
-            ui.styleSegment(tab, selected = index == 0)
-            tab.text = title
-            tab.setTextSize(13f)
-            tab.setPadding(0, ui.dp(10), 0, ui.dp(10))
-            tab.setOnClickListener {
-                flipper.displayedChild = index
-                styleTabs(index)
-                // Enumerating packages and reading the app-op are both too slow/noisy to do on
-                // every keystroke, so the pages that need them fill in on first show.
-                if (index == TABS.indexOf("策略")) {
-                    renderAppOpChips()
-                    if (!policyLoaded) {
-                        policyLoaded = true
-                        // A Scope of All cannot be shown as ticked packages, so start from the
-                        // saved list and let the user re-narrow it explicitly.
-                        policyChecked.addAll(bridge.blindScope().packages)
-                        loadPolicyList()
-                    }
-                }
-                if (index == TABS.indexOf("路线")) {
-                    if (!routePageBuilt) buildRoutePage() else renderRouteWaypoints()
-                }
-                if (index == TABS.lastIndex) refreshStatus()
-            }
-            tabRow.addView(tab, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
-                setMargins(ui.dp(2), ui.dp(6), ui.dp(2), ui.dp(4))
-            })
-        }
-        root.addView(tabRow)
         root.addView(flipper, weightParams())
+
+        // MD3 navigation bar：5 个目的地，搜索并入地图浮层。
+        val bar = ui.navBar()
+        val defs = listOf(
+            Triple(R.drawable.ic_tab_map, "地图") { openTab(0) },
+            Triple(R.drawable.ic_tab_route, "路线") { openTab(1) },
+            Triple(R.drawable.ic_tab_fav, "收藏") { openTab(2) },
+            Triple(R.drawable.ic_tab_policy, "策略") {
+                openTab(3)
+                renderAppOpChips()
+                if (!policyLoaded) {
+                    policyLoaded = true
+                    policyChecked.addAll(bridge.blindScope().packages)
+                    loadPolicyList()
+                }
+            },
+            Triple(R.drawable.ic_tab_status, "状态") { openTab(4) },
+        )
+        defs.forEachIndexed { index, (icon, label, action) ->
+            val item = ui.navItem(icon, label, selected = index == 0, onClick = action)
+            navItems.add(item)
+            bar.addView(item.container)
+        }
+        root.addView(ui.navDivider())
+        root.addView(bar)
         return root
     }
 
-    private fun header(): View = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL
-        setBackgroundColor(0xFF1F6FEB.toInt())
-        setPadding(ui.dp(16), ui.dp(14), ui.dp(16), ui.dp(14))
-        addView(TextView(this@MainActivity).apply {
-            text = "mockloc"
-            textSize = 20f
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setTextColor(0xFFFFFFFF.toInt())
-        })
-        addView(TextView(this@MainActivity).apply {
-            text = "四档：免root / Shizuku / root / 模块无痕（策略页看哪个 App 要哪层）"
-            textSize = 12f
-            setTextColor(0xD9FFFFFF.toInt())
-        })
-    }
-
-    /**
-     * The one-line verdict the user actually needs ("is anything spoofing right now"), always
-     * visible above every page. Tapping it jumps to the full status page - the wall of detail is
-     * still there, it just stopped being the only place to look.
-     */
-    private fun statusBar(): View = TextView(this).apply {
-        statusLine = this
-        textSize = 13f
-        maxLines = 1
-        ellipsize = android.text.TextUtils.TruncateAt.END
-        setPadding(ui.dp(14), ui.dp(8), ui.dp(14), ui.dp(8))
-        setOnClickListener { flipper.displayedChild = TABS.lastIndex }
+    /** 统一的目的地切换：页面 + 导航选中态 + 惰性构建副作用。 */
+    private fun openTab(index: Int) {
+        flipper.displayedChild = index
+        navItems.forEachIndexed { i, item -> item.restyle(i == index) }
+        if (index == TABS.indexOf("路线")) {
+            if (!routePageBuilt) buildRoutePage() else renderRouteWaypoints()
+        }
+        if (index == TABS.lastIndex) refreshStatus()
     }
 
     private fun weightParams() =
@@ -340,24 +321,181 @@ class MainActivity : Activity() {
     }
 
     private fun mapPage(): View {
-        val page = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        // Google Maps 式布局：全屏地图 + 顶部悬浮搜索条 + 底部选点面板/搜索浮层。
+        val page = FrameLayout(this)
         map = MapView(this)
-        mapInfo = TextView(this).apply {
-            text = "点地图任意位置选点"
-            textSize = 13f
-            setTextColor(0xFF444444.toInt())
-            setPadding(ui.dp(14), ui.dp(8), ui.dp(14), ui.dp(8))
+        map.setTileSource(AmapTiles())
+        map.setMultiTouchControls(true)
+        map.controller.setZoom(11.0)
+        map.post { centerOn(31.2304, 121.4737) }
+        map.getOverlays().add(MapEventsOverlay(object : MapEventsReceiver {
+            override fun singleTapConfirmedHelper(p: GeoPoint): Boolean {
+                onMapTap(p)
+                return true
+            }
+
+            override fun longPressHelper(p: GeoPoint): Boolean = false
+        }))
+        page.addView(map, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT,
+        ))
+
+        // 顶部悬浮搜索条（MD3 search bar）：点击展开搜索浮层。
+        searchBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = ui.pillSurface()
+            elevation = ui.dp(4).toFloat()
+            setPadding(ui.dp(16), ui.dp(12), ui.dp(16), ui.dp(12))
+            addView(ui.icon(R.drawable.ic_search, ui.hintColor()))
+            addView(TextView(this@MainActivity).apply {
+                text = "搜索地点 · 粘贴坐标"
+                textSize = 14f
+                setTextColor(ui.hintColor())
+                setPadding(ui.dp(10), 0, 0, 0)
+            })
+            setOnClickListener { openSearch() }
         }
-        val actions = ui.row().apply { setPadding(ui.dp(10), ui.dp(6), ui.dp(10), ui.dp(8)) }
-        actions.addView(ui.button("注入", Ui.Btn.PRIMARY) { injectPicked("地图点选") }, ui.fill())
-        actions.addView(ui.button("收藏这个点") {
-            val w = pickedWgs ?: return@button toast("先点一下地图")
-            promptPlace("点${"%.4f".format(w[0])}", w[0], w[1], null)
-        }, ui.fill())
-        page.addView(map, weightParams())
-        page.addView(mapInfo)
-        page.addView(actions)
+        page.addView(searchBar, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT,
+            Gravity.TOP or Gravity.CENTER_HORIZONTAL,
+        ).apply { setMargins(ui.dp(12), ui.dp(12), ui.dp(12), 0) })
+
+        // 底部选点面板：点图后浮起，坐标双系 + 动作。
+        pickGcjView = TextView(this@MainActivity).apply { textSize = 13f; setTextColor(ui.bodyColor()) }
+        pickWgsView = TextView(this@MainActivity).apply {
+            textSize = 13f; setTextColor(ui.bodyColor()); setTypeface(typeface, android.graphics.Typeface.BOLD)
+        }
+        pickPanel = ui.cardHigh().apply {
+            addView(TextView(this@MainActivity).apply {
+                text = "选点"
+                textSize = 16f
+                setTextColor(ui.titleColor())
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+            })
+            addView(pickGcjView)
+            addView(pickWgsView)
+            val actions = ui.row().apply { setPadding(0, ui.dp(8), 0, 0) }
+            actions.addView(ui.button("注入", Ui.Btn.PRIMARY) { injectPicked("地图点选") }, ui.fill())
+            actions.addView(ui.button("收藏这个点") {
+                val w = pickedWgs ?: return@button toast("先点一下地图")
+                promptPlace("点${"%.4f".format(w[0])}", w[0], w[1], null)
+            }, ui.fill())
+            addView(actions)
+        }
+        pickPanel.visibility = View.GONE
+        page.addView(pickPanel, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT,
+            Gravity.BOTTOM,
+        ).apply { setMargins(ui.dp(10), 0, ui.dp(10), ui.dp(10)) })
+
+        // 搜索浮层：占地图底部 ~55%，内含搜索 + 粘贴 + key。
+        searchSheet = buildSearchSheet()
+        searchSheet.visibility = View.GONE
+        page.addView(searchSheet, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            (resources.displayMetrics.heightPixels * 0.55f).toInt(),
+            Gravity.BOTTOM,
+        ))
         return page
+    }
+
+    /** MD3 底部浮层外观：28dp 顶圆角 + 顶栏拖把条。 */
+    private fun sheetCard(): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        background = GradientDrawable().apply {
+            setColor(ui.cardBg())
+            cornerRadii = floatArrayOf(
+                ui.dp(28).toFloat(), ui.dp(28).toFloat(), ui.dp(28).toFloat(), ui.dp(28).toFloat(),
+                0f, 0f, 0f, 0f,  // 顶两角 28dp，底两角直角
+            )
+        }
+        elevation = ui.dp(8).toFloat()
+        setPadding(ui.dp(16), ui.dp(10), ui.dp(16), ui.dp(14))
+    }
+
+    private fun buildSearchSheet(): View {
+        val sheet = sheetCard()
+        val scroll = ScrollView(this)
+        val column = ui.column()
+        scroll.addView(column)
+        val head = ui.row()
+        head.addView(TextView(this).apply {
+            text = "搜索与坐标"
+            textSize = 16f
+            setTextColor(ui.titleColor())
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+        }, ui.fill())
+        head.addView(ui.icon(R.drawable.ic_close, ui.hintColor()).apply {
+            setPadding(ui.dp(8), ui.dp(8), 0, 0)
+            setOnClickListener { closeSearch() }
+        })
+        sheet.addView(head)
+        sheet.addView(scroll, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f,
+        ))
+
+        column.addView(ui.sectionLabel("搜地点（高德，结果即注入）"))
+        val keyField2 = ui.editText("高德 Web服务 key（存本机私有 prefs）")
+        keyField = keyField2
+        keyField2.setText(prefs.getString(KEY_AMAP, ""))
+        column.addView(keyField2)
+        column.addView(ui.button("保存 key") {
+            prefs.edit().putString(KEY_AMAP, keyField2.text.toString().trim()).apply()
+            toast("key 已存到本机私有配置")
+        })
+        val goRow = ui.row().apply { setPadding(0, ui.dp(8), 0, 0) }
+        queryField = ui.editText("地点，如 东方明珠")
+        goRow.addView(queryField, ui.fill())
+        goRow.addView(ui.button("搜索", Ui.Btn.PRIMARY) { runSearch() })
+        column.addView(goRow)
+        hitRows = ui.column()
+        column.addView(hitRows)
+
+        column.addView(ui.divider())
+        column.addView(ui.sectionLabel("粘贴坐标（双系预览，贴错当场可见）"))
+        val pasteRow = ui.row()
+        pasteField = ui.editText("31.239703,121.499733")
+        pasteField.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun afterTextChanged(s: android.text.Editable?) = updatePastePreview()
+        })
+        pasteRow.addView(pasteField, ui.fill())
+        val pasteToggle = Button(this)
+        pasteGcj = prefs.getBoolean(KEY_PASTE_GCJ, true)
+        pasteToggle.text = if (pasteGcj) "GCJ-02" else "WGS-84"
+        ui.styleSegment(pasteToggle, selected = false)
+        pasteToggle.setOnClickListener {
+            pasteGcj = !pasteGcj
+            prefs.edit().putBoolean(KEY_PASTE_GCJ, pasteGcj).apply()
+            pasteToggle.text = if (pasteGcj) "GCJ-02" else "WGS-84"
+            ui.styleSegment(pasteToggle, selected = false)
+            updatePastePreview()
+        }
+        pasteRow.addView(pasteToggle)
+        column.addView(pasteRow)
+        pastePreview = TextView(this).apply {
+            textSize = 12f
+            setTextColor(ui.bodyColor())
+            setPadding(0, ui.dp(6), 0, 0)
+        }
+        column.addView(pastePreview)
+        column.addView(ui.button("按这组坐标注入", Ui.Btn.PRIMARY) { injectPasted() })
+        column.addView(ui.hint("高德/腾讯/百度网页抄的是 GCJ-02；Google Earth/GPS 工具抄的是 WGS-84"))
+        updatePastePreview()
+        return sheet
+    }
+
+    private fun openSearch() {
+        searchSheet.visibility = View.VISIBLE
+        searchBar.visibility = View.GONE
+        queryField.requestFocus()
+    }
+
+    private fun closeSearch() {
+        searchSheet.visibility = View.GONE
+        searchBar.visibility = View.VISIBLE
     }
 
     private fun placesPage(): View {
@@ -747,7 +885,7 @@ class MainActivity : Activity() {
         updatePastePreview()
 
         statusText.text = buildString {
-            append("当前坐标（本 App 读回）\n")
+            append("当前坐标（本 App 读回，WGS-84 原始值；与 GCJ 网页地图对比差 ~500m 属坐标系不同，不是偏移）\n")
             fixes.forEach { append("  $it\n") }
             if (mismatch) {
                 append("\n⚠ App 选点与模块配置不一致\n")
@@ -870,25 +1008,13 @@ class MainActivity : Activity() {
 
     /** One glanceable verdict, colored before it is worded (same rule as the chips). */
     private fun renderStatusBar(mockActive: Boolean, label: String) {
-        val dark = ui.night
-        val (text, fg, bg) = when {
-            mockActive -> Triple(
-                "● 模拟中${if (label.isNotBlank()) " · $label" else ""} · 点此看诊断",
-                if (dark) 0xFF81C995.toInt() else 0xFF0F6B32.toInt(),
-                if (dark) 0xFF12271C.toInt() else 0xFFE8F6EC.toInt(),
-            )
-            Config.enabled -> Triple(
-                "● 模块配置在生效，但本 App 读回无 mock（按App 模式或配置不一致）",
-                if (dark) 0xFFFDD663.toInt() else 0xFF8A5A00.toInt(),
-                if (dark) 0xFF2B2213.toInt() else 0xFFFFF4E0.toInt(),
-            )
-            else -> Triple("○ 未注入 · 点地图选点后按「开始模拟」",
-                if (dark) 0xFF9AA0A6.toInt() else 0xFF6B6B6B.toInt(),
-                if (dark) 0xFF1E2024.toInt() else 0xFFF2F2F2.toInt())
+        // 顶栏胶囊只说一句话：实色=在跑，灰=空闲/待确认。细节在诊断页。
+        val (text, running) = when {
+            mockActive -> "模拟中${if (label.isNotBlank()) " · $label" else ""}" to true
+            Config.enabled -> "配置生效 · 待确认" to false
+            else -> "未注入" to false
         }
-        statusLine.text = text
-        statusLine.setTextColor(fg)
-        statusLine.setBackgroundColor(bg)
+        ui.styleStatusPill(statusPillView, text, running)
     }
 
     private fun lastLat(): Double =
@@ -953,6 +1079,7 @@ class MainActivity : Activity() {
         val hit = hits.getOrNull(index) ?: return
         val w = CoordTransform.gcj02ToWgs84(hit.latGcj, hit.lngGcj)
         centerOn(w[0], w[1])
+        closeSearch()
         inject(w[0], w[1], hit.name)
     }
 
@@ -987,8 +1114,10 @@ class MainActivity : Activity() {
         } else {
             existing.setPosition(point)
         }
-        mapInfo.text = "GCJ ${"%.6f".format(point.latitude)},${"%.6f".format(point.longitude)}\n" +
-            "WGS  ${"%.6f".format(w[0])},${"%.6f".format(w[1])}  ← 注入用这组"
+        closeSearch()
+        pickGcjView.text = "GCJ  ${"%.6f".format(point.latitude)},${"%.6f".format(point.longitude)}"
+        pickWgsView.text = "WGS  ${"%.6f".format(w[0])},${"%.6f".format(w[1])}   ← 注入用这组"
+        pickPanel.visibility = View.VISIBLE
     }
 
     // ---------------------------------------------------------------- route page (2.3)
@@ -1355,6 +1484,7 @@ class MainActivity : Activity() {
                 }
             }
         }
+        closeSearch()
     }
 
     /**
@@ -1459,6 +1589,6 @@ class MainActivity : Activity() {
         const val DEFAULT_PROVIDERS = "gps,network,fused"
         const val REQUEST_GPX_IMPORT = 71
         const val REQUEST_GPX_EXPORT = 72
-        val TABS = listOf("搜索", "地图", "路线", "收藏", "策略", "状态")
+        val TABS = listOf("地图", "路线", "收藏", "策略", "状态")
     }
 }
