@@ -57,6 +57,8 @@ class MainActivity : Activity() {
     private lateinit var keyField: EditText
     private lateinit var queryField: EditText
     private lateinit var pasteField: EditText
+    private lateinit var pastePreview: TextView
+    private var injectMarker: Marker? = null
     private lateinit var policyList: ListView
     private val policyAdapter = PolicyAdapter()
     private var policyPointed: Set<String> = emptySet()
@@ -90,6 +92,13 @@ class MainActivity : Activity() {
 
     /** The route page carries a whole second MapView; built lazily on first tab show. */
     private var routePageBuilt = false
+
+    private val tabButtons = mutableListOf<Button>()
+
+    /** 选中态是用户判断"我在哪一页"的唯一线索，旧版六个实心蓝块分不出来。 */
+    private fun styleTabs(selected: Int) {
+        tabButtons.forEachIndexed { index, button -> ui.styleSegment(button, index == selected) }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -176,38 +185,36 @@ class MainActivity : Activity() {
 
         val tabRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(ui.dp(4), 0, ui.dp(4), 0)
+            setPadding(ui.dp(6), 0, ui.dp(6), 0)
         }
         TABS.forEachIndexed { index, title ->
-            tabRow.addView(Button(this).apply {
-                text = title
-                isAllCaps = false
-                // Explicit colours: the OEM default button style rendered these with no visible
-                // background or text, which made a zero-height content bug look like a dead app.
-                setBackgroundColor(0xFF1F6FEB.toInt())
-                setTextColor(0xFFFFFFFF.toInt())
-                setPadding(0, ui.dp(10), 0, ui.dp(10))
-                setTextSize(12f)
-                setOnClickListener {
-                    flipper.displayedChild = index
-                    // Enumerating packages and reading the app-op are both too slow/noisy to do on
-                    // every keystroke, so the pages that need them fill in on first show.
-                    if (index == TABS.indexOf("策略")) {
-                        renderAppOpChips()
-                        if (!policyLoaded) {
-                            policyLoaded = true
-                            // A Scope of All cannot be shown as ticked packages, so start from the
-                            // saved list and let the user re-narrow it explicitly.
-                            policyChecked.addAll(bridge.blindScope().packages)
-                            loadPolicyList()
-                        }
+            val tab = Button(this)
+            tabButtons.add(tab)
+            ui.styleSegment(tab, selected = index == 0)
+            tab.text = title
+            tab.setTextSize(13f)
+            tab.setPadding(0, ui.dp(10), 0, ui.dp(10))
+            tab.setOnClickListener {
+                flipper.displayedChild = index
+                styleTabs(index)
+                // Enumerating packages and reading the app-op are both too slow/noisy to do on
+                // every keystroke, so the pages that need them fill in on first show.
+                if (index == TABS.indexOf("策略")) {
+                    renderAppOpChips()
+                    if (!policyLoaded) {
+                        policyLoaded = true
+                        // A Scope of All cannot be shown as ticked packages, so start from the
+                        // saved list and let the user re-narrow it explicitly.
+                        policyChecked.addAll(bridge.blindScope().packages)
+                        loadPolicyList()
                     }
-                    if (index == TABS.indexOf("路线")) {
-                        if (!routePageBuilt) buildRoutePage() else renderRouteWaypoints()
-                    }
-                    if (index == TABS.lastIndex) refreshStatus()
                 }
-            }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                if (index == TABS.indexOf("路线")) {
+                    if (!routePageBuilt) buildRoutePage() else renderRouteWaypoints()
+                }
+                if (index == TABS.lastIndex) refreshStatus()
+            }
+            tabRow.addView(tab, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
                 setMargins(ui.dp(2), ui.dp(6), ui.dp(2), ui.dp(4))
             })
         }
@@ -241,6 +248,8 @@ class MainActivity : Activity() {
     private fun statusBar(): View = TextView(this).apply {
         statusLine = this
         textSize = 13f
+        maxLines = 1
+        ellipsize = android.text.TextUtils.TruncateAt.END
         setPadding(ui.dp(14), ui.dp(8), ui.dp(14), ui.dp(8))
         setOnClickListener { flipper.displayedChild = TABS.lastIndex }
     }
@@ -271,13 +280,9 @@ class MainActivity : Activity() {
             isSingleLine = true
         }
         keyCard.addView(keyField)
-        keyCard.addView(Button(this).apply {
-            text = "保存 key"
-            isAllCaps = false
-            setOnClickListener {
-                prefs.edit().putString(KEY_AMAP, keyField.text.toString().trim()).apply()
-                toast("key 已存到本机私有配置")
-            }
+        keyCard.addView(ui.button("保存 key") {
+            prefs.edit().putString(KEY_AMAP, keyField.text.toString().trim()).apply()
+            toast("key 已存到本机私有配置")
         })
         column.addView(keyCard)
 
@@ -286,11 +291,7 @@ class MainActivity : Activity() {
         val goRow = ui.row()
         queryField = EditText(this).apply { hint = "地点，如 东方明珠"; isSingleLine = true }
         goRow.addView(queryField, ui.fill())
-        goRow.addView(Button(this).apply {
-            text = "搜索"
-            isAllCaps = false
-            setOnClickListener { runSearch() }
-        })
+        goRow.addView(ui.button("搜索", Ui.Btn.PRIMARY) { runSearch() })
         searchCard.addView(goRow)
         // Same reason as the policy list: a ListView inside this ScrollView cannot scroll, so
         // anything past the first screenful of results was unreachable.
@@ -302,23 +303,38 @@ class MainActivity : Activity() {
         val pasteCard = ui.card()
         pasteCard.addView(ui.title("粘贴坐标"))
         val pasteRow = ui.row()
-        pasteField = EditText(this).apply { hint = "31.239703,121.499733"; isSingleLine = true }
+        pasteField = EditText(this).apply {
+            hint = "31.239703,121.499733"
+            isSingleLine = true
+            addTextChangedListener(object : android.text.TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+                override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+                override fun afterTextChanged(s: android.text.Editable?) = updatePastePreview()
+            })
+        }
         pasteRow.addView(pasteField, ui.fill())
-        pasteRow.addView(Button(this).apply {
-            text = "GCJ-02"
-            isAllCaps = false
-            setOnClickListener {
-                pasteGcj = !pasteGcj
-                text = if (pasteGcj) "GCJ-02" else "WGS-84"
-            }
-        })
+        val pasteToggle = Button(this)
+        pasteToggle.setOnClickListener {
+            pasteGcj = !pasteGcj
+            prefs.edit().putBoolean(KEY_PASTE_GCJ, pasteGcj).apply()
+            ui.styleSegment(pasteToggle, selected = false)
+            pasteToggle.text = if (pasteGcj) "GCJ-02" else "WGS-84"
+            updatePastePreview()
+        }
+        pasteGcj = prefs.getBoolean(KEY_PASTE_GCJ, true)
+        pasteToggle.text = if (pasteGcj) "GCJ-02" else "WGS-84"
+        ui.styleSegment(pasteToggle, selected = false)
+        pasteRow.addView(pasteToggle)
         pasteCard.addView(pasteRow)
-        pasteCard.addView(Button(this).apply {
-            text = "按这组坐标注入"
-            isAllCaps = false
-            setOnClickListener { injectPasted() }
-        })
-        pasteCard.addView(ui.hint("国内网页地图上抄下来的一般是 GCJ-02；选 GCJ-02 时自动反算成 WGS-84"))
+        // 双坐标实时预览：贴错坐标系（WGS 当 GCJ）会差 ~500m，看着它贴就不会错。
+        pastePreview = TextView(this).apply {
+            textSize = 12f
+            setTextColor(ui.bodyColor())
+            setPadding(0, ui.dp(6), 0, 0)
+        }
+        pasteCard.addView(pastePreview)
+        pasteCard.addView(ui.button("按这组坐标注入", Ui.Btn.PRIMARY) { injectPasted() })
+        pasteCard.addView(ui.hint("国内网页地图上抄下来的一般是 GCJ-02；Google Earth/GPS 工具抄的是 WGS-84，贴前看一眼预览行"))
         column.addView(pasteCard)
         return scroll
     }
@@ -333,18 +349,10 @@ class MainActivity : Activity() {
             setPadding(ui.dp(14), ui.dp(8), ui.dp(14), ui.dp(8))
         }
         val actions = ui.row().apply { setPadding(ui.dp(10), ui.dp(6), ui.dp(10), ui.dp(8)) }
-        actions.addView(Button(this).apply {
-            text = "注入"
-            isAllCaps = false
-            setOnClickListener { injectPicked("地图点选") }
-        }, ui.fill())
-        actions.addView(Button(this).apply {
-            text = "收藏这个点"
-            isAllCaps = false
-            setOnClickListener {
-                val w = pickedWgs ?: return@setOnClickListener toast("先点一下地图")
-                promptPlace("点${"%.4f".format(w[0])}", w[0], w[1], null)
-            }
+        actions.addView(ui.button("注入", Ui.Btn.PRIMARY) { injectPicked("地图点选") }, ui.fill())
+        actions.addView(ui.button("收藏这个点") {
+            val w = pickedWgs ?: return@button toast("先点一下地图")
+            promptPlace("点${"%.4f".format(w[0])}", w[0], w[1], null)
         }, ui.fill())
         page.addView(map, weightParams())
         page.addView(mapInfo)
@@ -392,19 +400,15 @@ class MainActivity : Activity() {
         preflight.addView(ui.title("免 root 档自检"))
         appOpChipRow = ui.chipRow()
         preflight.addView(appOpChipRow)
-        preflight.addView(Button(this).apply {
-            text = "去开发者选项"
-            isAllCaps = false
-            setOnClickListener {
-                val intent = if (Tiers.developerOptionsEnabled(this@MainActivity)) {
-                    Tiers.developmentSettingsIntent()
-                } else {
-                    toast("开发者选项还没打开，先到设备信息里连点版本号")
-                    Tiers.fallbackSettingsIntent()
-                }
-                runCatching { startActivity(intent) }
-                    .onFailure { toast("这个 ROM 不让我直接跳，请手动进设置") }
+        preflight.addView(ui.button("去开发者选项") {
+            val intent = if (Tiers.developerOptionsEnabled(this@MainActivity)) {
+                Tiers.developmentSettingsIntent()
+            } else {
+                toast("开发者选项还没打开，先到设备信息里连点版本号")
+                Tiers.fallbackSettingsIntent()
             }
+            runCatching { startActivity(intent) }
+                .onFailure { toast("这个 ROM 不让我直接跳，请手动进设置") }
         })
         preflight.addView(ui.hint(
             "「选择虚拟定位应用」只能由设置进程授权（本机 shell 被摘了 MANAGE_APP_OPS_MODES）；" +
@@ -466,18 +470,10 @@ class MainActivity : Activity() {
         page.addView(policyList, weightParams())
 
         val policyButtons = ui.row().apply { setPadding(ui.dp(10), ui.dp(4), ui.dp(10), ui.dp(8)) }
-        policyButtons.addView(Button(this).apply {
-            text = "保存"
-            isAllCaps = false
-            setOnClickListener { saveBlindScope() }
-        }, ui.fill())
-        policyButtons.addView(Button(this).apply {
-            text = "清空"
-            isAllCaps = false
-            setOnClickListener {
-                policyChecked.clear()
-                renderPolicyRows()
-            }
+        policyButtons.addView(ui.button("保存", Ui.Btn.PRIMARY) { saveBlindScope() }, ui.fill())
+        policyButtons.addView(ui.button("清空") {
+            policyChecked.clear()
+            renderPolicyRows()
         }, ui.fill())
         page.addView(policyButtons)
         return page
@@ -633,40 +629,24 @@ class MainActivity : Activity() {
         }
         statusText = TextView(this).apply { setPadding(ui.dp(14), ui.dp(6), ui.dp(14), ui.dp(6)) }
         val actions = ui.row().apply { setPadding(ui.dp(10), ui.dp(6), ui.dp(10), ui.dp(8)) }
-        actions.addView(Button(this).apply {
-            text = "刷新"
-            isAllCaps = false
-            setOnClickListener { refreshStatus() }
+        actions.addView(ui.button("刷新") { refreshStatus() }, ui.fill())
+        actions.addView(ui.button("同步到模块", Ui.Btn.PRIMARY) { onSyncToModule() }, ui.fill())
+        actions.addView(ui.button(if (bridge.probe()) "探针：开" else "探针：关") { btn ->
+            bridge.setProbe(!bridge.probe())
+            btn.text = if (bridge.probe()) "探针：开" else "探针：关"
+            refreshStatus()
         }, ui.fill())
-        actions.addView(Button(this).apply {
-            text = "同步到模块"
-            isAllCaps = false
-            setOnClickListener { onSyncToModule() }
-        }, ui.fill())
-        actions.addView(Button(this).apply {
-            text = if (bridge.probe()) "探针：开" else "探针：关"
-            isAllCaps = false
-            setOnClickListener {
-                bridge.setProbe(!bridge.probe())
-                toast(if (bridge.probe()) "探针已开，记得跑一次 tools/mockloc.py sync" else "探针已关")
-                refreshStatus()
-            }
-        }, ui.fill())
-        actions.addView(Button(this).apply {
-            text = "停止注入"
-            isAllCaps = false
-            setOnClickListener {
-                startService(Intent(this@MainActivity, MockService::class.java)
-                    .putExtra(MockService.EXTRA_CMD, "stop"))
-                bridge.clear()
-                // If a root publish ever built providers from the App, stop has to tear those
-                // down too or the system keeps serving the old point after "停止".
-                thread {
-                    val out = RootInjector.teardown(DEFAULT_PROVIDERS.split(','))
-                    runOnUiThread {
-                        refreshStatus()
-                        if (out.contains("Error") || out.contains("denied")) toast("root 侧停止异常：${out.take(60)}")
-                    }
+        actions.addView(ui.button("停止注入") {
+            startService(Intent(this@MainActivity, MockService::class.java)
+                .putExtra(MockService.EXTRA_CMD, "stop"))
+            bridge.clear()
+            // If a root publish ever built providers from the App, stop has to tear those
+            // down too or the system keeps serving the old point after "停止".
+            thread {
+                val out = RootInjector.teardown(DEFAULT_PROVIDERS.split(','))
+                runOnUiThread {
+                    refreshStatus()
+                    if (out.contains("Error") || out.contains("denied")) toast("root 侧停止异常：${out.take(60)}")
                 }
             }
         }, ui.fill())
@@ -733,7 +713,7 @@ class MainActivity : Activity() {
             "配置一致" to if (!mismatch || !Config.enabled) Ui.State.OK else Ui.State.BAD,
             "致盲" to if (Config.blindWifi.enabled || Config.blindCell.enabled) Ui.State.OK else Ui.State.OFF,
             "挂钩台账" to if (notes.isEmpty()) Ui.State.OK else Ui.State.WARN,
-            "卫星视图(档0/1/2)" to if (mockActive) Ui.State.WARN else Ui.State.OFF,
+            "卫星视图!" to if (mockActive) Ui.State.WARN else Ui.State.OFF,
         )
         riskChips.removeAllViews()
         items.forEach { (label, state) -> riskChips.addView(ui.chip(label, state)) }
@@ -763,6 +743,8 @@ class MainActivity : Activity() {
             (abs(Config.centerLat - lastLat()) > 1e-3 || abs(Config.centerLng - lastLng()) > 1e-3)
         renderRisk(fixes.any { "mock=true" in it }, mismatch)
         maybeAutoResume(fixes)
+        updateInjectMarker()
+        updatePastePreview()
 
         statusText.text = buildString {
             append("当前坐标（本 App 读回）\n")
@@ -860,6 +842,32 @@ class MainActivity : Activity() {
 
     private var lastAutoResume = 0L
 
+    /**
+     * 地图页常驻"当前注入点"蓝标（WGS→GCJ 转回显示）：用户一眼核对系统指向与选点是否重合，
+     * 偏移感的三种来源（坐标系看串、App 内地图显示偏移、真·注入漂移）当场可分辨。
+     */
+    private fun updateInjectMarker() {
+        val last = prefs.getString(KEY_LAST, "无") ?: return
+        if (last == "无") return
+        val lat = lastLat()
+        val lng = lastLng()
+        if (lat == 0.0 && lng == 0.0) return
+        if (!::map.isInitialized) return
+        val g = CoordTransform.wgs84ToGcj02(lat, lng)
+        val pos = GeoPoint(g[0], g[1])
+        val existing = injectMarker
+        if (existing == null) {
+            injectMarker = Marker(map, this).apply {
+                setPosition(pos)
+                setTitle("当前注入点 · WGS ${"%.5f".format(lat)},${"%.5f".format(lng)}")
+                map.getOverlays().add(this)
+            }
+        } else {
+            existing.setPosition(pos)
+            existing.title = "当前注入点 · WGS ${"%.5f".format(lat)},${"%.5f".format(lng)}"
+        }
+    }
+
     /** One glanceable verdict, colored before it is worded (same rule as the chips). */
     private fun renderStatusBar(mockActive: Boolean, label: String) {
         val dark = ui.night
@@ -912,14 +920,9 @@ class MainActivity : Activity() {
     private fun renderHits() {
         hitRows.removeAllViews()
         hits.forEachIndexed { index, hit ->
-            hitRows.addView(Button(this).apply {
-                text = hit.label
-                isAllCaps = false
-                gravity = Gravity.START
-                setBackgroundColor(0x00000000)
-                setTextColor(0xFF1F6FEB.toInt())
-                setOnClickListener { onPickHit(index) }
-            })
+            val btn = ui.button(hit.label, Ui.Btn.GHOST) { onPickHit(index) }
+            btn.gravity = Gravity.START
+            hitRows.addView(btn)
         }
         if (hits.isEmpty()) {
             hitRows.addView(ui.body("还没有结果：填好 key 后搜一个地点"))
@@ -951,6 +954,12 @@ class MainActivity : Activity() {
         val w = CoordTransform.gcj02ToWgs84(hit.latGcj, hit.lngGcj)
         centerOn(w[0], w[1])
         inject(w[0], w[1], hit.name)
+    }
+
+    private fun updatePastePreview() {
+        if (!::pastePreview.isInitialized) return
+        pastePreview.text = CoordTransform.dualPreview(pasteField.text.toString(), pasteGcj)
+            ?: "格式：纬度,经度（经度在前也认）"
     }
 
     private fun injectPasted() {
@@ -1067,12 +1076,7 @@ class MainActivity : Activity() {
         }
         speedRow.addView(routeSpeedField, ui.fill())
         listOf("步行1.4" to 1.4, "骑行5.5" to 5.5, "驾车12.0" to 12.0).forEach { (label, value) ->
-            speedRow.addView(Button(this).apply {
-                text = label
-                isAllCaps = false
-                setTextSize(11f)
-                setOnClickListener { routeSpeedField.setText(value.toString()) }
-            })
+            speedRow.addView(ui.button(label) { routeSpeedField.setText(value.toString()) })
         }
         controls.addView(speedRow)
         controls.addView(
@@ -1083,61 +1087,41 @@ class MainActivity : Activity() {
             },
         )
         val runRow = ui.row()
-        runRow.addView(Button(this).apply {
-            text = "开始路线"
-            isAllCaps = false
-            setOnClickListener { startRoute() }
-        }, ui.fill())
-        runRow.addView(Button(this).apply {
-            text = "停止路线"
-            isAllCaps = false
-            setOnClickListener {
-                bridge.stopRoute()
-                toast("路线已停：注入点回到静态中心")
-                renderRouteWaypoints()
-                refreshStatus()
-            }
+        runRow.addView(ui.button("开始路线", Ui.Btn.PRIMARY) { startRoute() }, ui.fill())
+        runRow.addView(ui.button("停止路线") {
+            bridge.stopRoute()
+            toast("路线已停：注入点回到静态中心")
+            renderRouteWaypoints()
+            refreshStatus()
         }, ui.fill())
         controls.addView(runRow)
         val ioRow = ui.row()
-        ioRow.addView(Button(this).apply {
-            text = "导入GPX"
-            isAllCaps = false
-            setOnClickListener {
-                runCatching {
-                    routeGpxUri = null
-                    startActivityForResult(
-                        Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
-                            .setType("*/*"),
-                        REQUEST_GPX_IMPORT,
-                    )
-                }.onFailure { toast("这个系统不给打开文件选择器：${it.message}") }
-            }
+        ioRow.addView(ui.button("导入GPX") {
+            runCatching {
+                routeGpxUri = null
+                startActivityForResult(
+                    Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
+                        .setType("*/*"),
+                    REQUEST_GPX_IMPORT,
+                )
+            }.onFailure { toast("这个系统不给打开文件选择器：${it.message}") }
         }, ui.fill())
-        ioRow.addView(Button(this).apply {
-            text = "导出GPX"
-            isAllCaps = false
-            setOnClickListener {
-                if (routeWaypoints.size < 2) return@setOnClickListener toast("没有可导出的航点")
-                runCatching {
-                    routeGpxUri = null
-                    startActivityForResult(
-                        Intent(Intent.ACTION_CREATE_DOCUMENT)
-                            .addCategory(Intent.CATEGORY_OPENABLE)
-                            .setType("application/gpx+xml")
-                            .putExtra(Intent.EXTRA_TITLE, "mockloc-route.gpx"),
-                        REQUEST_GPX_EXPORT,
-                    )
-                }.onFailure { toast("这个系统不给打开文件选择器：${it.message}") }
-            }
+        ioRow.addView(ui.button("导出GPX") {
+            if (routeWaypoints.size < 2) return@button toast("没有可导出的航点")
+            runCatching {
+                routeGpxUri = null
+                startActivityForResult(
+                    Intent(Intent.ACTION_CREATE_DOCUMENT)
+                        .addCategory(Intent.CATEGORY_OPENABLE)
+                        .setType("application/gpx+xml")
+                        .putExtra(Intent.EXTRA_TITLE, "mockloc-route.gpx"),
+                    REQUEST_GPX_EXPORT,
+                )
+            }.onFailure { toast("这个系统不给打开文件选择器：${it.message}") }
         }, ui.fill())
-        ioRow.addView(Button(this).apply {
-            text = "清空"
-            isAllCaps = false
-            setOnClickListener {
-                routeWaypoints.clear()
-                renderRouteWaypoints()
-            }
+        ioRow.addView(ui.button("清空") {
+            routeWaypoints.clear()
+            renderRouteWaypoints()
         }, ui.fill())
         controls.addView(ioRow)
         page.addView(controls)
@@ -1401,7 +1385,10 @@ class MainActivity : Activity() {
     }
 
     private fun centerOn(lat: Double, lng: Double) {
-        map.controller.setCenter(GeoPoint(lat, lng))
+        // 瓦片是 GCJ 参考：拿 WGS 值直接 setCenter 会让地图停在真实选点旁 ~470m——
+        // "App 自己的地图都偏了"是用户报定位偏移的观感来源之一，注入值本身没错。
+        val g = CoordTransform.wgs84ToGcj02(lat, lng)
+        map.controller.setCenter(GeoPoint(g[0], g[1]))
     }
 
     private fun reloadPlaces() {
@@ -1468,6 +1455,7 @@ class MainActivity : Activity() {
         const val KEY_LAST = "last_injected"
         const val KEY_LAST_LABEL = "last_label"
         const val KEY_WIZARD_SKIP = "wizard_skip"
+        const val KEY_PASTE_GCJ = "paste_gcj"
         const val DEFAULT_PROVIDERS = "gps,network,fused"
         const val REQUEST_GPX_IMPORT = 71
         const val REQUEST_GPX_EXPORT = 72

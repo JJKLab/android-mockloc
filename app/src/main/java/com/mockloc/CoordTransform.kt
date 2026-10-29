@@ -102,4 +102,34 @@ object CoordTransform {
         val h = sin(dp / 2) * sin(dp / 2) + cos(p1) * cos(p2) * sin(dl / 2) * sin(dl / 2)
         return 2 * r * Math.asin(Math.sqrt(h))
     }
+
+    /**
+     * Parses what a user pastes: `lat,lng` or `lng,lat` (what Chinese map sites copy is usually
+     * lng first), ASCII or full-width commas, stray whitespace. Null on anything that is not
+     * exactly two numbers - the ambiguity between "lat 31" and "lng 31" only exists outside China,
+     * and inside China lng>90 always disambiguates.
+     */
+    fun parseFlexible(text: String): DoubleArray? {
+        val parts = text.trim().split(',', '，', ' ').map { it.trim() }.filter { it.isNotEmpty() }
+        if (parts.size != 2) return null
+        val a = parts[0].toDoubleOrNull() ?: return null
+        val b = parts[1].toDoubleOrNull() ?: return null
+        return if (abs(a) <= 90.0) doubleArrayOf(a, b) else doubleArrayOf(b, a)
+    }
+
+    /**
+     * The anti-offset UX: whatever datum the input is in, show BOTH datums of the same point, so
+     * a wrong toggle is visible before injecting (a WGS input read as GCJ shifts the target by
+     * ~500 m and "the location is off" is exactly what that looks like). Null when unparsable.
+     */
+    fun dualPreview(text: String, inputGcj: Boolean): String? {
+        val parsed = parseFlexible(text) ?: return null
+        // The input is in its declared datum; "other" is the same point expressed in the other one.
+        val other = if (inputGcj) gcj02ToWgs84(parsed[0], parsed[1])
+        else wgs84ToGcj02(parsed[0], parsed[1])
+        val inTag = if (inputGcj) "GCJ" else "WGS"
+        val outTag = if (inputGcj) "WGS" else "GCJ"
+        return "$inTag %.4f,%.4f  →  $outTag %.4f,%.4f"
+            .format(parsed[0], parsed[1], other[0], other[1])
+    }
 }

@@ -1087,6 +1087,21 @@ FakeLoc/XposedFakeLocation 都有同样的取舍，并用"每个字段单独开�
     **测试方法教训（又犯第三次）**：键盘弹出/列表滚动都会移动控件——**每次点击前必须重新
     `uiautomator dump` 取坐标**；一次点到「去开发者选项」跳进系统设置、一次 tap 坐标系漂移，
     白跑两轮。
+35. **v0.8.3 的装机验收判据**（UI 改版 + 定位偏移三项修复，设备不在手边，以下待装机勾）：
+    a. **App 内地图居中偏移修复（真 bug）**：搜索结果与粘贴注入后的 `centerOn` 拿 WGS 值直接在
+    GCJ 瓦片图上居中，App 自己的地图停在真实选点旁 ~470m——修为 WGS→GCJ 后居中。验收：粘贴东方明珠
+    GCJ 31.239703,121.499733 注入，地图应停在东方明珠塔上而不是旁边河对岸。
+    b. **粘贴双坐标实时预览**：输入即显示两系值（`GCJ x,y → WGS x,y`），贴错坐标系当场可见；
+    toggle 选择记忆（重开 App 保持上次选择）。
+    c. **注入点常驻蓝标**：地图页显示"当前注入点"标记（WGS→GCJ 转回显示），选点红标与注入蓝标
+    重合 = 系统指向正确；目标 App 里若仍显示别处，那是它的缓存/坐标系问题而非注入偏移。
+    d. **读回值标注**：状态页"当前坐标（本 App 读回）"标注为 WGS-84 原始值——拿它和 GCJ 网页地图
+    对比差 ~500m 属坐标系不同，不是偏移。
+    e. **UI**：全部按钮换圆角工厂样式（实心蓝=主操作、浅蓝=次操作）；tab 选中态（一眼看出在哪页）；
+    风险 chip 竖排文字气泡修复（单行+省略，"卫星视图!"短标签）；状态行单行省略。
+36. **dualPreview 的 TDD 记录**：CoordCheck 先写断言（红灯：函数未实现），实现后仍 2 项 FAIL——
+    `dualPreview` 的转换方向写反（GCJ 输入调了 wgs84ToGcj02）。断言与锚点互查抓到，修正后 27 项
+    CoordCheck 断言全过。教训与 A9 的"断言错、实现错要分开判"同源，这次是**实现错、断言对**。
 34. **v0.8.2 的装机验收判据**（App 内一键同步，消灭"配置不一致要 PC 刷新"）：
     a. 真机诊断：conf 停在 PC 时代旧点（杭州）、App 选点上海、`/data/local/tmp/mockloc.in` 里还躺着
        10-27 的 `ENABLED=false` 僵尸收件箱、com.mockloc 未获 KernelSU su 授权——四件事叠加成
@@ -1399,3 +1414,17 @@ FakeLoc/XposedFakeLocation 都有同样的取舍，并用"每个字段单独开�
   CFG（唯一权威）、`sync_app_prefs` 比较基准 PUB→CFG（修掉第二个覆盖竞态）。
   ③ mismatch 文案全部指向 App 内按钮，PC sync 降为最后手段。
   本地：kotlinc 0 error、四校验器全过、`sh -n` 通过。装机判据 C34。
+
+- **v0.8.3**（2026-10-29）定位偏移修复 + UI 改版（设备离线，装机判据 C35 待勾）：
+  ① **App 内地图居中偏移（真 bug）**：`centerOn` 三处调用（搜索/粘贴/默认）拿 WGS 值在 GCJ 瓦片图上
+  居中——显示位置恒偏 ~470m，是"GPS 定位偏移"观感的主要来源；修为 WGS→GCJ 后 setCenter。
+  ② **粘贴双坐标实时预览**：新增 `CoordTransform.parseFlexible`（四种粘贴长相：经度在前/空格/中文
+  逗号/标准）与 `dualPreview`（同点双系值并排），输入即时显示 `GCJ → WGS`，贴错系当场可见；
+  toggle 选择记忆。parseFlexible 顺带替代 injectPasted 里的手写解析。
+  ③ **注入点常驻蓝标**（地图页）+ 状态页读回值标注 WGS-84 + 坐标系差 500m 的说明——把"偏移"的三种
+  来源（坐标系看串/本 App 地图偏/真漂移）变成当场可分辨。
+  ④ **UI 改版**：`Ui.button` 工厂（PRIMARY 实心蓝/TONAL 浅蓝/GHOST，12dp 圆角 44dp 高，一处定义），
+  全部裸按钮换装；tab 选中态（`styleSegment`，一眼看出在哪页）；风险 chip 竖排文字气泡修复
+  （maxLines=1+省略+短标签）；状态行单行。
+  ⑤ CoordCheck 10 项新断言（parse 四长相 + preview 双系往返），TDD 过程抓到 dualPreview 方向反的实现
+  bug（见 C36）。本地：typecheck 0 error、四校验器全过、test_coords/test_manifest 全过。

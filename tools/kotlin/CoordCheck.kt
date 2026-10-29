@@ -16,6 +16,11 @@ private fun check(label: String, got: Double, want: Double, tol: Double) {
     if (!ok) fails++
 }
 
+private fun checkFlag(label: String, ok: Boolean, detail: String = "") {
+    println("${if (ok) "PASS" else "FAIL"} $label${if (detail.isEmpty()) "" else ": $detail"}")
+    if (!ok) fails++
+}
+
 fun main() {
     val pearl = CoordTransform.gcj02ToWgs84(31.239703, 121.499733)
     check("pearl gcj->wgs lat", pearl[0], 31.2417030, 3e-6)
@@ -41,6 +46,32 @@ fun main() {
     check("shift magnitude", shift, 478.0, 120.0)
 
     check("paris untouched", CoordTransform.wgs84ToGcj02(48.8584, 2.2945)[0], 48.8584, 0.0)
+
+    // ---- paste parsing (REFACTOR 0.8.3: the boundary parses the input once) ------------------
+    // 用户贴的坐标四种长相：标准、经度在前、带空格、中文逗号。解析失败必须显式为 null。
+    val p1 = CoordTransform.parseFlexible("31.239703,121.499733")
+    check("parse lat,lng lat", p1?.get(0) ?: 0.0, 31.2397030, 0.0)
+    check("parse lat,lng lng", p1?.get(1) ?: 0.0, 121.4997330, 0.0)
+    val p2 = CoordTransform.parseFlexible("121.499733,31.239703")
+    check("parse lng,lat lat", p2?.get(0) ?: 0.0, 31.2397030, 0.0)
+    check("parse lng,lat lng", p2?.get(1) ?: 0.0, 121.4997330, 0.0)
+    val p3 = CoordTransform.parseFlexible(" 31.239703 , 121.499733 ")
+    check("parse spaced lat", p3?.get(0) ?: 0.0, 31.2397030, 0.0)
+    val p4 = CoordTransform.parseFlexible("31.239703，121.499733")
+    check("parse 中文逗号 lat", p4?.get(0) ?: 0.0, 31.2397030, 0.0)
+    checkFlag("parse 垃圾输入为 null", CoordTransform.parseFlexible("abc") == null)
+    checkFlag("parse 单数字为 null", CoordTransform.parseFlexible("31.2") == null)
+    checkFlag("parse 三数字为 null", CoordTransform.parseFlexible("1,2,3") == null)
+
+    // ---- dual-datum preview (the anti-offset UX) ---------------------------------------------
+    // 东方明珠锚点：GCJ 31.239703,121.499733 ↔ WGS 31.241703,121.495284。
+    val d1 = CoordTransform.dualPreview("31.239703,121.499733", inputGcj = true) ?: "MISSING"
+    checkFlag("preview GCJ 输入含 WGS 值", d1.contains("31.2417") && d1.contains("121.4953"))
+    checkFlag("preview GCJ 输入含原值", d1.contains("31.2397") && d1.contains("121.4997"))
+    val d2 = CoordTransform.dualPreview("31.241703,121.495284", inputGcj = false) ?: "MISSING"
+    checkFlag("preview WGS 输入含 GCJ 值", d2.contains("31.2397") && d2.contains("121.4997"))
+    checkFlag("preview WGS 输入含原值", d2.contains("31.2417") && d2.contains("121.4953"))
+    checkFlag("preview 垃圾输入为 null", CoordTransform.dualPreview("xx", true) == null)
 
     println()
     println(if (fails == 0) "ALL PASS" else "FAILURES: $fails")

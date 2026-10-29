@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.drawable.GradientDrawable
 import android.util.TypedValue
 import android.view.Gravity
+import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
 
@@ -78,11 +79,52 @@ class Ui(private val context: Context) {
         textSize = 12f
         setTextColor(state.fg)
         gravity = Gravity.CENTER
+        // 竖排文字气泡的元凶：chip 换行后每行一个字。单行 + 省略号，长标签宁可截断。
+        maxLines = 1
+        ellipsize = android.text.TextUtils.TruncateAt.END
         background = rounded(state.bg, state.border, 1f)
         setPadding(dp(10), dp(6), dp(10), dp(6))
         layoutParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT,
         ).apply { setMargins(0, 0, dp(6), dp(6)) }
+    }
+
+    enum class Btn { PRIMARY, TONAL, GHOST }
+
+    /**
+     * The one place a button gets styled. The OEM default Button rendered as a flat grey slab with
+     * no radius, which is half of why the old UI read as unfinished; PRIMARY = solid blue, TONAL =
+     * pale blue fill, GHOST = text only.
+     */
+    fun button(text: String, style: Btn = Btn.TONAL, onClick: (Button) -> Unit) = Button(context).apply {
+        this.text = text
+        isAllCaps = false
+        setTextSize(14f)
+        val (fill, stroke, fg) = when (style) {
+            Btn.PRIMARY -> Triple(0xFF1F6FEB.toInt(), 0xFF1F6FEB.toInt(), 0xFFFFFFFF.toInt())
+            Btn.TONAL -> Triple(0xFFE8F0FE.toInt(), 0xFFC5D8F7.toInt(), 0xFF175BC0.toInt())
+            Btn.GHOST -> Triple(0x00000000.toInt(), 0x00000000.toInt(), 0xFF1F6FEB.toInt())
+        }
+        setTextColor(fg)
+        background = rounded(fill, stroke, if (style == Btn.GHOST) 0f else 1f)
+        setPadding(dp(16), dp(10), dp(16), dp(10))
+        minimumHeight = dp(44)
+        stateListAnimator = null
+        setOnClickListener { onClick(this) }
+        layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT,
+        )
+    }
+
+    /** Segmented-control look for toggle buttons (坐标系切换这类二选一), shared by all callers. */
+    fun styleSegment(button: android.widget.Button, selected: Boolean) {
+        val fill = if (selected) 0xFF1F6FEB.toInt() else 0xFFE8F0FE.toInt()
+        val stroke = if (selected) 0xFF1F6FEB.toInt() else 0xFFC5D8F7.toInt()
+        val fg = if (selected) 0xFFFFFFFF.toInt() else 0xFF175BC0.toInt()
+        button.setTextColor(fg)
+        button.background = rounded(fill, stroke, 1f)
+        button.stateListAnimator = null
+        button.setPadding(dp(16), dp(10), dp(16), dp(10))
     }
 
     fun chipRow(): LinearLayout = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
