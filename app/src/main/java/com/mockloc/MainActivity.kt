@@ -107,6 +107,8 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // MD3 token 在任何视图构建之前解析（动态取色 + 暗色判定只在这里做一次）。
+        Md.resolve(this)
         Configuration.getInstance().load(applicationContext, prefs)
         Configuration.getInstance().setUserAgentValue(packageName)
         setContentView(buildUi())

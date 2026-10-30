@@ -29,8 +29,9 @@ import android.widget.TextView
  * （暗色判定 + 动态取色），之后本进程内共享同一套 token。
  */
 object Md {
-    lateinit var scheme: Palette.Scheme
-        private set
+    // 默认给静态亮色基线：任何调用序错误最多表现为"颜色暂未跟随暗色/壁纸"，绝不崩
+    // （0.9.0 装机即崩的教训：lateinit + onCreate 漏调 resolve = UninitializedPropertyAccessException）。
+    var scheme: Palette.Scheme = Palette.LIGHT
 
     var dark: Boolean = false
         private set
