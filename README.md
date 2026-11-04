@@ -1487,11 +1487,11 @@ FakeLoc/XposedFakeLocation 都有同样的取舍，并用"每个字段单独开�
 厂商守卫（ROOT 管线视角）：**ColorOS/Oplus**（本机）——shell 被摘 appop 授权，App 内走 su(0)；厂商融合进程 `com.oplus.location(-proxy)` 已在 netcut 候选。**MIUI**——"模糊定位"作用于 App 侧请求精度，root provider 直接替位不受影响；澎湃的杀后台对 nohup root 循环无效（init 外进程组），自启动白名单只影响 App UI 层。**三星/华为**——`com.samsung.android.location` / `com.huawei.location` 在 netcut 候选清单内按装机过滤。全部候选见 `RootLoopManager` 相关策略页说明（按装机包名过滤，未装不选）。
 
 - **v1.0.0**（2026-11-05）ROOT-only 管线转正（用户决策：系统体优先，LSP 降为可选不绑定）+ 厂商/版本审计：
-  ① **App 内嵌 root 循环**：`RootLoopManager` 把与 KernelSU 模块同源的脚本（assets/rootmodule，
-  CI 逐字节同步断言 test_assets_sync.py 挂进 logic job）安装到 /data/adb/mockloc/，su nohup 拉起
-  service.sh——provider 由 root 循环维持，App 关掉/被 OEM 回收不断供（A10"provider 随注册进程回收"
-  的结构性解法）；注入=发布 conf + 拉循环 + 一次性 apply 立即见效；停止=杀循环 + 拆 provider +
-  清 netcut；BOOT 后 root 循环优先重拉（App 进程可死）。
+  ① **ROOT 巡检模式**（v1.0.1 修正）：脱离 su 会话的 nohup/setsid 循环被 KernelSU 会话模型证伪
+  （会话关闭即回收子进程，13 个僵尸实例实锤）——改为 **App 前台服务内持久 su 会话巡检**
+  （`RootInjector.SuSession`：常驻 su 进程 + stdin 流式下发 + 排空线程；每 tick 推
+  set-test-provider-location，identity=0/android）。生命周期由 App 前台服务承载（与 FakeLoc/
+  gps-locator 同形态），BOOT 恢复带 EXTRA_ROOT 重启巡检；su 会话死 5 次自动回落 App 内 provider。
   ② **NETCUT 进渲染器**（策略页致盲名单两用：ROOT=按 uid 掐网 v4+v6 双栈，LSP=进程内致盲）；
   保存即经 su 发布，循环下一 tick 应用。挖潜来源：allmapLocation 的双栈教训 + 本机
   com.oplus.location(-proxy) 实装确认。

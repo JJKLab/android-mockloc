@@ -34,9 +34,6 @@ jobs:
       - name: Manifest and resource XML checks
         run: python tools/tests/test_manifest.py
 
-      # App 内 ROOT 管线执行的是 assets 副本，与 KernelSU 模块的原件必须逐字节一致。
-      - name: Root script asset sync
-        run: python tools/tests/test_assets_sync.py
 
   apk:
     needs: logic

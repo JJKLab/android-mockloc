@@ -46,6 +46,9 @@ class MockService : Service() {
     private var ticks = 0L
     private var healFails = 0
 
+    /** ROOT 巡检：注入经持久 su 会话（identity=0），不建 App 侧 test provider。 */
+    private var patrolMode = false
+
     // Started-only service; the interface is mandatory on Service.
     override fun onBind(intent: Intent?) = null
 
@@ -68,6 +71,18 @@ class MockService : Service() {
     private fun stopEverything() {
         running = false
         paused = false
+        if (patrolMode) {
+            // ROOT 巡检收尾：拆 provider + 清 netcut + 关 su 会话。
+            RootInjector.SuSession.send(
+                listOf(
+                    "for p in gps network fused; do cmd location providers set-test-provider-enabled \$p false 2>/dev/null; " +
+                        "cmd location providers remove-test-provider \$p 2>/dev/null; done; true",
+                ),
+            )
+            RootInjector.netcutClear()
+            RootInjector.SuSession.close()
+        }
+        patrolMode = false
         getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_PAUSED, false).apply()
         handler.removeCallbacksAndMessages(null)
         val lm = getSystemService(LOCATION_SERVICE) as? LocationManager ?: return
@@ -303,6 +318,11 @@ class MockService : Service() {
         paused = false
         ticks = 0
         healFails = 0
+        patrolMode = spec.rootMode && RootInjector.SuSession.ensure()
+        if (spec.rootMode && !patrolMode) {
+            // su 不可用：回落 App 内 provider（至少功能可用，isMock 会是 true）。
+            Log.w(TAG, "root patrol requested but su unavailable; falling back to app provider")
+        }
         spec.store(this)
         getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_PAUSED, false).apply()
         markRunning(true)
@@ -325,13 +345,34 @@ class MockService : Service() {
                 }
                 val speed = sample?.speedMps?.toFloat() ?: 0f
                 val bearing = sample?.bearingDeg?.toFloat() ?: 0f
-                providerNames.forEach { name ->
-                    runCatching {
-                        lm.setTestProviderLocation(
-                            name, buildFix(name, baseLat, baseLng, acc, speed, bearing),
-                        )
-                    }.onFailure {
-                        Log.e(TAG, "setTestProviderLocation($name) failed: ${it.message}")
+                if (patrolMode) {
+                    // ROOT 巡检：每 tick 经持久 su 会话推新 fix（identity=0/android）。
+                    val stamp = System.currentTimeMillis()
+                    val ok = RootInjector.SuSession.send(
+                        providerNames.map { name ->
+                            "cmd location providers set-test-provider-location $name " +
+                                "--location $baseLat,$baseLng --accuracy $acc --time $stamp"
+                        },
+                    )
+                    if (!ok) {
+                        healFails++
+                        if (healFails >= MAX_HEAL_FAILS) {
+                            Log.e(TAG, "su session dead after $healFails failures; falling back")
+                            patrolMode = false
+                            providerNames.forEach { name ->
+                                runCatching { register(lm, name); lm.setTestProviderEnabled(name, true) }
+                            }
+                        }
+                    } else healFails = 0
+                } else {
+                    providerNames.forEach { name ->
+                        runCatching {
+                            lm.setTestProviderLocation(
+                                name, buildFix(name, baseLat, baseLng, acc, speed, bearing),
+                            )
+                        }.onFailure {
+                            Log.e(TAG, "setTestProviderLocation($name) failed: ${it.message}")
+                        }
                     }
                 }
                 ticks++
@@ -393,6 +434,7 @@ class MockService : Service() {
     private data class Spec(
         val lat: Double, val lng: Double, val acc: Float, val radius: Double,
         val intervalMs: Long, val alt: Double, val providers: List<String>,
+        val rootMode: Boolean = false,
     )
 
     private fun specFromIntent(intent: Intent?): Spec {
@@ -409,6 +451,7 @@ class MockService : Service() {
                 ?: DEFAULT_INTERVAL_S) * 1000f).roundToInt().coerceAtLeast(200).toLong(),
             alt = intent?.getStringExtra(EXTRA_ALT)?.toDoubleOrNull() ?: DEFAULT_ALT,
             providers = providers,
+            rootMode = intent?.getBooleanExtra(EXTRA_ROOT, false) ?: false,
         )
     }
 
@@ -423,6 +466,7 @@ class MockService : Service() {
             alt = p.getString(KEY_ALT, null)?.toDoubleOrNull() ?: DEFAULT_ALT,
             providers = p.getString(KEY_PROVIDERS, null)?.split(',')
                 ?.map { it.trim() }?.filter { it.isNotEmpty() } ?: DEFAULT_PROVIDERS,
+            rootMode = p.getBoolean(KEY_ROOT_MODE, false),
         )
     }
 
@@ -435,6 +479,7 @@ class MockService : Service() {
             .putString(KEY_INTERVAL, intervalMs.toString())
             .putString(KEY_ALT, alt.toString())
             .putString(KEY_PROVIDERS, providers.joinToString(","))
+            .putBoolean(KEY_ROOT_MODE, rootMode)
             .apply()
     }
 
@@ -498,6 +543,8 @@ class MockService : Service() {
         const val EXTRA_RADIUS = "radius"
         const val EXTRA_INTERVAL = "interval"
         const val EXTRA_ALT = "alt"
+        const val EXTRA_ROOT = "root_mode"
+        const val KEY_ROOT_MODE = "svc_root_mode"
         const val EXTRA_PROVIDER = "provider"
         const val EXTRA_PROVIDERS = "providers"
         const val CMD_STOP = "stop"

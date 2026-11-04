@@ -19,6 +19,93 @@ import java.util.concurrent.TimeUnit
  */
 object RootInjector {
 
+    /**
+     * 持久 su 会话：巡检模式每 tick 都要注入，逐次 spawn su（每次过 KernelSU 校验）太重，
+     * 这里保持一个常驻 su 进程，命令经 stdin 流式下发。
+     *
+     * 两个坑已实测：
+     * - 输出必须有人消费（后台守护线程排空），否则 pipe 写满后 su 子进程整体阻塞；
+     * - 会话关闭时 KernelSU 会回收其子进程——nohup/setsid 都逃不掉（v1.0.0 脱离循环实验
+     *   结论），所以会话生命周期必须由 App 前台服务持有，脱离 root 循环方案作废。
+     */
+    object SuSession {
+        private var proc: Process? = null
+        private var stdin: java.io.OutputStream? = null
+
+        @Synchronized
+        fun alive(): Boolean = proc?.isAlive == true
+
+        @Synchronized
+        fun ensure(): Boolean {
+            if (alive()) return true
+            return runCatching {
+                val p = ProcessBuilder("su")
+                    .redirectErrorStream(true)
+                    .start()
+                // 排空线程：巡检的 cmd 输出只进黑洞（诊断靠 dumpsys 读回，不靠这里）。
+                Thread {
+                    runCatching { p.inputStream.use { it.readBytes() } }
+                }.apply { isDaemon = true }.start()
+                proc = p
+                stdin = p.outputStream
+                true
+            }.getOrElse { false }
+        }
+
+        @Synchronized
+        fun send(commands: List<String>): Boolean {
+            if (!ensure()) return false
+            return runCatching {
+                val w = stdin ?: return false
+                commands.forEach { w.write((it + "\n").toByteArray()) }
+                w.flush()
+                true
+            }.getOrElse {
+                close()
+                false
+            }
+        }
+
+        @Synchronized
+        fun close() {
+            runCatching { stdin?.write("exit\n".toByteArray()); stdin?.flush() }
+            runCatching { proc?.destroy() }
+            proc = null
+            stdin = null
+        }
+    }
+
+    /** AGPS 辅助数据清理：换点后旧星历会让收敛变慢甚至先跳回旧点。 */
+    fun agpsPurge(): Boolean = SuSession.send(
+        listOf("cmd location send-extra-command gps delete_aiding_data 2>/dev/null; true"),
+    )
+
+    /** 按 uid 掐网（v4+v6 双栈）；uid 由包名解析，失败即跳过该包。 */
+    fun netcutApply(packages: List<String>): Boolean {
+        if (packages.isEmpty()) return netcutClear()
+        val cmds = mutableListOf(
+            "iptables -S OUTPUT 2>/dev/null | grep mockloc-netcut | sed 's/^-A/-D/' | while read -r r; do sh -c \"iptables \$r\"; done; true",
+            "ip6tables -S OUTPUT 2>/dev/null | grep mockloc-netcut | sed 's/^-A/-D/' | while read -r r; do sh -c \"ip6tables \$r\"; done; true",
+        )
+        packages.forEach { pkg ->
+            cmds.add(
+                "uid=\$(stat -c %u /data/data/$pkg 2>/dev/null); " +
+                    "[ -n \"\$uid\" ] || uid=\$(dumpsys package $pkg 2>/dev/null | sed -n 's/.*userId=\\([0-9]*\\).*/\\1/p' | head -n 1); " +
+                    "if [ -n \"\$uid\" ]; then " +
+                    "iptables -I OUTPUT -m owner --uid-owner \$uid -m comment --comment mockloc-netcut -j DROP 2>/dev/null; " +
+                    "ip6tables -I OUTPUT -m owner --uid-owner \$uid -m comment --comment mockloc-netcut -j DROP 2>/dev/null; fi; true",
+            )
+        }
+        return SuSession.send(cmds)
+    }
+
+    fun netcutClear(): Boolean = SuSession.send(
+        listOf(
+            "iptables -S OUTPUT 2>/dev/null | grep mockloc-netcut | sed 's/^-A/-D/' | while read -r r; do sh -c \"iptables \$r\"; done; true",
+            "ip6tables -S OUTPUT 2>/dev/null | grep mockloc-netcut | sed 's/^-A/-D/' | while read -r r; do sh -c \"ip6tables \$r\"; done; true",
+        ),
+    )
+
     // 15s, not the usual 8s: the first probe is the moment KernelSU/APatch pops its grant dialog,
     // and the user is allowed to be slower than that. A dismissed dialog still fails fast; only
     // an unanswered one waits.

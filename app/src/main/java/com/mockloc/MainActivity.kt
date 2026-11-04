@@ -100,6 +100,12 @@ class MainActivity : Activity() {
 
     private val navItems = mutableListOf<Ui.NavItem>()
 
+    /** 本轮注入是否走 ROOT 巡检（供状态页展示与停止路径选择）。 */
+    private var useRootPipeline = false
+
+    private fun serviceRunning(): Boolean =
+        prefs.getBoolean(MockService.KEY_SERVICE_RUNNING, false)
+
     /** 选中态是用户判断"我在哪一页"的唯一线索。 */
     private fun styleNav(selected: Int) {
         navItems.forEachIndexed { index, item -> item.restyle(index == selected) }
@@ -786,7 +792,6 @@ class MainActivity : Activity() {
             refreshStatus()
         }, ui.fill())
         actions.addView(ui.button("停止注入", Ui.Btn.DANGER) {
-            RootLoopManager.stop()
             startService(Intent(this@MainActivity, MockService::class.java)
                 .putExtra(MockService.EXTRA_CMD, "stop"))
             bridge.clear()
@@ -907,7 +912,7 @@ class MainActivity : Activity() {
                 append("  → 点下方「同步到模块」一键解决（需 KernelSU 给 mockloc 授权，允许一次即可）\n")
             }
             append("\n运行管线\n")
-            append("  ROOT 守护: ${if (RootLoopManager.running()) "运行中（nohup 循环）" else "未运行"}\n")
+            append("  ROOT 巡检: ${if (RootInjector.SuSession.alive() && serviceRunning()) "运行中（持久 su 会话）" else "未运行"}\n")
             append("  LSP 无痕: ${if (selfCheck()) "已挂载（档3）" else "未启用（可选）"}\n")
             append("  NETCUT 掐网: ${if (Config.netcutPkgs.isEmpty()) "未配置" else Config.netcutPkgs.joinToString()}\n")
             append("\n模块配置（${Config.DEFAULT_PATH}）\n")
@@ -1332,16 +1337,19 @@ class MainActivity : Activity() {
                     if (useRoot) {
                         bridge.publish(first.lat, first.lng, label, global = true)
                         val published = RootInjector.publishConfig(this@MainActivity, bridge.render())
-                        val loop = RootLoopManager.start(this@MainActivity)
-                        RootInjector.apply(
-                            first.lat, first.lng, bridge.injectionAcc(),
-                            DEFAULT_PROVIDERS.split(','), alt,
+                        useRootPipeline = true
+                        startForegroundService(
+                            Intent(this@MainActivity, MockService::class.java)
+                                .putExtra(MockService.EXTRA_CMD, "start")
+                                .putExtra(MockService.EXTRA_ROOT, true)
+                                .putExtra(MockService.EXTRA_PROVIDERS, DEFAULT_PROVIDERS)
+                                .putExtra(MockService.EXTRA_LAT, "%.7f".format(first.lat))
+                                .putExtra(MockService.EXTRA_LNG, "%.7f".format(first.lng))
+                                .putExtra(MockService.EXTRA_ACC, "%.1f".format(bridge.injectionAcc()))
+                                .putExtra(MockService.EXTRA_ALT, "%.1f".format(alt))
+                                .putExtra(MockService.EXTRA_INTERVAL, bridge.injectionIntervalSec().toString()),
                         )
-                        toast(
-                            if (published && loop) "路线启动（ROOT 守护 + 循环推进）"
-                            else if (published) "路线启动（root 一次性，守护启动失败）"
-                            else "root 配置写入失败",
-                        )
+                        toast(if (published) "路线启动（ROOT 巡检 + 路线推进）" else "路线启动（conf 发布失败）")
                     } else {
                         bridge.publish(first.lat, first.lng, label, global = false)
                         startForegroundService(
@@ -1476,16 +1484,22 @@ class MainActivity : Activity() {
                     if (useRoot) {
                         bridge.publish(lat, lng, label, global = true)
                         val published = RootInjector.publishConfig(this@MainActivity, bridge.render())
-                        // ROOT-only 管线：nohup root 循环维持 provider（App 关掉/被回收不断供），
-                        // 循环自身完成重注入 + AGPS 清理 + NETCUT；一次性的 apply 只作立即见效。
-                        val loop = RootLoopManager.start(this@MainActivity)
-                        val out = RootInjector.apply(
-                            lat, lng, bridge.injectionAcc(),
-                            DEFAULT_PROVIDERS.split(','), alt,
+                        // ROOT 管线：MockService 进入 patrol 模式，用持久 su 会话每 tick
+                        // 重注入（identity=0，目标进程零侵入；无 LSP 时的推荐形态）。
+                        useRootPipeline = true
+                        startForegroundService(
+                            Intent(this@MainActivity, MockService::class.java)
+                                .putExtra(MockService.EXTRA_CMD, "start")
+                                .putExtra(MockService.EXTRA_ROOT, true)
+                                .putExtra(MockService.EXTRA_PROVIDERS, DEFAULT_PROVIDERS)
+                                .putExtra(MockService.EXTRA_LAT, "%.7f".format(lat))
+                                .putExtra(MockService.EXTRA_LNG, "%.7f".format(lng))
+                                .putExtra(MockService.EXTRA_ACC, "%.1f".format(bridge.injectionAcc()))
+                                .putExtra(MockService.EXTRA_RADIUS, "%.1f".format(bridge.injectionRadius()))
+                                .putExtra(MockService.EXTRA_ALT, "%.1f".format(alt))
+                                .putExtra(MockService.EXTRA_INTERVAL, bridge.injectionIntervalSec().toString()),
                         )
-                        if (published) {
-                            toast(if (loop) "已注入（ROOT 守护运行中）" else "已注入（root 一次性，守护启动失败）")
-                        } else toast("root 配置写入失败：${out.take(60)}")
+                        toast(if (published) "已注入（ROOT 巡检运行中）" else "已注入（root，conf 发布失败）")
                     } else {
                         // Same point into the module's channel, so 档 3 stops disagreeing with 档 1 (ModuleBridge).
                         bridge.publish(lat, lng, label, global = false)
