@@ -1112,7 +1112,14 @@ FakeLoc/XposedFakeLocation 都有同样的取舍，并用"每个字段单独开�
     d ✓ **NETCUT 双栈**：iptables+ip6tables 按 uid DROP（Amap 10328 + Oplus fusion 10222 双规则
     set→verify→clear 全通过）；
     e ✓ **停止清理**：teardown 后 [mock] 计数归零；
-    f ✓ **App UI 注入**：重新选点+注入后 3 provider 恢复，dumpsys 精度画像字段完整。
+    f ✓ **App UI 注入**：重新选点+注入后 3 provider 恢复，dumpsys 精度画像字段完整
+    （`alt=11.0 vAcc=8.0 mslAlt=11.0 mslAltAcc=8.0 vel=0.0 sat=7 maxCn0=44 meanCn0=36`）。
+    g ✓ **su 授权后 ROOT 巡检 120s soak**：identity=1000/android[LocationService]，时间戳精确
+    递增（T+0/60/120 三点 et 差值 = 60s/60s），3 provider 存活，零崩溃——巡检模式实测定案。
+    h ⚠ **App force-stop 后 provider 归零**（ROOT 与档0 同限）——test provider 生命周期绑定
+    注册者 binder，force-stop 杀掉整组进程后 system_server 清理。持久性需 KernelSU 模块的
+    boot 脚本（service.sh 独立于 App 进程常驻）；App 内巡检模式的优势在 identity=0 +
+    NETCUT + AGPS + 无 app-op 依赖，不在 provider 存活。
     已知限制（ROM/安装状态相关，非代码 bug）：
     - ColorOS 重启后自启动管理会冻结 App（LAUNCHER intent 解析不到），须用户手动点图标解锁或
       到 设置→电池→应用启动管理 允许自启动；
