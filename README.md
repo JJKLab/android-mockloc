@@ -1103,6 +1103,15 @@ FakeLoc/XposedFakeLocation 都有同样的取舍，并用"每个字段单独开�
     对比差 ~500m 属坐标系不同，不是偏移。
     e. **UI**：全部按钮换圆角工厂样式（实心蓝=主操作、浅蓝=次操作）；tab 选中态（一眼看出在哪页）；
     风险 chip 竖排文字气泡修复（单行+省略，"卫星视图!"短标签）；状态行单行省略。
+38. **v1.0.0（ROOT-only 管线）的装机验收判据**：
+    a. App 内注入（su 已授权）→ `dumpsys location` 出现 `identity=0/android[LocationService]` 的
+    gps/network/fused `[mock]`；`/data/adb/mockloc/loop.pid` 存在且 /proc/<pid> 活着。
+    b. App 被杀（force-stop）后 provider 仍在（nohup 循环独立于 App）——与档0 的本质差异。
+    c. 策略页勾选高德保存 → `iptables -S OUTPUT | grep mockloc-netcut` 出现高德 uid 的 v4+v6 两条
+    DROP；取消勾选 → 规则消失。
+    d. 注入新点后 `cmd location send-extra-command gps delete_aiding_data` 在服务日志出现一次。
+    e. 重启手机 → BOOT 后 1 分钟内 provider 自动回来（root 循环重拉）。
+    f. LSP 未启用时以上全部成立（ROOT-only 形态）；启用 LSP 后微信按档3 走，两条管线并存。
 37. **v0.9.0 的装机验收判据**（MD3 重设计，设备离线，以下待装机勾）：
     a. **动态取色**：Android 12+ 上换壁纸 → 重开 App，主色/容器色跟随壁纸（亮度带挑选 +
     静态兜底；PaletteCheck 20 项数学断言在 JVM 已验：对比度底线 primary≥4.5、正文≥7）。
@@ -1460,3 +1469,35 @@ FakeLoc/XposedFakeLocation 都有同样的取舍，并用"每个字段单独开�
   ⑤ 本地 typecheck 需 R 存根（`.toolchain/stubs/com/mockloc/R.kt`，tc.sh 已挂；CI 用 AGP 真 R）。
   本地：typecheck 0 error、五校验器（新增 PaletteCheck）全过、test_coords/test_manifest 全过。
   真机验收 C37 待装机。
+
+
+## 附录 F · Android 12–17 兼容矩阵与厂商守卫（v1.0.0）
+
+| 版本 | 与本 App 相关的差异 | 代码落点 | 验证 |
+|---|---|---|---|
+| 12 (API 31) | PendingIntent 必须声明可变性；`ProviderProperties` 构造器替代 10 参 addTestProvider；Material You 调色板出现 | `FLAG_IMMUTABLE` 全用；`Build.VERSION>=R` 走 Builder；`Md.resolve` 动态取色（`>=31`） | 0.9.x 起全量走此分支 |
+| 13 (API 33) | `POST_NOTIFICATIONS` 运行时权限；通知不授则 FGS 通知不可见 | 启动时三权限合并申请；无授权走普通通知 |PJF110 实测 |
+| 14 (API 34) | location 型 FGS 启动前必须已持 while-in-use 定位权限，否则 startForeground 抛异常；`Location.mslAltitudeMeters` 出现 | `MockService.onCreate` 无权限拒启；`BootReceiver` 无权限静默；精度画像补 MSL（`>=UPSIDE_DOWN_CAKE`） | PJF110(API 36) 覆盖此分支 |
+| 15 (API 35) | edge-to-edge 强制；BOOT_COMPLETED 拉部分类型 FGS 受限 | `fitsSystemWindows`；BOOT 恢复失败降级为可点通知 | 实测 |
+| 16 (API 36) | `Location.readFromParcel` 从公开面移除（档3 旧钩子失效点）；predictive back | 档3 对 API36 重核过（B4）；manifest 主题无 actionBar | 实测 |
+| 17 (API 37) | 预计兼容：cmd location 语法与 FGS 语义未变；`targetSdk=36` 规避新行为差异 | 待真机验证 | NOT RUN |
+
+通用守卫：无 native 库（16KB 页大小无关）；`cmd location providers` 语法自 10 起稳定（A1 逐条核过 LocationShellCommand 原文）；root(0) 不受 `MANAGE_APP_OPS_MODES` 被 OEM 摘除影响（appops set 0 在脚本内）。
+
+厂商守卫（ROOT 管线视角）：**ColorOS/Oplus**（本机）——shell 被摘 appop 授权，App 内走 su(0)；厂商融合进程 `com.oplus.location(-proxy)` 已在 netcut 候选。**MIUI**——"模糊定位"作用于 App 侧请求精度，root provider 直接替位不受影响；澎湃的杀后台对 nohup root 循环无效（init 外进程组），自启动白名单只影响 App UI 层。**三星/华为**——`com.samsung.android.location` / `com.huawei.location` 在 netcut 候选清单内按装机过滤。全部候选见 `RootLoopManager` 相关策略页说明（按装机包名过滤，未装不选）。
+
+- **v1.0.0**（2026-11-05）ROOT-only 管线转正（用户决策：系统体优先，LSP 降为可选不绑定）+ 厂商/版本审计：
+  ① **App 内嵌 root 循环**：`RootLoopManager` 把与 KernelSU 模块同源的脚本（assets/rootmodule，
+  CI 逐字节同步断言 test_assets_sync.py 挂进 logic job）安装到 /data/adb/mockloc/，su nohup 拉起
+  service.sh——provider 由 root 循环维持，App 关掉/被 OEM 回收不断供（A10"provider 随注册进程回收"
+  的结构性解法）；注入=发布 conf + 拉循环 + 一次性 apply 立即见效；停止=杀循环 + 拆 provider +
+  清 netcut；BOOT 后 root 循环优先重拉（App 进程可死）。
+  ② **NETCUT 进渲染器**（策略页致盲名单两用：ROOT=按 uid 掐网 v4+v6 双栈，LSP=进程内致盲）；
+  保存即经 su 发布，循环下一 tick 应用。挖潜来源：allmapLocation 的双栈教训 + 本机
+  com.oplus.location(-proxy) 实装确认。
+  ③ **AGPS 清理**：UP 0→1 转换时 `delete_aiding_data` 一次（换点后旧星历不拖新点收敛）。
+  ④ **精度画像**（借鉴 FakeLoc，MIT）：垂直精度=1.6×水平、速度精度=0.6、API 34+ 补 MSL 海拔——
+  "所有不确定度都完美"的假点自身特征消除。
+  ⑤ 循环 pidfile + 日志落 /data/adb/mockloc/；状态页新增"运行管线"三行（ROOT 守护/LSP/NETCUT）。
+  ⑥ Android 12–17 兼容矩阵落附录 F（每版本的代码落点与验证状态）。
+  本地：typecheck 0 error、六校验器全过、四套 Python 测试（含新资产同步）全过、sh -n 全过。

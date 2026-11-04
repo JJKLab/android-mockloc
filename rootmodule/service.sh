@@ -25,6 +25,7 @@ INTERVAL=$(cfg_get MOCKLOC_LOOP_INTERVAL)
 case "$INTERVAL" in ''|*[!0-9]*) INTERVAL=1 ;; esac
 [ "$INTERVAL" -ge 1 ] || INTERVAL=1
 UP=0
+echo $$ > /data/adb/mockloc/loop.pid 2>/dev/null
 
 # Two independent layers, so "global" and "per-app" can coexist:
 #   MOCKLOC_GLOBAL  -> this loop maintains the system test provider (every app, isMock()=true)
@@ -61,7 +62,12 @@ while :; do
         fi
         apply_once "$p" "$JLAT" "$JLNG" "$ACC"
       done
-      UP=1
+      if [ "$UP" != 1 ]; then
+        # 换点后清一次 AGPS 辅助数据：真实位置参与过的星历/辅助会让新点收敛变慢甚至先跳回旧点。
+        cmd location send-extra-command gps delete_aiding_data 2>/dev/null
+        UP=1
+        echo "mockloc: providers up at $(date)" >> /data/adb/mockloc/service.log
+      fi
     fi
   elif [ "$UP" = 1 ]; then
     for p in $(printf '%s' "$PROVIDERS" | tr ',' ' '); do

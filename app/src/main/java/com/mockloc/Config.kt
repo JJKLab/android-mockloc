@@ -85,6 +85,11 @@ object Config {
     var forgeWifi: Boolean = false
         private set
 
+    /** ROOT 管线按 uid 掐网的包名（rootmodule netcut_apply 消费），状态页展示用。 */
+    @Volatile
+    var netcutPkgs: Set<String> = emptySet()
+        private set
+
     @Volatile
     var gmsSpoof: Boolean = true
         private set
@@ -215,6 +220,7 @@ object Config {
         val nextAppPoints = HashMap<String, DoubleArray>()
         var nextStackClean = true
         val nextHide = LinkedHashSet<String>()
+        val nextNetcut = LinkedHashSet<String>()
         var nextSensorFreeze = false
         var nextForgeWifi = false
         var nextGms = true
@@ -262,6 +268,8 @@ object Config {
                 "MOCKLOC_GMS" -> nextGms = value != "false" && value != "0"
                 "MOCKLOC_HIDE_PKGS" -> value.split(',').map { it.trim() }
                     .filter { it.isNotEmpty() }.forEach { nextHide.add(it) }
+                "MOCKLOC_NETCUT" -> value.split(',').map { it.trim() }
+                    .filter { it.isNotEmpty() }.forEach { nextNetcut.add(it) }
                 else -> {
                     // Per-app fixed points: MOCKLOC_APP.<pkg>=lat,lng[,acc]. The key contains a dot
                     // by design, which the indexOf('=') split above handles natively.
@@ -291,6 +299,7 @@ object Config {
         appPoints = nextAppPoints
         stackClean = nextStackClean
         hidePkgs = nextHide
+        netcutPkgs = nextNetcut
         sensorFreeze = nextSensorFreeze
         forgeWifi = nextForgeWifi
         gmsSpoof = nextGms

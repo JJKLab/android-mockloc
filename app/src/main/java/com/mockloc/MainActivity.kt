@@ -753,8 +753,17 @@ class MainActivity : Activity() {
         bridge.setBlindScope(Scope.only(picked))
         toast(
             if (picked.isEmpty()) "已清空：没有 App 需要抽空输入"
-            else "已选 ${picked.size} 个；跑 tools/mockloc.py sync 或刷 root 模块后生效，且要重启目标 App"
+            else "已选 ${picked.size} 个（ROOT 守护=掐网；LSP=进程内致盲）"
         )
+        // ROOT 守护运行时，conf 一发布循环就在下一个 tick 应用（掐网即时生效，无需重启目标 App）；
+        // LSP 路径的致盲钩子仍按进程启动时装，改动后要重启目标 App。
+        thread {
+            runCatching {
+                if (RootInjector.rootAvailable()) {
+                    RootInjector.publishConfig(this@MainActivity, bridge.render())
+                }
+            }
+        }
         refreshStatus()
     }
 
@@ -776,7 +785,8 @@ class MainActivity : Activity() {
             btn.text = if (bridge.probe()) "探针：开" else "探针：关"
             refreshStatus()
         }, ui.fill())
-        actions.addView(ui.button("停止注入") {
+        actions.addView(ui.button("停止注入", Ui.Btn.DANGER) {
+            RootLoopManager.stop()
             startService(Intent(this@MainActivity, MockService::class.java)
                 .putExtra(MockService.EXTRA_CMD, "stop"))
             bridge.clear()
@@ -896,6 +906,10 @@ class MainActivity : Activity() {
                 append("  档 3 会用模块那份覆盖，所以目标 App 可能仍显示模块里的点。\n")
                 append("  → 点下方「同步到模块」一键解决（需 KernelSU 给 mockloc 授权，允许一次即可）\n")
             }
+            append("\n运行管线\n")
+            append("  ROOT 守护: ${if (RootLoopManager.running()) "运行中（nohup 循环）" else "未运行"}\n")
+            append("  LSP 无痕: ${if (selfCheck()) "已挂载（档3）" else "未启用（可选）"}\n")
+            append("  NETCUT 掐网: ${if (Config.netcutPkgs.isEmpty()) "未配置" else Config.netcutPkgs.joinToString()}\n")
             append("\n模块配置（${Config.DEFAULT_PATH}）\n")
             append("  开关=${onOff(Config.enabled)} 全局=${onOff(Config.global)} 卫星=${onOff(Config.gnssSpoof)} ")
             append("探针=${onOff(Config.probe)}\n")
@@ -1318,11 +1332,16 @@ class MainActivity : Activity() {
                     if (useRoot) {
                         bridge.publish(first.lat, first.lng, label, global = true)
                         val published = RootInjector.publishConfig(this@MainActivity, bridge.render())
+                        val loop = RootLoopManager.start(this@MainActivity)
                         RootInjector.apply(
                             first.lat, first.lng, bridge.injectionAcc(),
                             DEFAULT_PROVIDERS.split(','), alt,
                         )
-                        toast(if (published) "路线启动（root 档2，模块循环推进）" else "root 配置写入失败")
+                        toast(
+                            if (published && loop) "路线启动（ROOT 守护 + 循环推进）"
+                            else if (published) "路线启动（root 一次性，守护启动失败）"
+                            else "root 配置写入失败",
+                        )
                     } else {
                         bridge.publish(first.lat, first.lng, label, global = false)
                         startForegroundService(
@@ -1457,11 +1476,16 @@ class MainActivity : Activity() {
                     if (useRoot) {
                         bridge.publish(lat, lng, label, global = true)
                         val published = RootInjector.publishConfig(this@MainActivity, bridge.render())
+                        // ROOT-only 管线：nohup root 循环维持 provider（App 关掉/被回收不断供），
+                        // 循环自身完成重注入 + AGPS 清理 + NETCUT；一次性的 apply 只作立即见效。
+                        val loop = RootLoopManager.start(this@MainActivity)
                         val out = RootInjector.apply(
                             lat, lng, bridge.injectionAcc(),
                             DEFAULT_PROVIDERS.split(','), alt,
                         )
-                        if (published) toast("已注入（root 直写，档2）") else toast("root 配置写入失败：${out.take(60)}")
+                        if (published) {
+                            toast(if (loop) "已注入（ROOT 守护运行中）" else "已注入（root 一次性，守护启动失败）")
+                        } else toast("root 配置写入失败：${out.take(60)}")
                     } else {
                         // Same point into the module's channel, so 档 3 stops disagreeing with 档 1 (ModuleBridge).
                         bridge.publish(lat, lng, label, global = false)

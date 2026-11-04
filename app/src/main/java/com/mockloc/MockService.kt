@@ -181,6 +181,15 @@ class MockService : Service() {
         altitude = altMeters
         speed = speedMps
         bearing = bearingDeg
+        // 精度画像（借鉴 FakeLoc）：真实硬件的垂直/速度精度与水平精度近似恒比，
+        // 缺省不填会让"所有不确定度都完美"的假点成为自身特征。
+        verticalAccuracyMeters = acc * 1.6f
+        speedAccuracyMetersPerSecond = if (speedMps > 0f) 0.6f else 0.0f
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            // 平均海平面海拔（Android 14+）：与 altitude 同源，检测方交叉核对时两值自洽。
+            mslAltitudeMeters = altMeters
+            mslAltitudeAccuracyMeters = acc * 1.6f
+        }
         time = System.currentTimeMillis()
         elapsedRealtimeNanos = SystemClock.elapsedRealtime() * 1_000_000L
         extras = android.os.Bundle().apply {

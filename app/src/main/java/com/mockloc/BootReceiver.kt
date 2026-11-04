@@ -22,6 +22,11 @@ class BootReceiver : BroadcastReceiver() {
         val prefs = context.getSharedPreferences(MockService.PREFS, Context.MODE_PRIVATE)
         if (!prefs.getBoolean(MockService.KEY_SERVICE_RUNNING, false)) return
         if (prefs.getString(MockService.KEY_LAT, null).isNullOrEmpty()) return
+        // ROOT 管线优先：conf 与脚本都在 /data/adb 持久化，重拉 nohup 循环即可，
+        // 不需要前台服务（provider 由 root 循环维持，App 进程可死）。
+        if (RootInjector.rootAvailable(force = true) && RootLoopManager.start(context)) {
+            return
+        }
         try {
             context.startForegroundService(
                 Intent(context, MockService::class.java)

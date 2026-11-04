@@ -101,8 +101,12 @@ route_pos() {
 # moves Amap. Rules carry a marker comment so teardown can find exactly ours; the package list is
 # cached and only re-resolved when the config changes (stat per app per second would churn).
 netcut_teardown() {
+  # IPv4/IPv6 双栈：只掐 v4 会从 v6 泄漏真实网络侧定位线索（allmapLocation 同款教训）。
   iptables -S OUTPUT 2>/dev/null | grep 'mockloc-netcut' | sed 's/^-A/-D/' | while read -r rule; do
     sh -c "iptables $rule" 2>/dev/null
+  done
+  ip6tables -S OUTPUT 2>/dev/null | grep 'mockloc-netcut' | sed 's/^-A/-D/' | while read -r rule; do
+    sh -c "ip6tables $rule" 2>/dev/null
   done
   rm -f "$NETCUT_STATE"
 }
@@ -129,6 +133,8 @@ netcut_apply() {
     fi
     iptables -I OUTPUT -m owner --uid-owner "$_uid" -m comment --comment mockloc-netcut -j DROP 2>/dev/null ||
       echo "mockloc: netcut iptables failed for $pkg (uid=$_uid)" >> /data/adb/mockloc/service.log
+    ip6tables -I OUTPUT -m owner --uid-owner "$_uid" -m comment --comment mockloc-netcut -j DROP 2>/dev/null ||
+      echo "mockloc: netcut ip6tables failed for $pkg (uid=$_uid)" >> /data/adb/mockloc/service.log
   done
 }
 

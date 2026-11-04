@@ -226,6 +226,8 @@ class ModuleBridge(context: Context) {
         providers = prefs.getString(KEY_PROVIDERS, DEFAULT_PROVIDERS).orEmpty(),
         probe = prefs.getBoolean(KEY_PROBE, false),
         blind = blindScope(),
+        // ROOT-only 管线的"抽空输入"=按 uid 掐网，名单与 LSP 致盲同源（策略页一次保存两用）。
+        netcut = blindScope().packages.toList(),
         global = prefs.getBoolean(KEY_GLOBAL, false),
         acc = prefs.getString(KEY_ACC, DEFAULT_ACC).orEmpty(),
         radius = prefs.getString(KEY_RADIUS, DEFAULT_RADIUS).orEmpty(),
@@ -292,6 +294,7 @@ class ModuleBridge(context: Context) {
             providers: String = DEFAULT_PROVIDERS,
             probe: Boolean = false,
             blind: Scope = Scope.None,
+            netcut: List<String> = emptyList(),
             global: Boolean = false,
             acc: String = DEFAULT_ACC,
             radius: String = DEFAULT_RADIUS,
@@ -323,6 +326,7 @@ class ModuleBridge(context: Context) {
             appendLine("MOCKLOC_GNSS=true")
             appendLine("MOCKLOC_BLIND_WIFI=${blind.render()}")
             appendLine("MOCKLOC_BLIND_CELL=${blind.render()}")
+            appendLine("MOCKLOC_NETCUT=${netcut.joinToString(",")}")
             appendLine("MOCKLOC_PROBE=${if (probe) "true" else "false"}")
             appendLine("MOCKLOC_SPEED_MPS=${if (speed.isBlank()) DEFAULT_SPEED else speed}")
             appendLine("MOCKLOC_ROUTE_WAYPOINTS=$routeWaypoints")
