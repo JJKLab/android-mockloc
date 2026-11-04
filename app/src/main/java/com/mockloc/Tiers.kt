@@ -8,7 +8,7 @@ import android.provider.Settings
  * What each privilege tier can actually do, and what each known target app needs.
  *
  * The rows below are measurements from this device (OnePlus Ace 3V / Android 16 / KernelSU +
- * Stellar), not folklore. They matter because the tiers are *not* a ladder: 0, 1 and 2 all hand the
+ * LSP branch manager), not folklore. They matter because the tiers are *not* a ladder: 0, 1 and 2 all hand the
  * target app the same thing - one extra mock provider in the system - so an app that ignores the
  * mock provider at Tier 0 ignores it at Tier 2 as well. What genuinely differs is whether we touch
  * the app's radio inputs, and whether we run inside its process.

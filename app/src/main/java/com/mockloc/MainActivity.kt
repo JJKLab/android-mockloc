@@ -55,10 +55,16 @@ class MainActivity : Activity() {
     private lateinit var searchSheet: View
     private lateinit var searchBar: View
     private lateinit var pickPanel: View
-    private lateinit var statusText: TextView
-    private lateinit var tierChips: LinearLayout
-    private lateinit var riskChips: LinearLayout
-    private lateinit var riskText: TextView
+    private lateinit var statusBigText: TextView
+    private lateinit var statusCoordWgs: TextView
+    private lateinit var statusCoordGcj: TextView
+    private lateinit var statusTarget: TextView
+    private lateinit var stopBtn: Button
+    private lateinit var appRows: LinearLayout
+    private lateinit var diagSection: LinearLayout
+    private lateinit var diagToggleBtn: Button
+    private var diagExpanded = false
+    private lateinit var statusDetailText: TextView
     private lateinit var keyField: EditText
     private lateinit var queryField: EditText
     private lateinit var pasteField: EditText
@@ -775,42 +781,158 @@ class MainActivity : Activity() {
 
     private fun statusPage(): View {
         val page = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        tierChips = ui.chipRow().apply { setPadding(ui.dp(12), ui.dp(10), ui.dp(12), 0) }
-        riskChips = ui.chipRow().apply { setPadding(ui.dp(12), ui.dp(4), ui.dp(12), 0) }
-        riskText = TextView(this).apply {
-            textSize = 12f
-            setPadding(ui.dp(14), ui.dp(2), ui.dp(14), ui.dp(2))
-            setTextColor(ui.hintColor())
+
+        // ---- 当前状态卡 ----
+        val statusCard = ui.card()
+        statusBigText = TextView(this).apply {
+            textSize = 20f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setPadding(0, 0, 0, ui.dp(4))
         }
-        statusText = TextView(this).apply { setPadding(ui.dp(14), ui.dp(6), ui.dp(14), ui.dp(6)) }
-        val actions = ui.row().apply { setPadding(ui.dp(10), ui.dp(6), ui.dp(10), ui.dp(8)) }
-        actions.addView(ui.button("刷新") { refreshStatus() }, ui.fill())
-        actions.addView(ui.button("同步到模块", Ui.Btn.PRIMARY) { onSyncToModule() }, ui.fill())
-        actions.addView(ui.button(if (bridge.probe()) "探针：开" else "探针：关") { btn ->
-            bridge.setProbe(!bridge.probe())
-            btn.text = if (bridge.probe()) "探针：开" else "探针：关"
-            refreshStatus()
-        }, ui.fill())
-        actions.addView(ui.button("停止注入", Ui.Btn.DANGER) {
+        statusCard.addView(statusBigText)
+        statusCoordWgs = TextView(this).apply { textSize = 14f; setTextColor(ui.bodyColor()) }
+        statusCard.addView(statusCoordWgs)
+        statusCoordGcj = TextView(this).apply { textSize = 14f; setTextColor(ui.hintColor()) }
+        statusCard.addView(statusCoordGcj)
+        statusTarget = TextView(this).apply {
+            textSize = 12f; setTextColor(ui.hintColor()); setPadding(0, ui.dp(4), 0, 0)
+        }
+        statusCard.addView(statusTarget)
+        stopBtn = ui.button("停止注入", Ui.Btn.DANGER) {
             startService(Intent(this@MainActivity, MockService::class.java)
                 .putExtra(MockService.EXTRA_CMD, "stop"))
             bridge.clear()
-            // If a root publish ever built providers from the App, stop has to tear those
-            // down too or the system keeps serving the old point after "停止".
             thread {
                 val out = RootInjector.teardown(DEFAULT_PROVIDERS.split(','))
                 runOnUiThread {
                     refreshStatus()
-                    if (out.contains("Error") || out.contains("denied")) toast("root 侧停止异常：${out.take(60)}")
+                    if (out.contains("Error") || out.contains("denied")) toast("root 停止异常：${out.take(60)}")
                 }
             }
-        }, ui.fill())
-        page.addView(tierChips)
-        page.addView(riskChips)
-        page.addView(riskText)
-        page.addView(ScrollView(this).apply { addView(statusText) }, weightParams())
+        }
+        stopBtn.visibility = View.GONE
+        statusCard.addView(stopBtn, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT,
+        ).apply { topMargin = ui.dp(10) })
+        page.addView(statusCard)
+
+        // ---- 目标 App 快捷控制 ----
+        val appCard = ui.card()
+        appCard.addView(ui.title("目标 App"))
+        appRows = ui.column()
+        appCard.addView(appRows)
+        appCard.addView(ui.button("更多 App → 策略页", Ui.Btn.GHOST) { openTab(TABS.indexOf("策略")) },
+            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        page.addView(appCard)
+
+        // ---- 操作行 ----
+        val actions = ui.row().apply { setPadding(ui.dp(10), ui.dp(6), ui.dp(10), ui.dp(4)) }
+        actions.addView(ui.button("同步到模块", Ui.Btn.PRIMARY) { onSyncToModule() }, ui.fill())
+        actions.addView(ui.button("刷新") { refreshStatus() }, ui.fill())
+        diagToggleBtn = ui.button("诊断详情 ▼") { toggleDiag() }
+        actions.addView(diagToggleBtn, ui.fill())
         page.addView(actions)
-        return page
+
+        // ---- 诊断详情（折叠）----
+        diagSection = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        statusDetailText = TextView(this).apply {
+            textSize = 12f
+            setTextColor(ui.bodyColor())
+            setPadding(ui.dp(14), ui.dp(6), ui.dp(14), ui.dp(6))
+            setLineSpacing(0f, 1.15f)
+        }
+        diagSection.addView(statusDetailText)
+        diagSection.visibility = View.GONE
+        page.addView(diagSection)
+
+        return ScrollView(this).apply { addView(page); isFillViewport = true }
+    }
+
+    private fun toggleDiag() {
+        diagExpanded = !diagExpanded
+        diagSection.visibility = if (diagExpanded) View.VISIBLE else View.GONE
+        diagToggleBtn.text = if (diagExpanded) "诊断详情 ▲" else "诊断详情 ▼"
+    }
+
+    /** 常用目标 App 与管线的对应关系。needsLsp = 该 App 只能通过 LSP 进程内改写生效。 */
+    private data class KnownApp(val label: String, val pkg: String, val needsLsp: Boolean = false)
+
+    private val KNOWN_APPS = listOf(
+        KnownApp("高德地图", "com.autonavi.minimap"),
+        KnownApp("微信", "com.tencent.mm", needsLsp = true),
+        KnownApp("美团", "com.sankuai.meituan"),
+        KnownApp("大众点评", "com.dianping.v1"),
+    )
+
+    private fun renderAppRows() {
+        appRows.removeAllViews()
+        for (app in KNOWN_APPS) {
+            val installed = runCatching {
+                packageManager.getPackageInfo(app.pkg, 0)
+            }.isSuccess
+            if (!installed) continue
+            val row = ui.row().apply { setPadding(0, ui.dp(6), 0, ui.dp(6)) }
+            row.addView(TextView(this).apply {
+                text = app.label
+                textSize = 14f
+                setTextColor(ui.bodyColor())
+            }, ui.fill())
+            if (app.needsLsp) {
+                // 微信等 App 自带定位 SDK 不读系统 provider，ROOT 管线改不到它，
+                // 只能在 LSP 管理器里把 mockloc 勾进作用域走进程内改写。
+                val lspOn = selfCheck() && Config.shouldSpoof(app.pkg)
+                row.addView(ui.chip(if (lspOn) "LSP ✓" else "需 LSP",
+                    if (lspOn) Ui.State.OK else Ui.State.WARN))
+                row.addView(ui.button("LSP 管理器", Ui.Btn.GHOST) {
+                    // 管理器包名随分支不同：原版 org.lsposed.manager，本机是 Stellar 分支。
+                    val intent = listOf("org.lsposed.manager", "roro.stellar.manager")
+                        .firstNotNullOfOrNull { packageManager.getLaunchIntentForPackage(it) }
+                    runCatching { startActivity(intent) }
+                        .onFailure { toast("找不到 LSP 管理器") }
+                })
+            } else {
+                // NETCUT 切换：root 管线按 uid 掐掉该 App 的真实网络定位。
+                val on = app.pkg in Config.netcutPkgs
+                val toggle = Button(this).apply {
+                    text = if (on) "掐网 ✓" else "掐网"
+                    isAllCaps = false
+                    setTextSize(12f)
+                    val (fill, fg) = if (on) Pair(Md.scheme.primaryContainer, Md.scheme.onPrimaryContainer)
+                                     else Pair(Md.scheme.surfaceHigh, Md.scheme.onSurfaceVariant)
+                    setTextColor(fg)
+                    background = GradientDrawable().apply {
+                        setColor(fill); cornerRadius = ui.dp(16).toFloat()
+                    }
+                    stateListAnimator = null
+                    setPadding(ui.dp(12), ui.dp(6), ui.dp(12), ui.dp(6))
+                }
+                toggle.setOnClickListener { toggleNetcut(app.pkg) }
+                row.addView(toggle)
+            }
+            appRows.addView(row, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT,
+            ))
+        }
+    }
+
+    /** 切换单个 App 的 NETCUT：更新 conf → 发布 → root 巡检下一 tick 应用 iptables。 */
+    private fun toggleNetcut(pkg: String) {
+        val current = Config.netcutPkgs.toMutableSet()
+        if (pkg in current) { current.remove(pkg); toast("已关闭 $pkg 掐网") }
+        else { current.add(pkg); toast("已开启 $pkg 掐网") }
+        bridge.setBlindScope(Scope.only(current.toList()))
+        thread {
+            runCatching {
+                if (RootInjector.rootAvailable()) {
+                    RootInjector.publishConfig(this@MainActivity, bridge.render())
+                    RootInjector.netcutApply(Config.netcutPkgs.toList())
+                }
+            }
+        }
+        thread {
+            runCatching { Thread.sleep(1500) }
+            runOnUiThread { refreshStatus() }
+        }
     }
 
     /**
@@ -855,35 +977,6 @@ class MainActivity : Activity() {
             .show()
     }
 
-    /**
-     * Risk card (REFACTOR-PLAN 阶段四, bounded version of 全域's 16-dim score): only facts this
-     * process can actually observe. Everything green = 低; a yellow = 中; a red = 高. It scores
-     * exposure, not "how well the spoof works" - the two get confused easily and only the first
-     * is measurable from here.
-     */
-    private fun renderRisk(mockActive: Boolean, mismatch: Boolean) {
-        val notes = Diagnostics.snapshot()
-        val items = listOf(
-            "注入" to if (mockActive) Ui.State.OK else Ui.State.OFF,
-            "配置一致" to if (!mismatch || !Config.enabled) Ui.State.OK else Ui.State.BAD,
-            "致盲" to if (Config.blindWifi.enabled || Config.blindCell.enabled) Ui.State.OK else Ui.State.OFF,
-            "挂钩台账" to if (notes.isEmpty()) Ui.State.OK else Ui.State.WARN,
-            "卫星视图!" to if (mockActive) Ui.State.WARN else Ui.State.OFF,
-        )
-        riskChips.removeAllViews()
-        items.forEach { (label, state) -> riskChips.addView(ui.chip(label, state)) }
-        val worst = when {
-            items.any { it.second == Ui.State.BAD } -> "高"
-            items.any { it.second == Ui.State.WARN } -> "中"
-            else -> "低"
-        }
-        riskText.text = buildString {
-            append("暴露风险（可观测面，非效果评估）：$worst")
-            if (mockActive) append(" · 档0/1/2 的卫星视图是结构性缺口（GnssStatus 在系统侧，本层改不了）")
-            if (notes.isNotEmpty()) append(" · 台账 ${notes.size} 条见下方")
-        }
-    }
-
     // ---------------------------------------------------------------- status
 
     private fun refreshStatus() {
@@ -891,55 +984,69 @@ class MainActivity : Activity() {
         val label = prefs.getString(KEY_LAST_LABEL, "")
         val fixes = readback()
         Config.refresh()
-        renderChips(fixes.any { "mock=true" in it })
-        renderStatusBar(fixes.any { "mock=true" in it }, label ?: "")
+        val mockActive = fixes.any { "mock=true" in it }
+        renderStatusBar(mockActive, label ?: "")
 
         val mismatch = Config.enabled && last != "无" &&
             (abs(Config.centerLat - lastLat()) > 1e-3 || abs(Config.centerLng - lastLng()) > 1e-3)
-        renderRisk(fixes.any { "mock=true" in it }, mismatch)
-        maybeAutoResume(fixes)
-        updateInjectMarker()
-        updatePastePreview()
 
-        statusText.text = buildString {
-            append("当前坐标（本 App 读回，WGS-84 原始值；与 GCJ 网页地图对比差 ~500m 属坐标系不同，不是偏移）\n")
+        // ---- 当前状态卡：一句话说清在不在跑 ----
+        statusBigText.text = when {
+            mockActive -> "● 模拟中"
+            Config.enabled -> "◐ 已配置未生效"
+            else -> "○ 未注入"
+        }
+        statusBigText.setTextColor(
+            if (mockActive) Md.scheme.primary else Md.scheme.onSurfaceVariant,
+        )
+        if (last != "无" && lastLat() != 0.0) {
+            statusCoordWgs.text = "WGS  ${"%.5f".format(lastLat())}, ${"%.5f".format(lastLng())}"
+            // 地图 App（高德/腾讯/百度）按 GCJ-02 瓦片渲染，注入的 WGS 值会被换算——
+            // 两行坐标差 ~500m 是坐标系不同，不是偏移（2026-11 实测高德蓝点位置正确）。
+            val g = CoordTransform.wgs84ToGcj02(lastLat(), lastLng())
+            statusCoordGcj.text = "高德显示位  ${"%.5f".format(g[0])}, ${"%.5f".format(g[1])}"
+            statusTarget.text = "目标：${label?.ifBlank { "手动坐标" } ?: "手动坐标"}"
+        } else {
+            statusCoordWgs.text = "尚未选择注入点"
+            statusCoordGcj.text = ""
+            statusTarget.text = ""
+        }
+        stopBtn.visibility = if (mockActive || serviceRunning()) View.VISIBLE else View.GONE
+
+        renderAppRows()
+
+        // ---- 诊断详情：技术细节收进折叠区，默认不展开 ----
+        statusDetailText.text = buildString {
+            append("系统 provider 读回\n")
             fixes.forEach { append("  $it\n") }
             if (mismatch) {
                 append("\n⚠ App 选点与模块配置不一致\n")
                 append("  App : $label $last\n")
                 append("  模块: ${Config.label} ${"%.5f".format(Config.centerLat)},${"%.5f".format(Config.centerLng)}\n")
-                append("  档 3 会用模块那份覆盖，所以目标 App 可能仍显示模块里的点。\n")
-                append("  → 点下方「同步到模块」一键解决（需 KernelSU 给 mockloc 授权，允许一次即可）\n")
+                append("  → 回到上方点「同步到模块」一键解决\n")
             }
             append("\n运行管线\n")
             append("  ROOT 巡检: ${if (RootInjector.SuSession.alive() && serviceRunning()) "运行中（持久 su 会话）" else "未运行"}\n")
-            append("  LSP 无痕: ${if (selfCheck()) "已挂载（档3）" else "未启用（可选）"}\n")
+            append("  LSP 模块: ${if (selfCheck()) "已挂载（进程内改写）" else "未启用（可选，微信等 App 需要）"}\n")
             append("  NETCUT 掐网: ${if (Config.netcutPkgs.isEmpty()) "未配置" else Config.netcutPkgs.joinToString()}\n")
             append("\n模块配置（${Config.DEFAULT_PATH}）\n")
-            append("  开关=${onOff(Config.enabled)} 全局=${onOff(Config.global)} 卫星=${onOff(Config.gnssSpoof)} ")
-            append("探针=${onOff(Config.probe)}\n")
-            append("  致盲 WiFi=${Config.blindWifi.render()} 基站=${Config.blindCell.render()} ")
-            append("WiFi伪造=${onOff(Config.forgeWifi)}\n")
-            append("  栈清洗=${onOff(Config.stackClean)} 传感器冻结=${onOff(Config.sensorFreeze)} ")
-            append("GMS接管=${onOff(Config.gmsSpoof)} 包隐藏=${Config.hidePkgs.size}个\n")
+            append("  开关=${onOff(Config.enabled)} 全局=${onOff(Config.global)} 卫星=${onOff(Config.gnssSpoof)}\n")
+            append("  致盲 WiFi=${Config.blindWifi.render()} 基站=${Config.blindCell.render()}\n")
             append("  路线=${if (Config.routeActive) "运行中 ${Config.routeWaypoints.size}点 @${Config.speedMps}m/s" else "未配置"}")
             append("  独立点位=${Config.appPoints.size}个\n")
-            append("  作用包名: ${if (Config.targets.isEmpty()) "LSPosed 作用域内全部" else Config.targets.joinToString()}\n")
             append("  读回: ${Config.lastError ?: "正常（写入于 ${Config.lastLoadedAgo}ms 前）"}\n")
-            // Measured on 2026-10-27: this is the one switch that moves Amap's blue dot, and the
-            // hooks that implement it are installed per process, so it needs an app restart.
-            append("  致盲这俩是高德唯一认的开关（它自己算路，不读系统定位）；开关改动要重启目标 App 才生效\n")
-            append("\n把 App 选点同步给模块\n")
-            append("  App 内: 点下方「同步到模块」（su 直写；首次会弹 KernelSU 授权，允许即可）\n")
-            append("  免PC备选: 刷 mockloc-root.zip，模块循环自动搬运\n")
-            append("  PC 最后手段: python tools/mockloc.py sync\n")
+            // 致盲是高德唯一认的开关（它自己算路不读系统定位）；改动要重启目标 App 生效。
+            append("\n高德提示：致盲 WiFi/基站是高德唯一认的开关，改动后要重启高德\n")
             val notes = Diagnostics.snapshot()
             if (notes.isNotEmpty()) {
-                append("\n本进程挂钩记录（目标进程里的同类记录看 logcat 的 mockloc tag）\n")
+                append("\n本进程挂钩记录\n")
                 notes.forEach { append("  $it\n") }
             }
-            append("\n注：以上只反映本 App 读到的值。目标 App 认不认，要在它里面主动发起一次定位请求、看返回坐标\n")
         }
+
+        maybeAutoResume(fixes)
+        updateInjectMarker()
+        updatePastePreview()
     }
 
     /**
@@ -966,19 +1073,6 @@ class MainActivity : Activity() {
     private fun hasLocationGrant(): Boolean =
         checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) ==
             android.content.pm.PackageManager.PERMISSION_GRANTED
-
-    private fun renderChips(mockActive: Boolean) {
-        tierChips.removeAllViews()
-        // Wording has to stay inside what this process can actually see: a mock=true read-back says
-        // "some test provider is live", not whether 档1 or 档2 put it there - only the config file's
-        // GLOBAL flag says a root module is the one maintaining it.
-        tierChips.addView(ui.chip("系统 mock 生效", if (mockActive) Ui.State.OK else Ui.State.OFF))
-        tierChips.addView(ui.chip("root 模块维持中", if (Config.global) Ui.State.OK else Ui.State.OFF))
-        // A grey 档3 pill means "this process is not in the module's scope", which is the normal
-        // configuration - not "the module is broken". Conflating those two cost a debugging round.
-        tierChips.addView(ui.chip("档3 无痕(本进程)", if (selfCheck()) Ui.State.OK else Ui.State.OFF))
-        if (!selfCheck()) tierChips.addView(ui.chip("本 App 未入作用域＝正常", Ui.State.OFF))
-    }
 
     /**
      * A force-stop or process reclaim takes the tier-0 provider with the app's own process, so

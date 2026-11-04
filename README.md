@@ -115,7 +115,7 @@ python tools/mockloc.py tiers
 （su 能不能用、shell uid 能否建 provider、模块 APK 与 `/data/adb/lspd` 是否存在），
 并且探针建的 provider 用完会自动删掉，不会把手机留在假位置状态。
 
-档 1 还有个免 PC 的变体：用 Shizuku（或 Stellar 这类 fork）以 shell 身份执行同样的
+档 1 还有个免 PC 的变体：用 Shizuku 以 shell 身份执行同样的
 `cmd location` 与 `appops` 命令——依据见 A5。
 
 ## 3. 编译（本机无安卓环境，全部交给 GitHub Actions）
@@ -247,7 +247,7 @@ with the same name" 对非 gps 名字同样有效。
 ### A0.1 二次实机核验（2026-10-26：档 2 首验、档 3 首验、高德/微信的真实答复）
 
 环境：装 `0.4.2-143edae`；hook 框架确实在跑（`ps` 里有 `lspd` 与 `zn-zygisk-companion64 zygisk_lsposed`，
-日志 tag 是 `LSPosedFramework`，管理器包名 `roro.stellar.manager`）；作用域=系统框架+高德地图+微信；
+日志 tag 是 `LSPosedFramework`，LSP 管理器（模块启停）包名 `roro.stellar.manager`）；作用域=系统框架+高德地图+微信；
 KernelSU 给 Shell 授权后 `adb shell su -c id` = `uid=0 ... context=u:r:ksu:s0`（**默认不给，要手动开**）。
 
 | 结论 | 证据 |
@@ -399,10 +399,12 @@ cmd location providers send-extra-command <PROVIDER> <COMMAND>
 - 配额：高德地理编码个人实名 **5000/天**；POI 搜索只有 100/天，所以默认走地理编码。
   `10001 INVALID_USER_KEY` 已用真请求实测（假 key），确认真实返回串与错误解析一致。
 
-## 附录 A5 Shizuku（含 Stellar 这类 fork）能做到哪一步
+## 附录 A5 Shizuku 级权限能做到哪一步
 
-先澄清事实：[roro2239/Stellar](https://github.com/roro2239/Stellar) 不是定位工具，它是 **Shizuku 的一个 fork**
-（"让应用通过 ADB 或 Root 权限使用系统级 API"）。所以问题实际是"只有 Shizuku 级权限时，虚拟定位能做到什么"。
+> **管理器口径（2026-11-05 按操作员澄清修正）**：本机两个管理器是两个东西，不要混称——
+> root 授权在 **KernelSU 管理器**（`me.weishu.kernelsu` v3.3.1）；
+> LSP 模块启停在 **LSP 管理器**（本机装的分支包名 `roro.stellar.manager` v1.1，日志 tag `LSPosedFramework`）。
+> 下文只讨论"shell 级权限"，与这两个管理器无涉。
 
 结论：**能做到全局虚拟定位，做不到无痕，也做不到按 App**。推理链是闭合的，不靠经验猜测：
 
@@ -420,7 +422,7 @@ cmd location providers send-extra-command <PROVIDER> <COMMAND>
 
 | 你手上只有 | 能拿到假位置 | 全体 App 一致 | 隐藏 mock 痕迹 | 指定某几个 App |
 |---|---|---|---|---|
-| Shizuku(ADB) / Stellar 同款 | ✅ | ✅ | ❌ | ❌ |
+| Shizuku(ADB) | ✅ | ✅ | ❌ | ❌ |
 | Shizuku(Root 模式) | ✅ | ✅ | ❌（同样没有注入能力） | ❌ |
 | root + LSPosed + 本项目模块 | ✅ | 可选 | ✅ | ✅ |
 | 开发者选项选定位 App | ✅ | ✅ | ❌ | ❌ |
@@ -1168,7 +1170,7 @@ FakeLoc/XposedFakeLocation 都有同样的取舍，并用"每个字段单独开�
     a ✓ 四按钮操作行就位（刷新/同步到模块/探针/停止注入），mismatch 文案指向 App 内按钮；
     b ✓ 判据可靠性反向验证：手动把 conf 写成另一个点 → 风险卡"配置一致 ✗"正确变红、暴露风险"高"；
        写回 App 选点 → 立即变绿"配置一致 ✓"、风险"中"——差异检测在毫秒级点位上也分得清；
-    c ✓ **唯一剩余的手工动作**：KernelSU/Stellar 管理器里给 mockloc 允许 root 一次（真机实锤当前为
+    c ✓ **唯一剩余的手工动作**：KernelSU 管理器里给 mockloc 允许 root 一次（真机实锤当前为
        静默拒绝——su 探测 4s 内失败、不弹授权框；授权状态在内核态，`ksud profile` 无授权 CLI，
        管理器 UI 是唯一入口，这也是一切 root 工具的标准安全模型）。允许后 App 内全链路自动：
        `inject()` 走档2（publishConfig+apply）、「同步到模块」走 su 直写，PC 永久退场。
