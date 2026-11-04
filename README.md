@@ -1103,7 +1103,27 @@ FakeLoc/XposedFakeLocation 都有同样的取舍，并用"每个字段单独开�
     对比差 ~500m 属坐标系不同，不是偏移。
     e. **UI**：全部按钮换圆角工厂样式（实心蓝=主操作、浅蓝=次操作）；tab 选中态（一眼看出在哪页）；
     风险 chip 竖排文字气泡修复（单行+省略，"卫星视图!"短标签）；状态行单行省略。
-38. **v1.0.0（ROOT-only 管线）的装机验收判据**：
+38. **v1.0.0/v1.0.1（ROOT-only 管线）装机实测结果**（PJF110 / ColorOS / Android 16 / KernelSU，全通过）：
+    a ✓ **CLI 等价注入**：`cmd location providers add/enable/set-test-provider-location` 经 su 跑 →
+    3 provider `[mock]`，identity=0/android + 0/com.android.location.fused（root 身份）；
+    b ✓ **60s soak**：每秒重注入，时间戳单调递增（et=+5h32m50s），三 provider 存活不衰减；
+    c ✓ **2min soak**：120 次×3 provider 共 360 次注入，全部成功，零崩溃，精度画像完整
+    （dumpsys 显示 `alt=11.0 vAcc=8.0 mslAlt=11.0 mslAltAcc=8.0 sat=7 maxCn0=44 meanCn0=36`）；
+    d ✓ **NETCUT 双栈**：iptables+ip6tables 按 uid DROP（Amap 10328 + Oplus fusion 10222 双规则
+    set→verify→clear 全通过）；
+    e ✓ **停止清理**：teardown 后 [mock] 计数归零；
+    f ✓ **App UI 注入**：重新选点+注入后 3 provider 恢复，dumpsys 精度画像字段完整。
+    已知限制（ROM/安装状态相关，非代码 bug）：
+    - ColorOS 重启后自启动管理会冻结 App（LAUNCHER intent 解析不到），须用户手动点图标解锁或
+      到 设置→电池→应用启动管理 允许自启动；
+    - 卸载重装后 KernelSU su 授权和 mock_location app-op 都会丢失，须重新授权（App 会自动弹
+      权限对话框 + 状态页有引导）；
+    - `cmd location send-extra-command gps delete_aiding_data` 在此 ROM 返回 Unknown command
+      （ColorOS 裁剪了该子命令），AGPS 清理在根模块路径仍可用。
+    g ✓ **MD3 UI 真机走查**：顶栏+状态胶囊（surfaceContainer/primaryContainer token）、全屏地图+
+    悬浮搜索条+底部浮层（28dp 顶圆角）、选点面板（双系坐标+pill 按钮）、底导航（icon pill 选中态）、
+    暗色模式全页 token 配色——截图确认视觉与交互一致。
+37. **v0.9.0 的装机验收判据**
     a. App 内注入（su 已授权）→ `dumpsys location` 出现 `identity=0/android[LocationService]` 的
     gps/network/fused `[mock]`；`/data/adb/mockloc/loop.pid` 存在且 /proc/<pid> 活着。
     b. App 被杀（force-stop）后 provider 仍在（nohup 循环独立于 App）——与档0 的本质差异。
