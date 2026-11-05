@@ -884,17 +884,26 @@ class MainActivity : Activity() {
                 row.addView(ui.chip(if (lspOn) "LSP ✓" else "需 LSP",
                     if (lspOn) Ui.State.OK else Ui.State.WARN))
                 row.addView(ui.button("LSP 管理器", Ui.Btn.GHOST) {
-                    // LSPosed 寄生管理器没有独立包名：入口是带 LAUNCH_MANAGER category 的 MAIN
-                    // Intent（本机实测解析到 com.android.shell/.BugreportWarningActivity，
-                    // 由 lspd 守护进程注入）；独立安装的原版走 org.lsposed.manager 兜底。
-                    val cat = "org.lsposed.manager.LAUNCH_MANAGER"
-                    val probe = Intent(Intent.ACTION_MAIN).addCategory(cat)
-                    val intent = packageManager.queryIntentActivities(probe, 0)
-                        .firstOrNull()
-                        ?.let { probe.setClassName(it.activityInfo.packageName, it.activityInfo.name) }
-                        ?: packageManager.getLaunchIntentForPackage("org.lsposed.manager")
-                    runCatching { startActivity(intent) }
-                        .onFailure { toast("找不到 LSP 管理器入口") }
+                    thread {
+                        // 寄生管理器没有独立包名：start BugreportWarningActivity 只会弹原生 bugreport
+                        // 对话框（守护进程的 UI 交换不认外部身份，root+category 实测无效）。可靠入口
+                        // 是守护进程注册的模块广播——通知点击即 am broadcast -a <UUID> -d module://<pkg>:0，
+                        // 管理器直接打开本模块作用域页。UUID 每个守护进程会话都变，从 root 的
+                        // PendingIntent 记录动态解析；解析不到再退回独立管理器包名。
+                        val dump = runCatching {
+                            RootInjector.runSu(listOf("dumpsys activity intents")).getOrDefault("")
+                        }.getOrDefault("")
+                        val uuid = Regex("act=([0-9a-f-]{36}) dat=module://" + Regex.escape(packageName))
+                            .find(dump)?.groupValues?.get(1)
+                        if (uuid != null) {
+                            RootInjector.runSu(listOf("am broadcast -a $uuid -d module://$packageName:0"))
+                            runOnUiThread { toast("已打开 LSP 管理器（本模块作用域页）") }
+                        } else {
+                            val intent = packageManager.getLaunchIntentForPackage("org.lsposed.manager")
+                            runCatching { startActivity(intent) }
+                                .onFailure { runOnUiThread { toast("请下拉通知栏，点 LSPosed 的通知打开管理器") } }
+                        }
+                    }
                 })
             } else {
                 // NETCUT 切换：root 管线按 uid 掐掉该 App 的真实网络定位。
