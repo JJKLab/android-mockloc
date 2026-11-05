@@ -884,11 +884,17 @@ class MainActivity : Activity() {
                 row.addView(ui.chip(if (lspOn) "LSP ✓" else "需 LSP",
                     if (lspOn) Ui.State.OK else Ui.State.WARN))
                 row.addView(ui.button("LSP 管理器", Ui.Btn.GHOST) {
-                    // 管理器包名随分支不同：原版 org.lsposed.manager，本机是 Stellar 分支。
-                    val intent = listOf("org.lsposed.manager", "roro.stellar.manager")
-                        .firstNotNullOfOrNull { packageManager.getLaunchIntentForPackage(it) }
+                    // LSPosed 寄生管理器没有独立包名：入口是带 LAUNCH_MANAGER category 的 MAIN
+                    // Intent（本机实测解析到 com.android.shell/.BugreportWarningActivity，
+                    // 由 lspd 守护进程注入）；独立安装的原版走 org.lsposed.manager 兜底。
+                    val cat = "org.lsposed.manager.LAUNCH_MANAGER"
+                    val probe = Intent(Intent.ACTION_MAIN).addCategory(cat)
+                    val intent = packageManager.queryIntentActivities(probe, 0)
+                        .firstOrNull()
+                        ?.let { probe.setClassName(it.activityInfo.packageName, it.activityInfo.name) }
+                        ?: packageManager.getLaunchIntentForPackage("org.lsposed.manager")
                     runCatching { startActivity(intent) }
-                        .onFailure { toast("找不到 LSP 管理器") }
+                        .onFailure { toast("找不到 LSP 管理器入口") }
                 })
             } else {
                 // NETCUT 切换：root 管线按 uid 掐掉该 App 的真实网络定位。
@@ -1035,8 +1041,11 @@ class MainActivity : Activity() {
             append("  路线=${if (Config.routeActive) "运行中 ${Config.routeWaypoints.size}点 @${Config.speedMps}m/s" else "未配置"}")
             append("  独立点位=${Config.appPoints.size}个\n")
             append("  读回: ${Config.lastError ?: "正常（写入于 ${Config.lastLoadedAgo}ms 前）"}\n")
-            // 致盲是高德唯一认的开关（它自己算路不读系统定位）；改动要重启目标 App 生效。
-            append("\n高德提示：致盲 WiFi/基站是高德唯一认的开关，改动后要重启高德\n")
+            // 高德机制：自有融合 SDK（真实 WiFi/基站/服务器定位）优先级高于系统 LocationManager，
+            // 不盲化它就直接拿真数据定位覆盖注入点——2026-11-05 实机复现（关盲化即回跳真实位置）。
+            append("\n高德提示：高德自带定位引擎优先用自己的真实 WiFi/基站数据，系统注入点会被它覆盖；" +
+                "所以高德必须开「致盲 WiFi/基站」（策略页选高德即自动开）+ 掐网，改动后要重启高德。" +
+                "微信等 App 读系统定位，LSP 挂上就稳。\n")
             val notes = Diagnostics.snapshot()
             if (notes.isNotEmpty()) {
                 append("\n本进程挂钩记录\n")

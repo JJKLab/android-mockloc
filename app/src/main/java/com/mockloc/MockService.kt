@@ -248,15 +248,24 @@ class MockService : Service() {
         var healed = false
         providerNames.forEach { name ->
             val loc = runCatching { lm.getLastKnownLocation(name) }.getOrNull()
-            val bad = loc == null ||
+            // 陈旧也算坏：fix 时间戳超过 60s 说明喂点在空转（root 命令被静默拒绝的形态），
+            // 只看坐标漂移永远发现不了——坐标没变，时间在老。
+            val stale = loc != null &&
+                System.currentTimeMillis() - loc.time > HEAL_STALE_LIMIT_MS
+            val bad = loc == null || stale ||
                 distanceMeters(loc.latitude, loc.longitude, lat, lng) > HEAL_DRIFT_LIMIT_M
             if (bad) {
                 healed = true
-                runCatching { lm.removeTestProvider(name) }
-                register(lm, name)
-                runCatching {
-                    lm.setTestProviderEnabled(name, true)
-                    lm.setTestProviderLocation(name, buildFix(name, lat, lng, acc))
+                if (patrolMode) {
+                    // root 模式自愈同样走 root：重注册 + 立即首喂（App 侧写入进不去 root 的 provider）。
+                    RootInjector.apply(lat, lng, acc, listOf(name), altMeters)
+                } else {
+                    runCatching { lm.removeTestProvider(name) }
+                    register(lm, name)
+                    runCatching {
+                        lm.setTestProviderEnabled(name, true)
+                        lm.setTestProviderLocation(name, buildFix(name, lat, lng, acc))
+                    }
                 }
             }
         }
@@ -309,20 +318,30 @@ class MockService : Service() {
         if (spec.lat == 0.0 && spec.lng == 0.0) return stopEverything()
 
         val lm = getSystemService(LOCATION_SERVICE) as LocationManager
-        providerNames.forEach { name ->
-            runCatching { lm.removeTestProvider(name) }
-            register(lm, name)
-            runCatching { lm.setTestProviderEnabled(name, true) }
+        patrolMode = spec.rootMode && RootInjector.SuSession.ensure()
+        if (patrolMode) {
+            // root 模式下 provider 必须由 root 注册：Android 16 实测，App 注册的 test provider
+            // （identity=10304）会静默拒绝其他身份的 setTestProviderLocation——root cmd 返回 0
+            // 但 fix 不落盘（2026-11-05 复现：喂 23.9999 坐标纹丝不动）。谁注册谁才有写权。
+            val out = RootInjector.apply(lat, lng, acc, providerNames, altMeters)
+            if (out.contains("Error") || out.contains("Exception") || out.contains("denied") ||
+                out.contains("not a test provider")) {
+                Log.w(TAG, "root apply failed, falling back to app providers: ${out.take(120)}")
+                patrolMode = false
+            }
+        }
+        if (!patrolMode) {
+            // su 不可用或 root 注册失败：回落 App 内 provider（功能可用，isMock 会是 true）。
+            providerNames.forEach { name ->
+                runCatching { lm.removeTestProvider(name) }
+                register(lm, name)
+                runCatching { lm.setTestProviderEnabled(name, true) }
+            }
         }
         running = true
         paused = false
         ticks = 0
         healFails = 0
-        patrolMode = spec.rootMode && RootInjector.SuSession.ensure()
-        if (spec.rootMode && !patrolMode) {
-            // su 不可用：回落 App 内 provider（至少功能可用，isMock 会是 true）。
-            Log.w(TAG, "root patrol requested but su unavailable; falling back to app provider")
-        }
         spec.store(this)
         getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_PAUSED, false).apply()
         markRunning(true)
@@ -567,6 +586,8 @@ class MockService : Service() {
         const val PATROL_MS = 5000L
         const val BACKOFF_MS = 10_000L
         const val HEAL_DRIFT_LIMIT_M = 200.0
+        // fix 时间戳超过这个值就视为喂点空转（实测 root 命令被静默拒绝时坐标不变、时间无限老化）。
+        const val HEAL_STALE_LIMIT_MS = 60_000L
         const val MAX_HEAL_FAILS = 5
 
         /** tappable "恢复注入" fallback for the boot path when Android refuses the foreground start. */

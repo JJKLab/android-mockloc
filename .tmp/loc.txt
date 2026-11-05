@@ -1,0 +1,1882 @@
+Location Manager State:
+  User Info:
+    running users: u[0, 999]
+    current users: u[0, 999]
+  Location Settings:
+    Location Setting: 
+      [u0] true
+      [u999] true
+    Location Allow/Deny Packages:
+    Throttling Allow Packages:
+      com.oplus.location
+      com.google.android.gms
+      com.coloros.findmyphone
+    Emergency Bypass Allow Packages:
+      com.google.android.dialer[*]
+      com.google.android.gms[.thunderbird]
+  Location Providers:
+    passive provider:
+      service: registered
+      listeners:
+        1000/com.oplus.nas/F46A8BD5 Request[PASSIVE, minUpdateInterval=+1m0s0ms, minUpdateDistance=5.0, WorkSource{1000 com.oplus.nas}]
+        1000/android[OplusLBS]/F888430A Request[PASSIVE, minUpdateInterval=0, WorkSource{1000 android}]
+        99910236/com.google.android.gms[network_location_provider]/578A10AB {bg} Request[PASSIVE, minUpdateInterval=0, hiddenFromAppOps, WorkSource{99910236 com.google.android.gms}]
+        10222/com.oplus.location/AE0FBF40 Request[PASSIVE, minUpdateInterval=0, WorkSource{10222 com.oplus.location}]
+        10236/com.google.android.gms[network_location_provider]/B1F080EE Request[PASSIVE, minUpdateInterval=0, hiddenFromAppOps, WorkSource{10236 com.google.android.gms}]
+        99910236/com.google.android.gms[fused_location_provider]/C7348A78 {bg} Request[@+24855d3h14m7s806ms BALANCED, minUpdateInterval=0, hiddenFromAppOps, WorkSource{99910236 com.google.android.gms}]
+        10236/com.google.android.gms[fused_location_provider]/0AB21923 Request[@+24855d3h14m7s806ms BALANCED, minUpdateInterval=0, hiddenFromAppOps, WorkSource{10236 com.google.android.gms}]
+        1000/android[SensorNotificationService]/DA78ADC9 Request[PASSIVE, minUpdateInterval=+30m0s0ms, minUpdateDistance=100000.0, WorkSource{1000 android}]
+        10170/com.coloros.weather.service/440DDB0E {bg} Request[PASSIVE, minUpdateInterval=+1m0s0ms, minUpdateDistance=100.0, WorkSource{10170 com.coloros.weather.service}]
+        10222/com.oplus.location[OlsProxy]/BB84FE3A Request[PASSIVE, minUpdateInterval=0, WorkSource{10222 com.oplus.location}]
+        1027/com.android.nfc/3E6ABD3B Request[PASSIVE, minUpdateInterval=0, WorkSource{1027 com.android.nfc}]
+        10328/com.autonavi.minimap/2FAF0D2C {bg} Request[PASSIVE, minUpdateInterval=+1s0ms, WorkSource{10328 com.autonavi.minimap}]
+        1000/android[OplusLBS]/817CDC40 Request[PASSIVE, minUpdateInterval=+1s0ms, WorkSource{1000 android}]
+        1001/com.oplus.nhs/7C6DA01E Request[PASSIVE, minUpdateInterval=0, WorkSource{1001 com.oplus.nhs}]
+      user 0:
+        last location=Location[fused 23.15****,113.23**** hAcc=5.0 et=+52m21s962ms mock]
+        enabled=true
+      user 999:
+        last location=Location[fused 23.15****,113.23**** hAcc=5.0 et=+52m21s962ms mock]
+        enabled=true
+      allowed=true
+      identity=1000/android[LocationService]
+      properties=ProviderProperties[powerUsage=Low, accuracy=Fine]
+    fused provider [mock]:
+      service: ProviderRequest[OFF]
+      user 0:
+        last location=Location[fused 23.15****,113.23**** hAcc=5.0 et=+52m21s962ms mock]
+        enabled=true
+      user 999:
+        last location=Location[fused 23.15****,113.23**** hAcc=5.0 et=+52m21s962ms mock]
+        enabled=true
+      allowed=true
+      identity=10304/com.mockloc
+      properties=ProviderProperties[powerUsage=Low, accuracy=Coarse, requires=network,cell, supports=[bearing,speed,altitude]]
+      last mock location=Location[fused 23.15****,113.23**** hAcc=5.0 et=+52m21s962ms mock]
+    gps provider [mock]:
+      service: ProviderRequest[OFF]
+      user 0:
+        last location=Location[gps 23.15****,113.23**** hAcc=5.0 et=+52m21s875ms mock]
+        enabled=true
+      user 999:
+        last location=Location[gps 23.15****,113.23**** hAcc=5.0 et=+52m21s875ms mock]
+        enabled=true
+      allowed=true
+      identity=10304/com.mockloc
+      properties=ProviderProperties[powerUsage=Low, accuracy=Fine, requires=satellite, supports=[bearing,speed,altitude]]
+      last mock location=Location[gps 23.15****,113.23**** hAcc=5.0 et=+52m21s875ms mock]
+    network provider [mock]:
+      service: ProviderRequest[OFF]
+      listeners:
+        1000/android[GnssService]/7230719D Request[PASSIVE, minUpdateInterval=0, hiddenFromAppOps, WorkSource{1000 android}]
+      user 0:
+        last location=Location[network 23.15****,113.23**** hAcc=5.0 et=+52m21s918ms mock]
+        enabled=true
+      user 999:
+        last location=Location[network 23.15****,113.23**** hAcc=5.0 et=+52m21s918ms mock]
+        enabled=true
+      allowed=true
+      identity=10304/com.mockloc
+      properties=ProviderProperties[powerUsage=Low, accuracy=Coarse, requires=network,cell, supports=[bearing,speed,altitude]]
+      last mock location=Location[network 23.15****,113.23**** hAcc=5.0 et=+52m21s918ms mock]
+  Historical Aggregate Location Provider Data:
+    GnssMeasurement:
+      10301/com.tencent.mm: min/max interval = 0s/0s, total/active/foreground duration = +6s885ms/0/0, locations = 0
+      10328/com.autonavi.minimap: min/max interval = 0s/0s, total/active/foreground duration = +5m6s410ms/0/0, locations = 0
+    passive:
+      10236/com.google.android.gms[fused_location_provider]: min/max interval = 9223372036854775s/9223372036854775s, total/active/foreground duration = +51m14s729ms/+51m14s715ms/+51m14s715ms, locations = 5128
+      10103/com.coloros.findmyphone: min/max interval = passive/passive, total/active/foreground duration = +12ms/+8ms/0, locations = 1
+      1000/android[OplusLBS]: min/max interval = passive/passive, total/active/foreground duration = +51m30s637ms/+51m30s636ms/+51m30s636ms, locations = 10257
+      99910236/com.google.android.gms[network_location_provider]: min/max interval = passive/passive, total/active/foreground duration = +50m51s535ms/+50m51s534ms/0, locations = 5126
+      1027/com.android.nfc: min/max interval = passive/passive, total/active/foreground duration = +51m1s802ms/+51m1s798ms/+51m1s798ms, locations = 5125
+      1000/android[SensorNotificationService]: min/max interval = passive/passive, total/active/foreground duration = +51m34s423ms/+51m34s423ms/+51m34s423ms, locations = 2
+      10236/com.google.android.gms[network_location_provider]: min/max interval = passive/passive, total/active/foreground duration = +51m12s87ms/+51m12s86ms/+51m12s87ms, locations = 5128
+      10301/com.tencent.mm: min/max interval = passive/passive, total/active/foreground duration = +7s6ms/+6s976ms/+6s646ms, locations = 4
+      10328/com.autonavi.minimap: min/max interval = passive/passive, total/active/foreground duration = +14m53s165ms/+14m52s986ms/+4m51s812ms, locations = 298
+      10170/com.coloros.weather.service: min/max interval = passive/passive, total/active/foreground duration = +47m41s324ms/+47m41s300ms/+2m3s994ms, locations = 7
+      10222/com.oplus.location: min/max interval = passive/passive, total/active/foreground duration = +51m14s142ms/+51m14s141ms/+51m14s141ms, locations = 5128
+      10222/com.oplus.location[OlsProxy]: min/max interval = passive/passive, total/active/foreground duration = +51m13s170ms/+51m13s170ms/+51m13s170ms, locations = 5128
+      1000/com.oplus.nas: min/max interval = passive/passive, total/active/foreground duration = +51m31s240ms/+51m31s239ms/+51m31s240ms, locations = 9
+      1001/com.oplus.nhs: min/max interval = passive/passive, total/active/foreground duration = +51m37s945ms/+51m37s945ms/+51m37s945ms, locations = 5128
+      99910236/com.google.android.gms[fused_location_provider]: min/max interval = 9223372036854775s/9223372036854775s, total/active/foreground duration = +50m51s885ms/+50m51s881ms/0, locations = 5126
+    gps:
+      10103/com.coloros.findmyphone: min/max interval = 0s/0s, total/active/foreground duration = +6s119ms/+6s111ms/0, locations = 0
+      10301/com.tencent.mm: min/max interval = 1s/1s, total/active/foreground duration = +6s915ms/+6s887ms/+6s582ms, locations = 0
+      10328/com.autonavi.minimap: min/max interval = 0s/1s, total/active/foreground duration = +5m6s83ms/+5m5s901ms/+4m50s427ms, locations = 59
+      10170/com.coloros.weather.service: min/max interval = 5s/5s, total/active/foreground duration = +577ms/+545ms/+546ms, locations = 0
+    network:
+      1000/android[OplusLBS]: min/max interval = 1s/1s, total/active/foreground duration = +1m51s52ms/+1m50s961ms/+1m50s963ms, locations = 36
+      10170/com.coloros.weather.service: min/max interval = 5s/5s, total/active/foreground duration = +3s688ms/+3s674ms/+3s653ms, locations = 4
+      1001/com.android.phone: min/max interval = 1s/1s, total/active/foreground duration = +16s799ms/+16s792ms/+16s793ms, locations = 1
+      1000/android[GnssService]: min/max interval = 1s/passive, total/active/foreground duration = +51m38s979ms/+51m38s663ms/+51m38s972ms, locations = 1716
+      1000/com.oplus.nas: min/max interval = 3600s/3600s, total/active/foreground duration = +7s130ms/+7s128ms/+7s128ms, locations = 1
+  Historical Aggregate Gnss Measurement Provider Data:
+    10301/com.tencent.mm: min/max interval = 0s/0s, total duration = +6s886ms, tracking mode = always duty-cycling, GNSS measurement events = 5
+    10328/com.autonavi.minimap: min/max interval = 0s/0s, total duration = +5m6s430ms, tracking mode = always duty-cycling, GNSS measurement events = 279
+  GNSS Manager:
+    Capabilities: [SCHEDULING MSB GEOFENCING MEASUREMENTS LOW_POWER_MODE SATELLITE_BLOCKLIST MEASUREMENT_CORRECTIONS MEASUREMENT_CORRECTIONS_FOR_DRIVING LOS_SATS EXCESS_PATH_LENGTH REFLECTING_PLANE TOTAL_POWER signalTypes=[GnssSignalType[Constellation=1, CarrierFrequencyHz=1.57542E9, CodeType=C], GnssSignalType[Constellation=1, CarrierFrequencyHz=1.17645E9, CodeType=Q], GnssSignalType[Constellation=3, CarrierFrequencyHz=1.602E9, CodeType=C], GnssSignalType[Constellation=6, CarrierFrequencyHz=1.57542E9, CodeType=C], GnssSignalType[Constellation=6, CarrierFrequencyHz=1.17645E9, CodeType=Q], GnssSignalType[Constellation=5, CarrierFrequencyHz=1.561098E9, CodeType=I], GnssSignalType[Constellation=5, CarrierFrequencyHz=1.57542E9, CodeType=P], GnssSignalType[Constellation=5, CarrierFrequencyHz=1.17645E9, CodeType=P]]]
+    GNSS Hardware Model Name: qcom;MPSS.DE.5.0-02708-LANAI_GEN_PACK-1;
+    Status Provider:
+      service: registered
+      listeners:
+        10236/com.google.android.gms[network_location_provider]/1014727F
+        99910236/com.google.android.gms[network_location_provider]/3A9B088F {bg}
+        10222/com.oplus.location/5B276DEA
+        1000/com.oplus.subsys/50FE9F98
+        10222/com.oplus.location[OlsProxy]/3BC43FE8
+        1001/com.oplus.nhs/A7F4F1A3
+    Measurements Provider:
+      service: unregistered
+      last measurements=[elapsedRealtimeNs=2604944483016 measurementCount=0]
+    Antenna Info Provider:
+      Antenna Infos: null
+      service: unregistered
+  Geofence Manager:
+    service: unregistered
+  Event Log:
+    11-05 07:31:53.566: passive provider [u0] enabled
+    11-05 07:31:54.107: dump nlp roaming key flags, in region: true, gms restrict: false, access google blocked: true, os nlp disabled: false
+    11-05 07:31:54.108: dump nlp roaming key flags, in region: true, gms restrict: false, access google blocked: true, os nlp disabled: false
+    11-05 07:31:54.113: dump nlp roaming key flags, in region: true, gms restrict: false, access google blocked: true, os nlp disabled: false
+    11-05 07:31:55.749: gps provider [u0] enabled
+    11-05 07:31:55.755: Network location service rebinding to nlp
+    11-05 07:31:55.756: network provider [u0] enabled
+    11-05 07:31:55.758: set network provider allowed to: false || false || true
+    11-05 07:31:55.764: dump nlp roaming key flags, in region: true, gms restrict: false, access google blocked: true, os nlp disabled: false
+    11-05 07:31:55.774: network provider +registration 1000/android[GnssService]/7230719D -> Request[PASSIVE, minUpdateInterval=0, hiddenFromAppOps, WorkSource{1000 android}]
+    11-05 07:31:55.774: network provider client 1000/android[GnssService]/7230719D -> permitted
+    11-05 07:31:55.781: network provider client 1000/android[GnssService]/7230719D -> foreground
+    11-05 07:31:56.049: passive provider [u0] enabled
+    11-05 07:31:56.049: gps provider [u0] enabled
+    11-05 07:31:56.050: network provider [u0] enabled
+    11-05 07:31:56.808: passive provider +registration 1001/com.oplus.nhs/7C6DA01E -> Request[PASSIVE, minUpdateInterval=0, WorkSource{1001 com.oplus.nhs}]
+    11-05 07:31:56.808: passive provider client 1001/com.oplus.nhs/7C6DA01E -> permitted
+    11-05 07:31:56.808: passive provider client 1001/com.oplus.nhs/7C6DA01E -> foreground
+    11-05 07:31:56.809: passive provider request = ProviderRequest[@0]
+    11-05 07:31:56.831: fused provider [u0] enabled
+    11-05 07:31:56.970: [u0] visible
+    11-05 07:32:00.329: passive provider +registration 1000/android[SensorNotificationService]/DA78ADC9 -> Request[PASSIVE, minUpdateInterval=+30m0s0ms, minUpdateDistance=100000.0, WorkSource{1000 android}]
+    11-05 07:32:00.329: passive provider client 1000/android[SensorNotificationService]/DA78ADC9 -> permitted
+    11-05 07:32:00.329: passive provider client 1000/android[SensorNotificationService]/DA78ADC9 -> foreground
+    11-05 07:32:01.665: [u999] visible
+    11-05 07:32:01.867: passive provider [u999] enabled
+    11-05 07:32:01.869: fused provider [u999] enabled
+    11-05 07:32:01.869: gps provider [u999] enabled
+    11-05 07:32:01.870: network provider [u999] enabled
+    11-05 07:32:03.513: passive provider +registration 1000/com.oplus.nas/F46A8BD5 -> Request[PASSIVE, minUpdateInterval=+1m0s0ms, minUpdateDistance=5.0, WorkSource{1000 com.oplus.nas}]
+    11-05 07:32:03.513: passive provider client 1000/com.oplus.nas/F46A8BD5 -> permitted
+    11-05 07:32:03.513: passive provider client 1000/com.oplus.nas/F46A8BD5 -> foreground
+    11-05 07:32:04.115: passive provider +registration 1000/android[OplusLBS]/817CDC40 -> Request[PASSIVE, minUpdateInterval=+1s0ms, WorkSource{1000 android}]
+    11-05 07:32:04.115: passive provider client 1000/android[OplusLBS]/817CDC40 -> permitted
+    11-05 07:32:04.116: passive provider client 1000/android[OplusLBS]/817CDC40 -> foreground
+    11-05 07:32:10.557: network provider +registration 1001/com.android.phone/35979081 -> Request[@+1s0ms BALANCED, minUpdateDistance=50.0, WorkSource{1001 com.android.phone}]
+    11-05 07:32:10.558: network provider client 1001/com.android.phone/35979081 -> permitted
+    11-05 07:32:10.563: network provider client 1001/com.android.phone/35979081 -> foreground
+    11-05 07:32:10.565: network provider request = ProviderRequest[@+1s0ms, WorkSource{1001 com.android.phone}]
+    11-05 07:32:20.023: passive provider +registration 10236/com.google.android.gms[fused_location_provider]/0AB21923 -> Request[@+24855d3h14m7s806ms BALANCED, minUpdateInterval=0, hiddenFromAppOps, WorkSource{10236 com.google.android.gms}]
+    11-05 07:32:20.023: passive provider client 10236/com.google.android.gms[fused_location_provider]/0AB21923 -> permitted
+    11-05 07:32:20.037: passive provider client 10236/com.google.android.gms[fused_location_provider]/0AB21923 -> foreground
+    11-05 07:32:20.248: network provider +registration 1000/com.oplus.nas/592D245F -> Request[@+1h0m0s0ms BALANCED, minUpdateDistance=50.0, WorkSource{1000 com.oplus.nas}]
+    11-05 07:32:20.248: network provider client 1000/com.oplus.nas/592D245F -> permitted
+    11-05 07:32:20.250: network provider client 1000/com.oplus.nas/592D245F -> foreground
+    11-05 07:32:20.611: passive provider +registration 10222/com.oplus.location/AE0FBF40 -> Request[PASSIVE, minUpdateInterval=0, WorkSource{10222 com.oplus.location}]
+    11-05 07:32:20.611: passive provider client 10222/com.oplus.location/AE0FBF40 -> permitted
+    11-05 07:32:20.612: passive provider client 10222/com.oplus.location/AE0FBF40 -> foreground
+    11-05 07:32:21.583: passive provider +registration 10222/com.oplus.location[OlsProxy]/BB84FE3A -> Request[PASSIVE, minUpdateInterval=0, WorkSource{10222 com.oplus.location}]
+    11-05 07:32:21.583: passive provider client 10222/com.oplus.location[OlsProxy]/BB84FE3A -> permitted
+    11-05 07:32:21.583: passive provider client 10222/com.oplus.location[OlsProxy]/BB84FE3A -> foreground
+    11-05 07:32:22.665: passive provider +registration 10236/com.google.android.gms[network_location_provider]/B1F080EE -> Request[PASSIVE, minUpdateInterval=0, hiddenFromAppOps, WorkSource{10236 com.google.android.gms}]
+    11-05 07:32:22.665: passive provider client 10236/com.google.android.gms[network_location_provider]/B1F080EE -> permitted
+    11-05 07:32:22.665: passive provider client 10236/com.google.android.gms[network_location_provider]/B1F080EE -> foreground
+    11-05 07:32:23.579: passive provider +registration 10170/com.coloros.weather.service/E99B0738 -> Request[PASSIVE, minUpdateInterval=+1m0s0ms, minUpdateDistance=100.0, WorkSource{10170 com.coloros.weather.service}]
+    11-05 07:32:23.579: passive provider client 10170/com.coloros.weather.service/E99B0738 -> permitted
+    11-05 07:32:23.580: passive provider client 10170/com.coloros.weather.service/E99B0738 -> foreground
+    11-05 07:32:23.693: network provider +registration 10170/com.coloros.weather.service/2F33525C -> Request[@+5s0ms BALANCED, minUpdateDistance=5.0, WorkSource{10170 com.coloros.weather.service}]
+    11-05 07:32:23.693: network provider client 10170/com.coloros.weather.service/2F33525C -> permitted
+    11-05 07:32:23.694: network provider client 10170/com.coloros.weather.service/2F33525C -> foreground
+    11-05 07:32:23.694: network provider request = ProviderRequest[@+1s0ms, WorkSource{1001 com.android.phone, 10170 com.coloros.weather.service}]
+    11-05 07:32:26.735: gps provider +registration 10170/com.coloros.weather.service/2F33525C -> Request[@+5s0ms HIGH_ACCURACY, minUpdateDistance=5.0, WorkSource{10170 com.coloros.weather.service}]
+    11-05 07:32:26.735: gps provider client 10170/com.coloros.weather.service/2F33525C -> permitted
+    11-05 07:32:26.766: gps provider client 10170/com.coloros.weather.service/2F33525C -> foreground
+    11-05 07:32:26.767: gps provider request = ProviderRequest[@+5s0ms, HIGH_ACCURACY, WorkSource{10170 com.coloros.weather.service}]
+    11-05 07:32:26.791: GPS Engine State: ON WorkSource Size: 1
+    11-05 07:32:26.798: passive provider +registration 1000/android[OplusLBS]/13407A07 -> Request[PASSIVE, minUpdateInterval=0, WorkSource{1000 android}]
+    11-05 07:32:26.798: passive provider client 1000/android[OplusLBS]/13407A07 -> permitted
+    11-05 07:32:26.798: passive provider client 1000/android[OplusLBS]/13407A07 -> foreground
+    11-05 07:32:26.801: passive provider +registration 1000/android[OplusLBS]/F888430A -> Request[PASSIVE, minUpdateInterval=0, WorkSource{1000 android}]
+    11-05 07:32:26.801: passive provider client 1000/android[OplusLBS]/F888430A -> permitted
+    11-05 07:32:26.801: passive provider client 1000/android[OplusLBS]/F888430A -> foreground
+    11-05 07:32:26.834: network provider +registration 1000/android[GnssService]/B53B23C0 -> Request[@+1s0ms LOW_POWER, duration=+10s0ms, maxUpdates=1, WorkSource{1000 android}]
+    11-05 07:32:26.834: network provider client 1000/android[GnssService]/B53B23C0 -> permitted
+    11-05 07:32:26.841: network provider client 1000/android[GnssService]/B53B23C0 -> foreground
+    11-05 07:32:26.861: network provider request = ProviderRequest[@+1s0ms, WorkSource{1000 android, 1001 com.android.phone, 10170 com.coloros.weather.service}]
+    11-05 07:32:27.312: gps provider -registration 10170/com.coloros.weather.service/2F33525C
+    11-05 07:32:27.320: gps provider request = ProviderRequest[OFF]
+    11-05 07:32:27.347: network provider -registration 10170/com.coloros.weather.service/2F33525C
+    11-05 07:32:27.348: network provider request = ProviderRequest[@+1s0ms, WorkSource{1000 android, 1001 com.android.phone}]
+    11-05 07:32:27.356: network provider -registration 1001/com.android.phone/35979081
+    11-05 07:32:27.356: network provider request = ProviderRequest[@+1s0ms, WorkSource{1000 android}]
+    11-05 07:32:27.378: network provider -registration 1000/com.oplus.nas/592D245F
+    11-05 07:32:27.378: network provider request = ProviderRequest[@+1s0ms, LOW_POWER, WorkSource{1000 android}]
+    11-05 07:32:27.559: GPS Engine State: OFF WorkSource Size: 0
+    11-05 07:32:27.567: passive provider -registration 1000/android[OplusLBS]/13407A07
+    11-05 07:32:27.586: network provider -registration 1000/android[GnssService]/B53B23C0
+    11-05 07:32:27.587: network provider request = ProviderRequest[OFF]
+    11-05 07:32:32.950: passive provider +registration 1027/com.android.nfc/3E6ABD3B -> Request[PASSIVE, minUpdateInterval=0, WorkSource{1027 com.android.nfc}]
+    11-05 07:32:32.950: passive provider client 1027/com.android.nfc/3E6ABD3B -> permitted
+    11-05 07:32:32.954: passive provider client 1027/com.android.nfc/3E6ABD3B -> foreground
+    11-05 07:32:37.401: passive provider +registration 99910236/com.google.android.gms[fused_location_provider]/074FCFF3 -> Request[@+24855d3h14m7s806ms BALANCED, minUpdateInterval=0, hiddenFromAppOps, WorkSource{99910236 com.google.android.gms}]
+    11-05 07:32:37.401: passive provider client 99910236/com.google.android.gms[fused_location_provider]/074FCFF3 -> permitted
+    11-05 07:32:37.509: passive provider +registration 99910236/com.google.android.gms[network_location_provider]/03E0E305 -> Request[PASSIVE, minUpdateInterval=0, hiddenFromAppOps, WorkSource{99910236 com.google.android.gms}]
+    11-05 07:32:37.509: passive provider client 99910236/com.google.android.gms[network_location_provider]/03E0E305 -> permitted
+    11-05 07:33:33.127: GPS Engine State: OFF WorkSource Size: 0
+    11-05 07:33:51.000: gps provider +registration 10103/com.coloros.findmyphone/39F57BE3 -> Request[@+900ms HIGH_ACCURACY, WorkSource{10103 com.coloros.findmyphone}]
+    11-05 07:33:51.000: gps provider client 10103/com.coloros.findmyphone/39F57BE3 -> permitted
+    11-05 07:33:51.009: gps provider request = ProviderRequest[@+900ms, HIGH_ACCURACY, WorkSource{10103 com.coloros.findmyphone}]
+    11-05 07:33:51.010: GPS Engine State: ON WorkSource Size: 1
+    11-05 07:33:51.020: passive provider +registration 1000/android[OplusLBS]/13407A07 -> Request[PASSIVE, minUpdateInterval=0, WorkSource{1000 android}]
+    11-05 07:33:51.020: passive provider client 1000/android[OplusLBS]/13407A07 -> permitted
+    11-05 07:33:51.020: passive provider client 1000/android[OplusLBS]/13407A07 -> foreground
+    11-05 07:33:57.119: gps provider -registration 10103/com.coloros.findmyphone/39F57BE3
+    11-05 07:33:57.122: gps provider request = ProviderRequest[OFF]
+    11-05 07:33:57.124: GPS Engine State: OFF WorkSource Size: 0
+    11-05 07:33:57.126: passive provider -registration 1000/android[OplusLBS]/13407A07
+    11-05 07:33:57.210: passive provider +registration 10103/com.coloros.findmyphone/351789E7 -> Request[PASSIVE, minUpdateInterval=+1s0ms, WorkSource{10103 com.coloros.findmyphone}]
+    11-05 07:33:57.210: passive provider client 10103/com.coloros.findmyphone/351789E7 -> permitted
+    11-05 07:33:57.222: passive provider -registration 10103/com.coloros.findmyphone/351789E7
+    11-05 07:34:27.562: passive provider -registration 99910236/com.google.android.gms[network_location_provider]/03E0E305
+    11-05 07:34:27.564: passive provider -registration 99910236/com.google.android.gms[fused_location_provider]/074FCFF3
+    11-05 07:34:27.574: passive provider -registration 10170/com.coloros.weather.service/E99B0738
+    11-05 07:34:33.031: passive provider +registration 99910236/com.google.android.gms[fused_location_provider]/C7348A78 -> Request[@+24855d3h14m7s806ms BALANCED, minUpdateInterval=0, hiddenFromAppOps, WorkSource{99910236 com.google.android.gms}]
+    11-05 07:34:33.031: passive provider client 99910236/com.google.android.gms[fused_location_provider]/C7348A78 -> permitted
+    11-05 07:34:33.270: passive provider +registration 99910236/com.google.android.gms[network_location_provider]/578A10AB -> Request[PASSIVE, minUpdateInterval=0, hiddenFromAppOps, WorkSource{99910236 com.google.android.gms}]
+    11-05 07:34:33.270: passive provider client 99910236/com.google.android.gms[network_location_provider]/578A10AB -> permitted
+    11-05 07:34:58.506: GPS Engine State: OFF WorkSource Size: 0
+    11-05 07:35:23.041: gps provider removed mock provider override
+    11-05 07:35:23.078: network provider removed mock provider override
+    11-05 07:35:23.128: fused provider removed mock provider override
+    11-05 07:35:23.196: gps provider added mock provider override
+    11-05 07:35:23.197: gps provider [u0] disabled
+    11-05 07:35:23.198: gps provider [u999] disabled
+    11-05 07:35:23.243: gps provider [u0] enabled
+    11-05 07:35:23.245: gps provider [u999] enabled
+    11-05 07:35:23.300: network provider added mock provider override
+    11-05 07:35:23.301: network provider [u0] disabled
+    11-05 07:35:23.305: network provider request = ProviderRequest[OFF]
+    11-05 07:35:23.305: network provider [u999] disabled
+    11-05 07:35:23.341: network provider [u0] enabled
+    11-05 07:35:23.348: network provider [u999] enabled
+    11-05 07:35:23.381: fused provider added mock provider override
+    11-05 07:35:23.382: fused provider [u0] disabled
+    11-05 07:35:23.385: fused provider [u999] disabled
+    11-05 07:35:23.419: fused provider [u0] enabled
+    11-05 07:35:23.422: fused provider [u999] enabled
+    11-05 07:35:27.617: network provider +registration 1000/android[GnssService]/165831D1 -> Request[@+1s0ms LOW_POWER, duration=+10s0ms, maxUpdates=1, WorkSource{1000 android}]
+    11-05 07:35:27.618: network provider client 1000/android[GnssService]/165831D1 -> permitted
+    11-05 07:35:27.625: network provider client 1000/android[GnssService]/165831D1 -> foreground
+    11-05 07:35:27.634: network provider request = ProviderRequest[@+1s0ms, LOW_POWER, WorkSource{1000 android}]
+    11-05 07:35:37.629: network provider -registration 1000/android[GnssService]/165831D1
+    11-05 07:35:37.633: network provider request = ProviderRequest[OFF]
+    11-05 07:37:27.644: network provider +registration 1000/android[OplusLBS]/84AA7865 -> Request[@+1s0ms BALANCED, WorkSource{1000 android}]
+    11-05 07:37:27.644: network provider client 1000/android[OplusLBS]/84AA7865 -> permitted
+    11-05 07:37:27.654: network provider client 1000/android[OplusLBS]/84AA7865 -> foreground
+    11-05 07:37:27.655: network provider request = ProviderRequest[@+1s0ms, WorkSource{1000 android}]
+    11-05 07:37:37.667: network provider -registration 1000/android[OplusLBS]/84AA7865
+    11-05 07:37:37.670: network provider request = ProviderRequest[OFF]
+    11-05 07:37:54.971: gps provider removed mock provider override
+    11-05 07:37:54.972: gps provider added mock provider override
+    11-05 07:37:54.972: gps provider [u0] disabled
+    11-05 07:37:54.973: gps provider [u999] disabled
+    11-05 07:37:54.975: gps provider [u0] enabled
+    11-05 07:37:54.979: gps provider [u999] enabled
+    11-05 07:37:54.980: network provider removed mock provider override
+    11-05 07:37:54.980: network provider [u0] disabled
+    11-05 07:37:54.983: network provider request = ProviderRequest[OFF]
+    11-05 07:37:54.983: network provider [u999] disabled
+    11-05 07:37:54.987: network provider added mock provider override
+    11-05 07:37:54.987: network provider [u0] enabled
+    11-05 07:37:54.989: network provider [u999] enabled
+    11-05 07:37:54.992: fused provider removed mock provider override
+    11-05 07:37:54.995: fused provider [u0] disabled
+    11-05 07:37:54.996: fused provider [u999] disabled
+    11-05 07:37:55.000: fused provider added mock provider override
+    11-05 07:37:55.001: fused provider [u0] enabled
+    11-05 07:37:55.003: fused provider [u999] enabled
+    11-05 07:37:55.873: gps provider removed mock provider override
+    11-05 07:37:55.875: gps provider added mock provider override
+    11-05 07:37:55.875: gps provider [u0] disabled
+    11-05 07:37:55.877: gps provider [u999] disabled
+    11-05 07:37:55.884: gps provider [u0] enabled
+    11-05 07:37:55.886: gps provider [u999] enabled
+    11-05 07:37:55.893: network provider removed mock provider override
+    11-05 07:37:55.893: network provider [u0] disabled
+    11-05 07:37:55.895: network provider request = ProviderRequest[OFF]
+    11-05 07:37:55.895: network provider [u999] disabled
+    11-05 07:37:55.899: network provider added mock provider override
+    11-05 07:37:55.900: network provider [u0] enabled
+    11-05 07:37:55.903: network provider [u999] enabled
+    11-05 07:37:55.904: fused provider removed mock provider override
+    11-05 07:37:55.907: fused provider [u0] disabled
+    11-05 07:37:55.909: fused provider [u999] disabled
+    11-05 07:37:55.913: fused provider added mock provider override
+    11-05 07:37:55.915: fused provider [u0] enabled
+    11-05 07:37:55.917: fused provider [u999] enabled
+    11-05 07:37:57.424: passive provider +registration 10170/com.coloros.weather.service/440DDB0E -> Request[PASSIVE, minUpdateInterval=+1m0s0ms, minUpdateDistance=100.0, WorkSource{10170 com.coloros.weather.service}]
+    11-05 07:37:57.424: passive provider client 10170/com.coloros.weather.service/440DDB0E -> permitted
+    11-05 07:37:57.460: network provider +registration 10170/com.coloros.weather.service/08837873 -> Request[@+5s0ms BALANCED, minUpdateDistance=5.0, WorkSource{10170 com.coloros.weather.service}]
+    11-05 07:37:57.460: network provider client 10170/com.coloros.weather.service/08837873 -> permitted
+    11-05 07:37:57.472: network provider -registration 10170/com.coloros.weather.service/08837873
+    11-05 07:37:57.473: network provider request = ProviderRequest[OFF]
+    11-05 07:38:02.148: passive provider +registration 10328/com.autonavi.minimap/C9F97C93 -> Request[PASSIVE, minUpdateInterval=+1s0ms, WorkSource{10328 com.autonavi.minimap}]
+    11-05 07:38:02.149: passive provider client 10328/com.autonavi.minimap/C9F97C93 -> permitted
+    11-05 07:38:02.149: passive provider client 10328/com.autonavi.minimap/C9F97C93 -> foreground
+    11-05 07:38:02.239: gps provider +registration 10328/com.autonavi.minimap/79912897 -> Request[@+1s0ms HIGH_ACCURACY, WorkSource{10328 com.autonavi.minimap}]
+    11-05 07:38:02.239: gps provider client 10328/com.autonavi.minimap/79912897 -> permitted
+    11-05 07:38:02.247: gps provider client 10328/com.autonavi.minimap/79912897 -> foreground
+    11-05 07:38:02.248: gps provider request = ProviderRequest[@+1s0ms, HIGH_ACCURACY, WorkSource{10328 com.autonavi.minimap}]
+    11-05 07:38:02.253: gnss measurements +registration 10328/com.autonavi.minimap/0C98C854 -> GnssMeasurementRequest[@0]
+    11-05 07:38:02.253: GnssMeasurement +registration 10328/com.autonavi.minimap/0C98C854 -> GnssMeasurementRequest[@0]
+    11-05 07:38:03.054: gps provider -registration 10328/com.autonavi.minimap/79912897
+    11-05 07:38:03.056: gps provider request = ProviderRequest[OFF]
+    11-05 07:38:03.061: gps provider +registration 10328/com.autonavi.minimap/79912897 -> Request[@+500ms HIGH_ACCURACY, WorkSource{10328 com.autonavi.minimap}]
+    11-05 07:38:03.061: gps provider client 10328/com.autonavi.minimap/79912897 -> permitted
+    11-05 07:38:03.065: gps provider client 10328/com.autonavi.minimap/79912897 -> foreground
+    11-05 07:38:03.065: gps provider request = ProviderRequest[@+500ms, HIGH_ACCURACY, WorkSource{10328 com.autonavi.minimap}]
+    11-05 07:38:03.070: gps provider -registration 10328/com.autonavi.minimap/79912897
+    11-05 07:38:03.071: gps provider request = ProviderRequest[OFF]
+    11-05 07:38:03.075: gps provider +registration 10328/com.autonavi.minimap/79912897 -> Request[@+1s0ms HIGH_ACCURACY, WorkSource{10328 com.autonavi.minimap}]
+    11-05 07:38:03.075: gps provider client 10328/com.autonavi.minimap/79912897 -> permitted
+    11-05 07:38:03.076: gps provider client 10328/com.autonavi.minimap/79912897 -> foreground
+    11-05 07:38:03.077: gps provider request = ProviderRequest[@+1s0ms, HIGH_ACCURACY, WorkSource{10328 com.autonavi.minimap}]
+    11-05 07:38:04.999: network provider +registration 1000/android[OplusLBS]/84AA7865 -> Request[@+1s0ms BALANCED, WorkSource{1000 android}]
+    11-05 07:38:04.999: network provider client 1000/android[OplusLBS]/84AA7865 -> permitted
+    11-05 07:38:05.001: network provider client 1000/android[OplusLBS]/84AA7865 -> foreground
+    11-05 07:38:05.002: network provider request = ProviderRequest[@+1s0ms, WorkSource{1000 android}]
+    11-05 07:38:05.908: network provider -registration 1000/android[OplusLBS]/84AA7865
+    11-05 07:38:05.910: network provider +registration 1000/android[OplusLBS]/84AA7865 -> Request[@+1s0ms BALANCED, WorkSource{1000 android}]
+    11-05 07:38:05.910: network provider client 1000/android[OplusLBS]/84AA7865 -> permitted
+    11-05 07:38:05.910: network provider client 1000/android[OplusLBS]/84AA7865 -> foreground
+    11-05 07:38:10.301: passive provider client 10328/com.autonavi.minimap/C9F97C93 -> background
+    11-05 07:38:10.313: gps provider client 10328/com.autonavi.minimap/79912897 -> background
+    11-05 07:38:10.313: gps provider request = ProviderRequest[@+10m0s0ms, HIGH_ACCURACY, WorkSource{10328 com.autonavi.minimap}]
+    11-05 07:38:14.080: App [:10328] is Freeze
+    11-05 07:38:14.080: gps provider -registration 10328/com.autonavi.minimap/79912897
+    11-05 07:38:14.083: gps provider request = ProviderRequest[OFF]
+    11-05 07:38:14.084: GnssMeasurement -registration 10328/com.autonavi.minimap/0C98C854
+    11-05 07:38:14.084: gnss measurements -registration 10328/com.autonavi.minimap/0C98C854
+    11-05 07:38:15.003: network provider -registration 1000/android[OplusLBS]/84AA7865
+    11-05 07:38:15.006: network provider request = ProviderRequest[OFF]
+    11-05 07:38:18.651: App [:10328] is UnFreeze
+    11-05 07:38:18.658: gps provider +registration 10328/com.autonavi.minimap/79912897 -> Request[@+1s0ms HIGH_ACCURACY, WorkSource{10328 com.autonavi.minimap}]
+    11-05 07:38:18.658: gps provider client 10328/com.autonavi.minimap/79912897 -> permitted
+    11-05 07:38:18.661: passive provider client 10328/com.autonavi.minimap/C9F97C93 -> foreground
+    11-05 07:38:18.761: gps provider client 10328/com.autonavi.minimap/79912897 -> foreground
+    11-05 07:38:18.763: gps provider request = ProviderRequest[@+1s0ms, HIGH_ACCURACY, WorkSource{10328 com.autonavi.minimap}]
+    11-05 07:38:18.765: gnss measurements +registration 10328/com.autonavi.minimap/0C98C854 -> GnssMeasurementRequest[@0]
+    11-05 07:38:18.765: GnssMeasurement +registration 10328/com.autonavi.minimap/0C98C854 -> GnssMeasurementRequest[@0]
+    11-05 07:38:25.257: passive provider client 10328/com.autonavi.minimap/C9F97C93 -> background
+    11-05 07:38:25.257: gps provider client 10328/com.autonavi.minimap/79912897 -> background
+    11-05 07:38:25.257: gps provider request = ProviderRequest[@+10m0s0ms, HIGH_ACCURACY, WorkSource{10328 com.autonavi.minimap}]
+    11-05 07:38:25.262: GnssMeasurement -registration 10328/com.autonavi.minimap/0C98C854
+    11-05 07:38:25.263: gnss measurements -registration 10328/com.autonavi.minimap/0C98C854
+    11-05 07:38:25.296: gps provider -registration 10328/com.autonavi.minimap/79912897
+    11-05 07:38:25.298: gps provider request = ProviderRequest[OFF]
+    11-05 07:38:25.389: passive provider -registration 10328/com.autonavi.minimap/C9F97C93
+    11-05 07:38:29.614: passive provider +registration 10328/com.autonavi.minimap/C9F97C93 -> Request[PASSIVE, minUpdateInterval=+1s0ms, WorkSource{10328 com.autonavi.minimap}]
+    11-05 07:38:29.616: passive provider client 10328/com.autonavi.minimap/C9F97C93 -> permitted
+    11-05 07:38:29.629: passive provider client 10328/com.autonavi.minimap/C9F97C93 -> foreground
+    11-05 07:38:29.762: gps provider +registration 10328/com.autonavi.minimap/79912897 -> Request[@+1s0ms HIGH_ACCURACY, WorkSource{10328 com.autonavi.minimap}]
+    11-05 07:38:29.762: gps provider client 10328/com.autonavi.minimap/79912897 -> permitted
+    11-05 07:38:29.763: gps provider client 10328/com.autonavi.minimap/79912897 -> foreground
+    11-05 07:38:29.763: gps provider request = ProviderRequest[@+1s0ms, HIGH_ACCURACY, WorkSource{10328 com.autonavi.minimap}]
+    11-05 07:38:29.766: gnss measurements +registration 10328/com.autonavi.minimap/0C98C854 -> GnssMeasurementRequest[@0]
+    11-05 07:38:29.766: GnssMeasurement +registration 10328/com.autonavi.minimap/0C98C854 -> GnssMeasurementRequest[@0]
+    11-05 07:38:37.738: passive provider client 10328/com.autonavi.minimap/C9F97C93 -> background
+    11-05 07:38:37.741: gps provider client 10328/com.autonavi.minimap/79912897 -> background
+    11-05 07:38:37.741: gps provider request = ProviderRequest[@+10m0s0ms, HIGH_ACCURACY, WorkSource{10328 com.autonavi.minimap}]
+    11-05 07:38:39.090: gps provider removed mock provider override
+    11-05 07:38:39.090: gps provider added mock provider override
+    11-05 07:38:39.090: gps provider [u0] disabled
+    11-05 07:38:39.092: gps provider request = ProviderRequest[OFF]
+    11-05 07:38:39.092: gps provider [u999] disabled
+    11-05 07:38:39.095: gps provider [u0] enabled
+    11-05 07:38:39.100: gps provider [u999] enabled
+    11-05 07:38:39.102: network provider removed mock provider override
+    11-05 07:38:39.102: GPS Engine State: ON WorkSource Size: 1
+    11-05 07:38:39.102: network provider [u0] disabled
+    11-05 07:38:39.103: network provider request = ProviderRequest[OFF]
+    11-05 07:38:39.103: network provider [u999] disabled
+    11-05 07:38:39.107: network provider added mock provider override
+    11-05 07:38:39.107: network provider [u0] enabled
+    11-05 07:38:39.112: network provider [u999] enabled
+    11-05 07:38:39.113: fused provider removed mock provider override
+    11-05 07:38:39.114: passive provider +registration 1000/android[OplusLBS]/13407A07 -> Request[PASSIVE, minUpdateInterval=0, WorkSource{1000 android}]
+    11-05 07:38:39.114: passive provider client 1000/android[OplusLBS]/13407A07 -> permitted
+    11-05 07:38:39.117: fused provider [u0] disabled
+    11-05 07:38:39.120: fused provider [u999] disabled
+    11-05 07:38:39.121: fused provider added mock provider override
+    11-05 07:38:39.121: passive provider client 1000/android[OplusLBS]/13407A07 -> foreground
+    11-05 07:38:39.123: GPS Engine State: OFF WorkSource Size: 0
+    11-05 07:38:39.123: passive provider -registration 1000/android[OplusLBS]/13407A07
+    11-05 07:38:39.125: fused provider [u0] enabled
+    11-05 07:38:39.127: fused provider [u999] enabled
+    11-05 07:38:40.711: passive provider client 10328/com.autonavi.minimap/C9F97C93 -> foreground
+    11-05 07:38:40.711: gps provider client 10328/com.autonavi.minimap/79912897 -> foreground
+    11-05 07:38:40.717: gps provider request = ProviderRequest[@+1s0ms, HIGH_ACCURACY, WorkSource{10328 com.autonavi.minimap}]
+    11-05 07:38:49.120: network provider +registration 1000/android[OplusLBS]/84AA7865 -> Request[@+1s0ms BALANCED, WorkSource{1000 android}]
+    11-05 07:38:49.120: network provider client 1000/android[OplusLBS]/84AA7865 -> permitted
+    11-05 07:38:49.124: network provider client 1000/android[OplusLBS]/84AA7865 -> foreground
+    11-05 07:38:49.125: network provider request = ProviderRequest[@+1s0ms, WorkSource{1000 android}]
+    11-05 07:38:59.128: network provider -registration 1000/android[OplusLBS]/84AA7865
+    11-05 07:38:59.130: network provider request = ProviderRequest[OFF]
+    11-05 07:39:18.896: passive provider client 10328/com.autonavi.minimap/C9F97C93 -> background
+    11-05 07:39:18.896: gps provider client 10328/com.autonavi.minimap/79912897 -> background
+    11-05 07:39:18.896: gps provider request = ProviderRequest[@+10m0s0ms, HIGH_ACCURACY, WorkSource{10328 com.autonavi.minimap}]
+    11-05 07:39:18.933: GnssMeasurement -registration 10328/com.autonavi.minimap/0C98C854
+    11-05 07:39:18.934: gnss measurements -registration 10328/com.autonavi.minimap/0C98C854
+    11-05 07:39:18.936: gps provider -registration 10328/com.autonavi.minimap/79912897
+    11-05 07:39:18.937: gps provider request = ProviderRequest[OFF]
+    11-05 07:39:19.043: passive provider -registration 10328/com.autonavi.minimap/C9F97C93
+    11-05 07:40:27.600: network provider +registration 1000/android[GnssService]/1F3745CA -> Request[@+1s0ms LOW_POWER, duration=+10s0ms, maxUpdates=1, WorkSource{1000 android}]
+    11-05 07:40:27.601: network provider client 1000/android[GnssService]/1F3745CA -> permitted
+    11-05 07:40:27.606: network provider client 1000/android[GnssService]/1F3745CA -> foreground
+    11-05 07:40:27.619: network provider request = ProviderRequest[@+1s0ms, LOW_POWER, WorkSource{1000 android}]
+    11-05 07:40:27.885: network provider -registration 1000/android[GnssService]/1F3745CA
+    11-05 07:40:27.887: network provider request = ProviderRequest[OFF]
+    11-05 07:43:01.382: passive provider +registration 10328/com.autonavi.minimap/E1414C29 -> Request[PASSIVE, minUpdateInterval=+1s0ms, WorkSource{10328 com.autonavi.minimap}]
+    11-05 07:43:01.383: passive provider client 10328/com.autonavi.minimap/E1414C29 -> permitted
+    11-05 07:43:01.387: passive provider client 10328/com.autonavi.minimap/E1414C29 -> foreground
+    11-05 07:43:01.454: gps provider +registration 10328/com.autonavi.minimap/AFF064D8 -> Request[@+1s0ms HIGH_ACCURACY, WorkSource{10328 com.autonavi.minimap}]
+    11-05 07:43:01.454: gps provider client 10328/com.autonavi.minimap/AFF064D8 -> permitted
+    11-05 07:43:01.456: gps provider client 10328/com.autonavi.minimap/AFF064D8 -> foreground
+    11-05 07:43:01.457: gps provider request = ProviderRequest[@+1s0ms, HIGH_ACCURACY, WorkSource{10328 com.autonavi.minimap}]
+    11-05 07:43:01.458: gnss measurements +registration 10328/com.autonavi.minimap/FEE2549A -> GnssMeasurementRequest[@0]
+    11-05 07:43:01.459: GnssMeasurement +registration 10328/com.autonavi.minimap/FEE2549A -> GnssMeasurementRequest[@0]
+    11-05 07:43:14.399: network provider +registration 1000/android[GnssService]/83F19E7B -> Request[@+1s0ms LOW_POWER, duration=+10s0ms, maxUpdates=1, WorkSource{1000 android}]
+    11-05 07:43:14.399: network provider client 1000/android[GnssService]/83F19E7B -> permitted
+    11-05 07:43:14.402: network provider client 1000/android[GnssService]/83F19E7B -> foreground
+    11-05 07:43:14.410: network provider request = ProviderRequest[@+1s0ms, LOW_POWER, WorkSource{1000 android}]
+    11-05 07:43:24.402: network provider +registration 1000/android[GnssService]/B9B3531E -> Request[@+1s0ms LOW_POWER, duration=+10s0ms, maxUpdates=1, WorkSource{1000 android}]
+    11-05 07:43:24.402: network provider client 1000/android[GnssService]/B9B3531E -> permitted
+    11-05 07:43:24.406: network provider client 1000/android[GnssService]/B9B3531E -> foreground
+    11-05 07:43:24.410: network provider -registration 1000/android[GnssService]/83F19E7B
+    11-05 07:43:34.404: network provider +registration 1000/android[GnssService]/F8BCBE74 -> Request[@+1s0ms LOW_POWER, duration=+10s0ms, maxUpdates=1, WorkSource{1000 android}]
+    11-05 07:43:34.405: network provider client 1000/android[GnssService]/F8BCBE74 -> permitted
+    11-05 07:43:34.409: network provider client 1000/android[GnssService]/F8BCBE74 -> foreground
+    11-05 07:43:34.419: network provider -registration 1000/android[GnssService]/B9B3531E
+    11-05 07:43:44.411: network provider -registration 1000/android[GnssService]/F8BCBE74
+    11-05 07:43:44.413: network provider request = ProviderRequest[OFF]
+    11-05 07:43:59.137: network provider +registration 1000/android[OplusLBS]/84AA7865 -> Request[@+1s0ms BALANCED, WorkSource{1000 android}]
+    11-05 07:43:59.138: network provider client 1000/android[OplusLBS]/84AA7865 -> permitted
+    11-05 07:43:59.146: network provider client 1000/android[OplusLBS]/84AA7865 -> foreground
+    11-05 07:43:59.147: network provider request = ProviderRequest[@+1s0ms, WorkSource{1000 android}]
+    11-05 07:44:09.150: network provider -registration 1000/android[OplusLBS]/84AA7865
+    11-05 07:44:09.151: network provider request = ProviderRequest[OFF]
+    11-05 07:46:16.546: passive provider client 10328/com.autonavi.minimap/E1414C29 -> background
+    11-05 07:46:16.546: gps provider client 10328/com.autonavi.minimap/AFF064D8 -> background
+    11-05 07:46:16.546: gps provider request = ProviderRequest[@+10m0s0ms, HIGH_ACCURACY, WorkSource{10328 com.autonavi.minimap}]
+    11-05 07:46:16.578: GnssMeasurement -registration 10328/com.autonavi.minimap/FEE2549A
+    11-05 07:46:16.578: gnss measurements -registration 10328/com.autonavi.minimap/FEE2549A
+    11-05 07:46:16.579: gps provider -registration 10328/com.autonavi.minimap/AFF064D8
+    11-05 07:46:16.581: gps provider request = ProviderRequest[OFF]
+    11-05 07:46:16.635: network provider +registration 10170/com.coloros.weather.service/08837873 -> Request[@+5s0ms BALANCED, minUpdateDistance=5.0, WorkSource{10170 com.coloros.weather.service}]
+    11-05 07:46:16.635: network provider client 10170/com.coloros.weather.service/08837873 -> permitted
+    11-05 07:46:16.646: network provider -registration 10170/com.coloros.weather.service/08837873
+    11-05 07:46:16.646: network provider request = ProviderRequest[OFF]
+    11-05 07:46:16.647: passive provider -registration 10328/com.autonavi.minimap/E1414C29
+    11-05 07:49:09.224: network provider +registration 1000/android[OplusLBS]/84AA7865 -> Request[@+1s0ms BALANCED, WorkSource{1000 android}]
+    11-05 07:49:09.224: network provider client 1000/android[OplusLBS]/84AA7865 -> permitted
+    11-05 07:49:09.231: network provider client 1000/android[OplusLBS]/84AA7865 -> foreground
+    11-05 07:49:09.237: network provider request = ProviderRequest[@+1s0ms, WorkSource{1000 android}]
+    11-05 07:49:19.246: network provider -registration 1000/android[OplusLBS]/84AA7865
+    11-05 07:49:19.249: network provider request = ProviderRequest[OFF]
+    11-05 07:49:37.192: network provider +registration 10170/com.coloros.weather.service/08837873 -> Request[@+5s0ms BALANCED, minUpdateDistance=5.0, WorkSource{10170 com.coloros.weather.service}]
+    11-05 07:49:37.192: network provider client 10170/com.coloros.weather.service/08837873 -> permitted
+    11-05 07:49:37.203: network provider -registration 10170/com.coloros.weather.service/08837873
+    11-05 07:49:37.205: network provider request = ProviderRequest[OFF]
+    11-05 07:54:19.355: network provider +registration 1000/android[OplusLBS]/84AA7865 -> Request[@+1s0ms BALANCED, WorkSource{1000 android}]
+    11-05 07:54:19.355: network provider client 1000/android[OplusLBS]/84AA7865 -> permitted
+    11-05 07:54:19.358: network provider client 1000/android[OplusLBS]/84AA7865 -> foreground
+    11-05 07:54:19.360: network provider request = ProviderRequest[@+1s0ms, WorkSource{1000 android}]
+    11-05 07:54:29.369: network provider -registration 1000/android[OplusLBS]/84AA7865
+    11-05 07:54:29.370: network provider request = ProviderRequest[OFF]
+    11-05 07:59:29.387: network provider +registration 1000/android[OplusLBS]/84AA7865 -> Request[@+1s0ms BALANCED, WorkSource{1000 android}]
+    11-05 07:59:29.387: network provider client 1000/android[OplusLBS]/84AA7865 -> permitted
+    11-05 07:59:29.394: network provider client 1000/android[OplusLBS]/84AA7865 -> foreground
+    11-05 07:59:29.397: network provider request = ProviderRequest[@+1s0ms, WorkSource{1000 android}]
+    11-05 07:59:39.405: network provider -registration 1000/android[OplusLBS]/84AA7865
+    11-05 07:59:39.406: network provider request = ProviderRequest[OFF]
+    11-05 08:04:39.508: network provider +registration 1000/android[OplusLBS]/84AA7865 -> Request[@+1s0ms BALANCED, WorkSource{1000 android}]
+    11-05 08:04:39.508: network provider client 1000/android[OplusLBS]/84AA7865 -> permitted
+    11-05 08:04:39.515: network provider client 1000/android[OplusLBS]/84AA7865 -> foreground
+    11-05 08:04:39.519: network provider request = ProviderRequest[@+1s0ms, WorkSource{1000 android}]
+    11-05 08:04:49.531: network provider -registration 1000/android[OplusLBS]/84AA7865
+    11-05 08:04:49.533: network provider request = ProviderRequest[OFF]
+    11-05 08:05:01.312: fused provider removed mock provider override
+    11-05 08:05:01.333: fused provider [u0] disabled
+    11-05 08:05:01.334: fused provider [u999] disabled
+    11-05 08:05:01.335: gps provider removed mock provider override
+    11-05 08:05:01.335: network provider removed mock provider override
+    11-05 08:05:01.335: network provider [u0] disabled
+    11-05 08:05:01.345: network provider request = ProviderRequest[OFF]
+    11-05 08:05:01.345: network provider [u999] disabled
+    11-05 08:05:01.380: fused provider [u0] enabled
+    11-05 08:05:01.381: fused provider [u999] enabled
+    11-05 08:05:01.453: network provider [u0] enabled
+    11-05 08:05:01.488: network provider [u999] enabled
+    11-05 08:05:11.550: network provider +registration 1000/android[OplusLBS]/84AA7865 -> Request[@+1s0ms BALANCED, WorkSource{1000 android}]
+    11-05 08:05:11.550: network provider client 1000/android[OplusLBS]/84AA7865 -> permitted
+    11-05 08:05:11.562: network provider client 1000/android[OplusLBS]/84AA7865 -> foreground
+    11-05 08:05:11.564: network provider request = ProviderRequest[@+1s0ms, WorkSource{1000 android}]
+    11-05 08:05:12.148: network provider -registration 1000/android[OplusLBS]/84AA7865
+    11-05 08:05:12.149: network provider request = ProviderRequest[OFF]
+    11-05 08:05:47.747: gps provider removed mock provider override
+    11-05 08:05:47.748: gps provider added mock provider override
+    11-05 08:05:47.748: gps provider [u0] disabled
+    11-05 08:05:47.751: gps provider [u999] disabled
+    11-05 08:05:47.761: gps provider [u0] enabled
+    11-05 08:05:47.764: gps provider [u999] enabled
+    11-05 08:05:47.770: network provider removed mock provider override
+    11-05 08:05:47.771: network provider added mock provider override
+    11-05 08:05:47.771: network provider [u0] disabled
+    11-05 08:05:47.774: network provider request = ProviderRequest[OFF]
+    11-05 08:05:47.774: network provider [u999] disabled
+    11-05 08:05:47.776: network provider [u0] enabled
+    11-05 08:05:47.781: network provider [u999] enabled
+    11-05 08:05:47.784: fused provider removed mock provider override
+    11-05 08:05:47.785: fused provider added mock provider override
+    11-05 08:05:47.786: fused provider [u0] disabled
+    11-05 08:05:47.787: fused provider [u999] disabled
+    11-05 08:05:47.790: fused provider [u0] enabled
+    11-05 08:05:47.790: fused provider [u999] enabled
+    11-05 08:10:12.162: network provider +registration 1000/android[OplusLBS]/84AA7865 -> Request[@+1s0ms BALANCED, WorkSource{1000 android}]
+    11-05 08:10:12.162: network provider client 1000/android[OplusLBS]/84AA7865 -> permitted
+    11-05 08:10:12.170: network provider client 1000/android[OplusLBS]/84AA7865 -> foreground
+    11-05 08:10:12.175: network provider request = ProviderRequest[@+1s0ms, WorkSource{1000 android}]
+    11-05 08:10:12.176: network provider +registration 1000/android[GnssService]/0E7D3295 -> Request[@+1s0ms LOW_POWER, duration=+10s0ms, maxUpdates=1, WorkSource{1000 android}]
+    11-05 08:10:12.177: network provider client 1000/android[GnssService]/0E7D3295 -> permitted
+    11-05 08:10:12.177: network provider client 1000/android[GnssService]/0E7D3295 -> foreground
+    11-05 08:10:12.358: network provider -registration 1000/android[GnssService]/0E7D3295
+    11-05 08:10:22.179: network provider -registration 1000/android[OplusLBS]/84AA7865
+    11-05 08:10:22.181: network provider request = ProviderRequest[OFF]
+    11-05 08:11:23.430: gps provider [u0] disabled
+    11-05 08:11:23.433: gps provider [u999] disabled
+    11-05 08:11:23.435: gps provider removed mock provider override
+    11-05 08:11:23.435: gps provider [u0] enabled
+    11-05 08:11:23.437: gps provider [u999] enabled
+    11-05 08:11:23.448: network provider [u0] disabled
+    11-05 08:11:23.452: network provider request = ProviderRequest[OFF]
+    11-05 08:11:23.453: network provider [u999] disabled
+    11-05 08:11:23.454: network provider removed mock provider override
+    11-05 08:11:23.455: fused provider [u0] disabled
+    11-05 08:11:23.460: fused provider [u999] disabled
+    11-05 08:11:23.465: fused provider removed mock provider override
+    11-05 08:11:23.476: network provider [u0] enabled
+    11-05 08:11:23.477: fused provider [u0] enabled
+    11-05 08:11:23.479: network provider [u999] enabled
+    11-05 08:11:23.483: gps provider removed mock provider override
+    11-05 08:11:23.485: fused provider [u999] enabled
+    11-05 08:11:23.502: gps provider removed mock provider override
+    11-05 08:11:23.514: network provider removed mock provider override
+    11-05 08:11:23.528: network provider removed mock provider override
+    11-05 08:11:23.541: fused provider removed mock provider override
+    11-05 08:11:23.554: fused provider removed mock provider override
+    11-05 08:11:24.544: gps provider removed mock provider override
+    11-05 08:11:24.618: network provider removed mock provider override
+    11-05 08:11:24.695: fused provider removed mock provider override
+    11-05 08:11:33.494: network provider +registration 1000/android[OplusLBS]/84AA7865 -> Request[@+1s0ms BALANCED, WorkSource{1000 android}]
+    11-05 08:11:33.494: network provider client 1000/android[OplusLBS]/84AA7865 -> permitted
+    11-05 08:11:33.502: network provider client 1000/android[OplusLBS]/84AA7865 -> foreground
+    11-05 08:11:33.503: network provider request = ProviderRequest[@+1s0ms, WorkSource{1000 android}]
+    11-05 08:11:33.785: network provider -registration 1000/android[OplusLBS]/84AA7865
+    11-05 08:11:33.786: network provider request = ProviderRequest[OFF]
+    11-05 08:11:53.343: gps provider removed mock provider override
+    11-05 08:11:53.343: gps provider added mock provider override
+    11-05 08:11:53.343: gps provider [u0] disabled
+    11-05 08:11:53.344: gps provider [u999] disabled
+    11-05 08:11:53.351: gps provider [u0] enabled
+    11-05 08:11:53.355: gps provider [u999] enabled
+    11-05 08:11:53.360: network provider removed mock provider override
+    11-05 08:11:53.361: network provider added mock provider override
+    11-05 08:11:53.361: network provider [u0] disabled
+    11-05 08:11:53.366: network provider request = ProviderRequest[OFF]
+    11-05 08:11:53.366: network provider [u999] disabled
+    11-05 08:11:53.367: network provider [u0] enabled
+    11-05 08:11:53.369: network provider [u999] enabled
+    11-05 08:11:53.374: fused provider removed mock provider override
+    11-05 08:11:53.374: fused provider added mock provider override
+    11-05 08:11:53.375: fused provider [u0] disabled
+    11-05 08:11:53.375: fused provider [u999] disabled
+    11-05 08:11:53.376: fused provider [u0] enabled
+    11-05 08:11:53.377: fused provider [u999] enabled
+    11-05 08:11:57.407: passive provider +registration 10328/com.autonavi.minimap/E1414C29 -> Request[PASSIVE, minUpdateInterval=+1s0ms, WorkSource{10328 com.autonavi.minimap}]
+    11-05 08:11:57.407: passive provider client 10328/com.autonavi.minimap/E1414C29 -> permitted
+    11-05 08:11:57.511: passive provider client 10328/com.autonavi.minimap/E1414C29 -> foreground
+    11-05 08:11:57.669: gps provider +registration 10328/com.autonavi.minimap/AFF064D8 -> Request[@+1s0ms HIGH_ACCURACY, WorkSource{10328 com.autonavi.minimap}]
+    11-05 08:11:57.669: gps provider client 10328/com.autonavi.minimap/AFF064D8 -> permitted
+    11-05 08:11:57.678: gps provider client 10328/com.autonavi.minimap/AFF064D8 -> foreground
+    11-05 08:11:57.679: gps provider request = ProviderRequest[@+1s0ms, HIGH_ACCURACY, WorkSource{10328 com.autonavi.minimap}]
+    11-05 08:11:57.680: gnss measurements +registration 10328/com.autonavi.minimap/FEE2549A -> GnssMeasurementRequest[@0]
+    11-05 08:11:57.680: GnssMeasurement +registration 10328/com.autonavi.minimap/FEE2549A -> GnssMeasurementRequest[@0]
+    11-05 08:12:04.909: passive provider client 10328/com.autonavi.minimap/E1414C29 -> background
+    11-05 08:12:04.913: gps provider client 10328/com.autonavi.minimap/AFF064D8 -> background
+    11-05 08:12:04.914: gps provider request = ProviderRequest[@+10m0s0ms, HIGH_ACCURACY, WorkSource{10328 com.autonavi.minimap}]
+    11-05 08:12:05.018: GnssMeasurement -registration 10328/com.autonavi.minimap/FEE2549A
+    11-05 08:12:05.019: gnss measurements -registration 10328/com.autonavi.minimap/FEE2549A
+    11-05 08:12:05.025: gps provider -registration 10328/com.autonavi.minimap/AFF064D8
+    11-05 08:12:05.026: gps provider request = ProviderRequest[OFF]
+    11-05 08:12:05.222: passive provider -registration 10328/com.autonavi.minimap/E1414C29
+    11-05 08:12:09.083: passive provider +registration 10328/com.autonavi.minimap/E1414C29 -> Request[PASSIVE, minUpdateInterval=+1s0ms, WorkSource{10328 com.autonavi.minimap}]
+    11-05 08:12:09.083: passive provider client 10328/com.autonavi.minimap/E1414C29 -> permitted
+    11-05 08:12:09.097: passive provider client 10328/com.autonavi.minimap/E1414C29 -> foreground
+    11-05 08:12:09.104: gnss measurements +registration 10328/com.autonavi.minimap/FEE2549A -> GnssMeasurementRequest[@0]
+    11-05 08:12:09.104: GnssMeasurement +registration 10328/com.autonavi.minimap/FEE2549A -> GnssMeasurementRequest[@0]
+    11-05 08:12:09.343: gps provider +registration 10328/com.autonavi.minimap/AFF064D8 -> Request[@+1s0ms HIGH_ACCURACY, WorkSource{10328 com.autonavi.minimap}]
+    11-05 08:12:09.343: gps provider client 10328/com.autonavi.minimap/AFF064D8 -> permitted
+    11-05 08:12:09.345: gps provider client 10328/com.autonavi.minimap/AFF064D8 -> foreground
+    11-05 08:12:09.346: gps provider request = ProviderRequest[@+1s0ms, HIGH_ACCURACY, WorkSource{10328 com.autonavi.minimap}]
+    11-05 08:12:12.004: passive provider client 10328/com.autonavi.minimap/E1414C29 -> background
+    11-05 08:12:12.010: gps provider client 10328/com.autonavi.minimap/AFF064D8 -> background
+    11-05 08:12:12.010: gps provider request = ProviderRequest[@+10m0s0ms, HIGH_ACCURACY, WorkSource{10328 com.autonavi.minimap}]
+    11-05 08:12:15.885: App [:10328] is Freeze
+    11-05 08:12:15.885: gps provider -registration 10328/com.autonavi.minimap/AFF064D8
+    11-05 08:12:15.887: gps provider request = ProviderRequest[OFF]
+    11-05 08:12:15.887: GnssMeasurement -registration 10328/com.autonavi.minimap/FEE2549A
+    11-05 08:12:15.887: gnss measurements -registration 10328/com.autonavi.minimap/FEE2549A
+    11-05 08:12:54.667: passive provider +registration 10301/com.tencent.mm/9FB12E69 -> Request[PASSIVE, minUpdateInterval=+1s0ms, WorkSource{10301 com.tencent.mm}]
+    11-05 08:12:54.668: passive provider client 10301/com.tencent.mm/9FB12E69 -> permitted
+    11-05 08:12:54.689: passive provider client 10301/com.tencent.mm/9FB12E69 -> foreground
+    11-05 08:12:54.694: gps provider +registration 10301/com.tencent.mm/C81F6857 -> Request[@+1s0ms HIGH_ACCURACY, WorkSource{10301 com.tencent.mm}]
+    11-05 08:12:54.695: gps provider client 10301/com.tencent.mm/C81F6857 -> permitted
+    11-05 08:12:54.698: gps provider client 10301/com.tencent.mm/C81F6857 -> foreground
+    11-05 08:12:54.700: gps provider request = ProviderRequest[@+1s0ms, HIGH_ACCURACY, WorkSource{10301 com.tencent.mm}]
+    11-05 08:12:54.703: gnss measurements +registration 10301/com.tencent.mm/AB00E42A -> GnssMeasurementRequest[@0]
+    11-05 08:12:54.703: GnssMeasurement +registration 10301/com.tencent.mm/AB00E42A -> GnssMeasurementRequest[@0]
+    11-05 08:12:54.714: passive provider +registration 10301/com.tencent.mm/50A76847 -> Request[PASSIVE, minUpdateInterval=0, WorkSource{10301 com.tencent.mm}]
+    11-05 08:12:54.714: passive provider client 10301/com.tencent.mm/50A76847 -> permitted
+    11-05 08:12:54.714: passive provider client 10301/com.tencent.mm/50A76847 -> foreground
+    11-05 08:13:00.750: passive provider client 10301/com.tencent.mm/50A76847 -> background
+    11-05 08:13:00.750: passive provider client 10301/com.tencent.mm/9FB12E69 -> background
+    11-05 08:13:00.750: gps provider client 10301/com.tencent.mm/C81F6857 -> background
+    11-05 08:13:00.750: gps provider request = ProviderRequest[@+10m0s0ms, HIGH_ACCURACY, WorkSource{10301 com.tencent.mm}]
+    11-05 08:13:01.058: gps provider -registration 10301/com.tencent.mm/C81F6857
+    11-05 08:13:01.059: gps provider request = ProviderRequest[OFF]
+    11-05 08:13:01.062: GnssMeasurement -registration 10301/com.tencent.mm/AB00E42A
+    11-05 08:13:01.062: gnss measurements -registration 10301/com.tencent.mm/AB00E42A
+    11-05 08:13:01.063: passive provider -registration 10301/com.tencent.mm/50A76847
+    11-05 08:13:01.082: passive provider -registration 10301/com.tencent.mm/9FB12E69
+    11-05 08:13:03.762: gps provider +registration 10328/com.autonavi.minimap/AFF064D8 -> Request[@+500ms HIGH_ACCURACY, WorkSource{10328 com.autonavi.minimap}]
+    11-05 08:13:03.762: gps provider client 10328/com.autonavi.minimap/AFF064D8 -> permitted
+    11-05 08:13:03.777: gps provider client 10328/com.autonavi.minimap/AFF064D8 -> foreground
+    11-05 08:13:03.777: gps provider request = ProviderRequest[@+500ms, HIGH_ACCURACY, WorkSource{10328 com.autonavi.minimap}]
+    11-05 08:13:03.778: gps provider -registration 10328/com.autonavi.minimap/AFF064D8
+    11-05 08:13:03.778: gps provider request = ProviderRequest[OFF]
+    11-05 08:13:03.781: gps provider +registration 10328/com.autonavi.minimap/AFF064D8 -> Request[@+1s0ms HIGH_ACCURACY, WorkSource{10328 com.autonavi.minimap}]
+    11-05 08:13:03.781: gps provider client 10328/com.autonavi.minimap/AFF064D8 -> permitted
+    11-05 08:13:03.782: gps provider client 10328/com.autonavi.minimap/AFF064D8 -> foreground
+    11-05 08:13:03.782: gps provider request = ProviderRequest[@+1s0ms, HIGH_ACCURACY, WorkSource{10328 com.autonavi.minimap}]
+    11-05 08:13:03.786: [gps]'s request [10328/com.autonavi.minimap/AFF064D8] is reject, app's listener size is not empty
+    11-05 08:13:03.794: gps provider -registration 10328/com.autonavi.minimap/AFF064D8
+    11-05 08:13:03.795: gps provider request = ProviderRequest[OFF]
+    11-05 08:13:03.795: [gps]'s request [10328/com.autonavi.minimap/AFF064D8] is reject, app's listener size is not empty
+    11-05 08:13:04.258: passive provider client 10328/com.autonavi.minimap/E1414C29 -> foreground
+    11-05 08:13:04.260: App [:10328] is UnFreeze
+    11-05 08:13:04.260: gps provider +registration 10328/com.autonavi.minimap/AFF064D8 -> Request[@+1s0ms HIGH_ACCURACY, WorkSource{10328 com.autonavi.minimap}]
+    11-05 08:13:04.260: gps provider client 10328/com.autonavi.minimap/AFF064D8 -> permitted
+    11-05 08:13:04.262: gps provider client 10328/com.autonavi.minimap/AFF064D8 -> foreground
+    11-05 08:13:04.262: gps provider request = ProviderRequest[@+1s0ms, HIGH_ACCURACY, WorkSource{10328 com.autonavi.minimap}]
+    11-05 08:13:04.263: gnss measurements +registration 10328/com.autonavi.minimap/FEE2549A -> GnssMeasurementRequest[@0]
+    11-05 08:13:04.263: GnssMeasurement +registration 10328/com.autonavi.minimap/FEE2549A -> GnssMeasurementRequest[@0]
+    11-05 08:13:04.320: gps provider -registration 10328/com.autonavi.minimap/AFF064D8
+    11-05 08:13:04.321: gps provider request = ProviderRequest[OFF]
+    11-05 08:13:04.326: gps provider +registration 10328/com.autonavi.minimap/AFF064D8 -> Request[@+500ms HIGH_ACCURACY, WorkSource{10328 com.autonavi.minimap}]
+    11-05 08:13:04.326: gps provider client 10328/com.autonavi.minimap/AFF064D8 -> permitted
+    11-05 08:13:04.331: gps provider client 10328/com.autonavi.minimap/AFF064D8 -> foreground
+    11-05 08:13:04.331: gps provider request = ProviderRequest[@+500ms, HIGH_ACCURACY, WorkSource{10328 com.autonavi.minimap}]
+    11-05 08:13:04.339: gps provider -registration 10328/com.autonavi.minimap/AFF064D8
+    11-05 08:13:04.340: gps provider request = ProviderRequest[OFF]
+    11-05 08:13:04.346: gps provider +registration 10328/com.autonavi.minimap/AFF064D8 -> Request[@+1s0ms HIGH_ACCURACY, WorkSource{10328 com.autonavi.minimap}]
+    11-05 08:13:04.346: gps provider client 10328/com.autonavi.minimap/AFF064D8 -> permitted
+    11-05 08:13:04.347: gps provider client 10328/com.autonavi.minimap/AFF064D8 -> foreground
+    11-05 08:13:04.354: gps provider request = ProviderRequest[@+1s0ms, HIGH_ACCURACY, WorkSource{10328 com.autonavi.minimap}]
+    11-05 08:13:09.804: passive provider client 10328/com.autonavi.minimap/E1414C29 -> background
+    11-05 08:13:09.809: gps provider client 10328/com.autonavi.minimap/AFF064D8 -> background
+    11-05 08:13:09.809: gps provider request = ProviderRequest[@+10m0s0ms, HIGH_ACCURACY, WorkSource{10328 com.autonavi.minimap}]
+    11-05 08:13:09.878: gps provider -registration 10328/com.autonavi.minimap/AFF064D8
+    11-05 08:13:09.880: gps provider request = ProviderRequest[OFF]
+    11-05 08:13:09.882: GnssMeasurement -registration 10328/com.autonavi.minimap/FEE2549A
+    11-05 08:13:09.882: gnss measurements -registration 10328/com.autonavi.minimap/FEE2549A
+    11-05 08:13:10.023: passive provider -registration 10328/com.autonavi.minimap/E1414C29
+    11-05 08:13:10.309: passive provider +registration 10301/com.tencent.mm/9FB12E69 -> Request[PASSIVE, minUpdateInterval=+1s0ms, WorkSource{10301 com.tencent.mm}]
+    11-05 08:13:10.309: passive provider client 10301/com.tencent.mm/9FB12E69 -> permitted
+    11-05 08:13:10.314: passive provider client 10301/com.tencent.mm/9FB12E69 -> foreground
+    11-05 08:13:10.322: gps provider +registration 10301/com.tencent.mm/C81F6857 -> Request[@+1s0ms HIGH_ACCURACY, WorkSource{10301 com.tencent.mm}]
+    11-05 08:13:10.323: gps provider client 10301/com.tencent.mm/C81F6857 -> permitted
+    11-05 08:13:10.343: gps provider client 10301/com.tencent.mm/C81F6857 -> foreground
+    11-05 08:13:10.344: gps provider request = ProviderRequest[@+1s0ms, HIGH_ACCURACY, WorkSource{10301 com.tencent.mm}]
+    11-05 08:13:10.352: gnss measurements +registration 10301/com.tencent.mm/309301AC -> GnssMeasurementRequest[@0]
+    11-05 08:13:10.352: GnssMeasurement +registration 10301/com.tencent.mm/309301AC -> GnssMeasurementRequest[@0]
+    11-05 08:13:10.378: passive provider +registration 10301/com.tencent.mm/8668C2D2 -> Request[PASSIVE, minUpdateInterval=0, WorkSource{10301 com.tencent.mm}]
+    11-05 08:13:10.381: passive provider client 10301/com.tencent.mm/8668C2D2 -> permitted
+    11-05 08:13:10.381: passive provider client 10301/com.tencent.mm/8668C2D2 -> foreground
+    11-05 08:13:10.873: gps provider -registration 10301/com.tencent.mm/C81F6857
+    11-05 08:13:10.874: gps provider request = ProviderRequest[OFF]
+    11-05 08:13:10.878: GnssMeasurement -registration 10301/com.tencent.mm/309301AC
+    11-05 08:13:10.879: gnss measurements -registration 10301/com.tencent.mm/309301AC
+    11-05 08:13:10.879: passive provider -registration 10301/com.tencent.mm/8668C2D2
+    11-05 08:13:10.900: passive provider -registration 10301/com.tencent.mm/9FB12E69
+    11-05 08:13:13.359: gps provider [u0] disabled
+    11-05 08:13:13.360: gps provider [u999] disabled
+    11-05 08:13:13.361: gps provider removed mock provider override
+    11-05 08:13:13.361: gps provider [u0] enabled
+    11-05 08:13:13.367: gps provider [u999] enabled
+    11-05 08:13:13.369: network provider [u0] disabled
+    11-05 08:13:13.370: network provider request = ProviderRequest[OFF]
+    11-05 08:13:13.370: network provider [u999] disabled
+    11-05 08:13:13.372: network provider removed mock provider override
+    11-05 08:13:13.373: fused provider [u0] disabled
+    11-05 08:13:13.376: fused provider [u999] disabled
+    11-05 08:13:13.377: fused provider removed mock provider override
+    11-05 08:13:13.419: fused provider [u0] enabled
+    11-05 08:13:13.423: fused provider [u999] enabled
+    11-05 08:13:13.440: network provider [u0] enabled
+    11-05 08:13:13.444: network provider [u999] enabled
+    11-05 08:13:13.475: gps provider removed mock provider override
+    11-05 08:13:13.501: gps provider removed mock provider override
+    11-05 08:13:13.529: network provider removed mock provider override
+    11-05 08:13:13.536: network provider removed mock provider override
+    11-05 08:13:13.561: fused provider removed mock provider override
+    11-05 08:13:13.574: fused provider removed mock provider override
+    11-05 08:13:14.897: gps provider removed mock provider override
+    11-05 08:13:14.923: network provider removed mock provider override
+    11-05 08:13:14.949: fused provider removed mock provider override
+    11-05 08:13:16.215: gps provider removed mock provider override
+    11-05 08:13:16.240: network provider removed mock provider override
+    11-05 08:13:16.265: fused provider removed mock provider override
+    11-05 08:13:28.788: gps provider removed mock provider override
+    11-05 08:13:28.814: network provider removed mock provider override
+    11-05 08:13:28.839: fused provider removed mock provider override
+    11-05 08:13:29.613: gps provider removed mock provider override
+    11-05 08:13:29.682: network provider removed mock provider override
+    11-05 08:13:29.753: fused provider removed mock provider override
+    11-05 08:13:41.011: gps provider removed mock provider override
+    11-05 08:13:41.011: gps provider added mock provider override
+    11-05 08:13:41.011: gps provider [u0] disabled
+    11-05 08:13:41.012: gps provider [u999] disabled
+    11-05 08:13:41.013: gps provider [u0] enabled
+    11-05 08:13:41.014: gps provider [u999] enabled
+    11-05 08:13:41.015: network provider removed mock provider override
+    11-05 08:13:41.015: network provider added mock provider override
+    11-05 08:13:41.015: network provider [u0] disabled
+    11-05 08:13:41.017: network provider request = ProviderRequest[OFF]
+    11-05 08:13:41.017: network provider [u999] disabled
+    11-05 08:13:41.020: network provider [u0] enabled
+    11-05 08:13:41.022: network provider [u999] enabled
+    11-05 08:13:41.029: fused provider removed mock provider override
+    11-05 08:13:41.029: fused provider added mock provider override
+    11-05 08:13:41.030: fused provider [u0] disabled
+    11-05 08:13:41.032: fused provider [u999] disabled
+    11-05 08:13:41.035: fused provider [u0] enabled
+    11-05 08:13:41.038: fused provider [u999] enabled
+    11-05 08:13:44.582: passive provider +registration 10328/com.autonavi.minimap/6ABF6C30 -> Request[PASSIVE, minUpdateInterval=+1s0ms, WorkSource{10328 com.autonavi.minimap}]
+    11-05 08:13:44.582: passive provider client 10328/com.autonavi.minimap/6ABF6C30 -> permitted
+    11-05 08:13:44.593: passive provider client 10328/com.autonavi.minimap/6ABF6C30 -> foreground
+    11-05 08:13:44.779: gps provider +registration 10328/com.autonavi.minimap/E1845FB5 -> Request[@+1s0ms HIGH_ACCURACY, WorkSource{10328 com.autonavi.minimap}]
+    11-05 08:13:44.779: gps provider client 10328/com.autonavi.minimap/E1845FB5 -> permitted
+    11-05 08:13:44.782: gps provider client 10328/com.autonavi.minimap/E1845FB5 -> foreground
+    11-05 08:13:44.782: gps provider request = ProviderRequest[@+1s0ms, HIGH_ACCURACY, WorkSource{10328 com.autonavi.minimap}]
+    11-05 08:13:44.784: gnss measurements +registration 10328/com.autonavi.minimap/7FBDBA9E -> GnssMeasurementRequest[@0]
+    11-05 08:13:44.785: GnssMeasurement +registration 10328/com.autonavi.minimap/7FBDBA9E -> GnssMeasurementRequest[@0]
+    11-05 08:13:48.954: passive provider client 10328/com.autonavi.minimap/6ABF6C30 -> background
+    11-05 08:13:48.955: gps provider client 10328/com.autonavi.minimap/E1845FB5 -> background
+    11-05 08:13:48.955: gps provider request = ProviderRequest[@+10m0s0ms, HIGH_ACCURACY, WorkSource{10328 com.autonavi.minimap}]
+    11-05 08:13:49.130: GnssMeasurement -registration 10328/com.autonavi.minimap/7FBDBA9E
+    11-05 08:13:49.130: gnss measurements -registration 10328/com.autonavi.minimap/7FBDBA9E
+    11-05 08:13:49.141: gps provider -registration 10328/com.autonavi.minimap/E1845FB5
+    11-05 08:13:49.145: gps provider request = ProviderRequest[OFF]
+    11-05 08:13:49.211: passive provider -registration 10328/com.autonavi.minimap/6ABF6C30
+    11-05 08:14:19.945: passive provider +registration 10328/com.autonavi.minimap/6ABF6C30 -> Request[PASSIVE, minUpdateInterval=+1s0ms, WorkSource{10328 com.autonavi.minimap}]
+    11-05 08:14:19.945: passive provider client 10328/com.autonavi.minimap/6ABF6C30 -> permitted
+    11-05 08:14:19.969: passive provider client 10328/com.autonavi.minimap/6ABF6C30 -> foreground
+    11-05 08:14:19.980: gnss measurements +registration 10328/com.autonavi.minimap/7FBDBA9E -> GnssMeasurementRequest[@0]
+    11-05 08:14:19.995: GnssMeasurement +registration 10328/com.autonavi.minimap/7FBDBA9E -> GnssMeasurementRequest[@0]
+    11-05 08:14:20.265: gps provider +registration 10328/com.autonavi.minimap/E1845FB5 -> Request[@+1s0ms HIGH_ACCURACY, WorkSource{10328 com.autonavi.minimap}]
+    11-05 08:14:20.265: gps provider client 10328/com.autonavi.minimap/E1845FB5 -> permitted
+    11-05 08:14:20.273: gps provider client 10328/com.autonavi.minimap/E1845FB5 -> foreground
+    11-05 08:14:20.273: gps provider request = ProviderRequest[@+1s0ms, HIGH_ACCURACY, WorkSource{10328 com.autonavi.minimap}]
+    11-05 08:14:23.521: passive provider client 10328/com.autonavi.minimap/6ABF6C30 -> background
+    11-05 08:14:23.523: gps provider client 10328/com.autonavi.minimap/E1845FB5 -> background
+    11-05 08:14:23.523: gps provider request = ProviderRequest[@+10m0s0ms, HIGH_ACCURACY, WorkSource{10328 com.autonavi.minimap}]
+    11-05 08:14:24.020: passive provider -registration 10328/com.autonavi.minimap/6ABF6C30
+    11-05 08:14:24.022: GnssMeasurement -registration 10328/com.autonavi.minimap/7FBDBA9E
+    11-05 08:14:24.022: gnss measurements -registration 10328/com.autonavi.minimap/7FBDBA9E
+    11-05 08:14:24.023: gps provider -registration 10328/com.autonavi.minimap/E1845FB5
+    11-05 08:14:24.030: gps provider request = ProviderRequest[OFF]
+    11-05 08:14:26.981: passive provider +registration 10328/com.autonavi.minimap/2FAF0D2C -> Request[PASSIVE, minUpdateInterval=+1s0ms, WorkSource{10328 com.autonavi.minimap}]
+    11-05 08:14:26.981: passive provider client 10328/com.autonavi.minimap/2FAF0D2C -> permitted
+    11-05 08:14:26.982: passive provider client 10328/com.autonavi.minimap/2FAF0D2C -> foreground
+    11-05 08:14:27.041: gps provider +registration 10328/com.autonavi.minimap/5928F8B9 -> Request[@+1s0ms HIGH_ACCURACY, WorkSource{10328 com.autonavi.minimap}]
+    11-05 08:14:27.041: gps provider client 10328/com.autonavi.minimap/5928F8B9 -> permitted
+    11-05 08:14:27.043: gps provider client 10328/com.autonavi.minimap/5928F8B9 -> foreground
+    11-05 08:14:27.044: gps provider request = ProviderRequest[@+1s0ms, HIGH_ACCURACY, WorkSource{10328 com.autonavi.minimap}]
+    11-05 08:14:27.045: gnss measurements +registration 10328/com.autonavi.minimap/6F35E767 -> GnssMeasurementRequest[@0]
+    11-05 08:14:27.045: GnssMeasurement +registration 10328/com.autonavi.minimap/6F35E767 -> GnssMeasurementRequest[@0]
+    11-05 08:14:27.947: gps provider -registration 10328/com.autonavi.minimap/5928F8B9
+    11-05 08:14:27.949: gps provider request = ProviderRequest[OFF]
+    11-05 08:14:27.952: gps provider +registration 10328/com.autonavi.minimap/5928F8B9 -> Request[@+500ms HIGH_ACCURACY, WorkSource{10328 com.autonavi.minimap}]
+    11-05 08:14:27.953: gps provider client 10328/com.autonavi.minimap/5928F8B9 -> permitted
+    11-05 08:14:27.956: gps provider client 10328/com.autonavi.minimap/5928F8B9 -> foreground
+    11-05 08:14:27.956: gps provider request = ProviderRequest[@+500ms, HIGH_ACCURACY, WorkSource{10328 com.autonavi.minimap}]
+    11-05 08:14:27.957: gps provider -registration 10328/com.autonavi.minimap/5928F8B9
+    11-05 08:14:27.958: gps provider request = ProviderRequest[OFF]
+    11-05 08:14:27.965: gps provider +registration 10328/com.autonavi.minimap/5928F8B9 -> Request[@+1s0ms HIGH_ACCURACY, WorkSource{10328 com.autonavi.minimap}]
+    11-05 08:14:27.965: gps provider client 10328/com.autonavi.minimap/5928F8B9 -> permitted
+    11-05 08:14:27.970: gps provider client 10328/com.autonavi.minimap/5928F8B9 -> foreground
+    11-05 08:14:27.970: gps provider request = ProviderRequest[@+1s0ms, HIGH_ACCURACY, WorkSource{10328 com.autonavi.minimap}]
+    11-05 08:14:38.827: passive provider client 10328/com.autonavi.minimap/2FAF0D2C -> background
+    11-05 08:14:38.830: gps provider client 10328/com.autonavi.minimap/5928F8B9 -> background
+    11-05 08:14:38.830: gps provider request = ProviderRequest[@+10m0s0ms, HIGH_ACCURACY, WorkSource{10328 com.autonavi.minimap}]
+    11-05 08:14:42.718: App [:10328] is Freeze
+    11-05 08:14:42.719: gps provider -registration 10328/com.autonavi.minimap/5928F8B9
+    11-05 08:14:42.729: gps provider request = ProviderRequest[OFF]
+    11-05 08:14:42.730: GnssMeasurement -registration 10328/com.autonavi.minimap/6F35E767
+    11-05 08:14:42.730: gnss measurements -registration 10328/com.autonavi.minimap/6F35E767
+    11-05 08:16:33.795: network provider +registration 1000/android[OplusLBS]/84AA7865 -> Request[@+1s0ms BALANCED, WorkSource{1000 android}]
+    11-05 08:16:33.795: network provider client 1000/android[OplusLBS]/84AA7865 -> permitted
+    11-05 08:16:33.799: network provider client 1000/android[OplusLBS]/84AA7865 -> foreground
+    11-05 08:16:33.806: network provider request = ProviderRequest[@+1s0ms, WorkSource{1000 android}]
+    11-05 08:16:43.808: network provider -registration 1000/android[OplusLBS]/84AA7865
+    11-05 08:16:43.808: network provider request = ProviderRequest[OFF]
+    11-05 08:19:25.865: network provider received location[1]
+    11-05 08:19:25.865: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:19:25.905: fused provider received location[1]
+    11-05 08:19:26.856: gps provider received location[1]
+    11-05 08:19:26.903: network provider received location[1]
+    11-05 08:19:26.904: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:19:26.940: fused provider received location[1]
+    11-05 08:19:27.849: gps provider received location[1]
+    11-05 08:19:27.881: network provider received location[1]
+    11-05 08:19:27.882: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:19:27.923: fused provider received location[1]
+    11-05 08:19:28.871: gps provider received location[1]
+    11-05 08:19:28.913: network provider received location[1]
+    11-05 08:19:28.914: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:19:28.962: fused provider received location[1]
+    11-05 08:19:29.871: gps provider received location[1]
+    11-05 08:19:29.910: network provider received location[1]
+    11-05 08:19:29.911: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:19:29.957: fused provider received location[1]
+    11-05 08:19:30.889: gps provider received location[1]
+    11-05 08:19:30.935: network provider received location[1]
+    11-05 08:19:30.937: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:19:30.966: fused provider received location[1]
+    11-05 08:19:31.881: gps provider received location[1]
+    11-05 08:19:31.915: network provider received location[1]
+    11-05 08:19:31.915: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:19:31.946: fused provider received location[1]
+    11-05 08:19:32.902: gps provider received location[1]
+    11-05 08:19:32.949: network provider received location[1]
+    11-05 08:19:32.950: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:19:32.999: fused provider received location[1]
+    11-05 08:19:33.911: gps provider received location[1]
+    11-05 08:19:33.987: network provider received location[1]
+    11-05 08:19:33.989: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:19:34.047: fused provider received location[1]
+    11-05 08:19:34.903: gps provider received location[1]
+    11-05 08:19:34.936: network provider received location[1]
+    11-05 08:19:34.937: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:19:34.970: fused provider received location[1]
+    11-05 08:19:35.929: gps provider received location[1]
+    11-05 08:19:35.983: network provider received location[1]
+    11-05 08:19:35.985: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:19:36.026: fused provider received location[1]
+    11-05 08:19:36.934: gps provider received location[1]
+    11-05 08:19:36.981: network provider received location[1]
+    11-05 08:19:36.982: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:19:37.017: fused provider received location[1]
+    11-05 08:19:37.945: gps provider received location[1]
+    11-05 08:19:37.992: network provider received location[1]
+    11-05 08:19:37.992: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:19:38.028: fused provider received location[1]
+    11-05 08:19:38.939: gps provider received location[1]
+    11-05 08:19:38.977: network provider received location[1]
+    11-05 08:19:38.978: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:19:39.025: fused provider received location[1]
+    11-05 08:19:39.960: gps provider received location[1]
+    11-05 08:19:40.010: network provider received location[1]
+    11-05 08:19:40.011: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:19:40.052: fused provider received location[1]
+    11-05 08:19:40.946: gps provider received location[1]
+    11-05 08:19:40.995: network provider received location[1]
+    11-05 08:19:40.996: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:19:41.032: fused provider received location[1]
+    11-05 08:19:41.991: gps provider received location[1]
+    11-05 08:19:42.028: network provider received location[1]
+    11-05 08:19:42.030: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:19:42.089: fused provider received location[1]
+    11-05 08:19:42.950: gps provider received location[1]
+    11-05 08:19:42.984: network provider received location[1]
+    11-05 08:19:42.985: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:19:43.017: fused provider received location[1]
+    11-05 08:19:43.996: gps provider received location[1]
+    11-05 08:19:44.043: network provider received location[1]
+    11-05 08:19:44.045: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:19:44.083: fused provider received location[1]
+    11-05 08:19:44.966: gps provider received location[1]
+    11-05 08:19:45.004: network provider received location[1]
+    11-05 08:19:45.005: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:19:45.045: fused provider received location[1]
+    11-05 08:19:45.977: gps provider received location[1]
+    11-05 08:19:46.031: network provider received location[1]
+    11-05 08:19:46.033: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:19:46.074: fused provider received location[1]
+    11-05 08:19:46.987: gps provider received location[1]
+    11-05 08:19:47.051: network provider received location[1]
+    11-05 08:19:47.054: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:19:47.097: fused provider received location[1]
+    11-05 08:19:47.995: gps provider received location[1]
+    11-05 08:19:48.026: network provider received location[1]
+    11-05 08:19:48.027: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:19:48.086: fused provider received location[1]
+    11-05 08:19:49.042: gps provider received location[1]
+    11-05 08:19:49.082: network provider received location[1]
+    11-05 08:19:49.084: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:19:49.115: fused provider received location[1]
+    11-05 08:19:50.015: gps provider received location[1]
+    11-05 08:19:50.058: network provider received location[1]
+    11-05 08:19:50.059: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:19:50.101: fused provider received location[1]
+    11-05 08:19:51.033: gps provider received location[1]
+    11-05 08:19:51.075: network provider received location[1]
+    11-05 08:19:51.077: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:19:51.110: fused provider received location[1]
+    11-05 08:19:52.048: gps provider received location[1]
+    11-05 08:19:52.085: network provider received location[1]
+    11-05 08:19:52.089: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:19:52.134: fused provider received location[1]
+    11-05 08:19:53.075: gps provider received location[1]
+    11-05 08:19:53.122: network provider received location[1]
+    11-05 08:19:53.123: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:19:53.159: fused provider received location[1]
+    11-05 08:19:54.047: gps provider received location[1]
+    11-05 08:19:54.097: network provider received location[1]
+    11-05 08:19:54.097: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:19:54.134: fused provider received location[1]
+    11-05 08:19:55.086: gps provider received location[1]
+    11-05 08:19:55.128: network provider received location[1]
+    11-05 08:19:55.131: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:19:55.166: fused provider received location[1]
+    11-05 08:19:56.071: gps provider received location[1]
+    11-05 08:19:56.106: network provider received location[1]
+    11-05 08:19:56.107: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:19:56.140: fused provider received location[1]
+    11-05 08:19:57.093: gps provider received location[1]
+    11-05 08:19:57.135: network provider received location[1]
+    11-05 08:19:57.136: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:19:57.177: fused provider received location[1]
+    11-05 08:19:58.081: gps provider received location[1]
+    11-05 08:19:58.125: network provider received location[1]
+    11-05 08:19:58.126: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:19:58.167: fused provider received location[1]
+    11-05 08:19:59.113: gps provider received location[1]
+    11-05 08:19:59.157: network provider received location[1]
+    11-05 08:19:59.160: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:19:59.223: fused provider received location[1]
+    11-05 08:20:00.085: gps provider received location[1]
+    11-05 08:20:00.113: network provider received location[1]
+    11-05 08:20:00.114: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:20:00.162: fused provider received location[1]
+    11-05 08:20:01.077: gps provider received location[1]
+    11-05 08:20:01.116: network provider received location[1]
+    11-05 08:20:01.117: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:20:01.159: fused provider received location[1]
+    11-05 08:20:02.104: gps provider received location[1]
+    11-05 08:20:02.157: network provider received location[1]
+    11-05 08:20:02.159: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:20:02.201: fused provider received location[1]
+    11-05 08:20:03.110: gps provider received location[1]
+    11-05 08:20:03.147: network provider received location[1]
+    11-05 08:20:03.148: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:20:03.192: fused provider received location[1]
+    11-05 08:20:04.138: gps provider received location[1]
+    11-05 08:20:04.187: network provider received location[1]
+    11-05 08:20:04.188: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:20:04.242: fused provider received location[1]
+    11-05 08:20:05.117: gps provider received location[1]
+    11-05 08:20:05.155: network provider received location[1]
+    11-05 08:20:05.156: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:20:05.187: fused provider received location[1]
+    11-05 08:20:06.135: gps provider received location[1]
+    11-05 08:20:06.172: network provider received location[1]
+    11-05 08:20:06.173: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:20:06.218: fused provider received location[1]
+    11-05 08:20:07.139: gps provider received location[1]
+    11-05 08:20:07.180: network provider received location[1]
+    11-05 08:20:07.181: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:20:07.229: fused provider received location[1]
+    11-05 08:20:08.140: gps provider received location[1]
+    11-05 08:20:08.200: network provider received location[1]
+    11-05 08:20:08.202: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:20:08.237: fused provider received location[1]
+    11-05 08:20:09.179: gps provider received location[1]
+    11-05 08:20:09.224: network provider received location[1]
+    11-05 08:20:09.225: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:20:09.274: fused provider received location[1]
+    11-05 08:20:10.163: gps provider received location[1]
+    11-05 08:20:10.216: network provider received location[1]
+    11-05 08:20:10.218: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:20:10.241: fused provider received location[1]
+    11-05 08:20:11.165: gps provider received location[1]
+    11-05 08:20:11.219: network provider received location[1]
+    11-05 08:20:11.221: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:20:11.259: fused provider received location[1]
+    11-05 08:20:12.179: gps provider received location[1]
+    11-05 08:20:12.225: network provider received location[1]
+    11-05 08:20:12.226: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:20:12.247: fused provider received location[1]
+    11-05 08:20:13.190: gps provider received location[1]
+    11-05 08:20:13.232: network provider received location[1]
+    11-05 08:20:13.233: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:20:13.251: fused provider received location[1]
+    11-05 08:20:14.185: gps provider received location[1]
+    11-05 08:20:14.218: network provider received location[1]
+    11-05 08:20:14.220: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:20:14.242: fused provider received location[1]
+    11-05 08:20:15.183: gps provider received location[1]
+    11-05 08:20:15.228: network provider received location[1]
+    11-05 08:20:15.230: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:20:15.278: fused provider received location[1]
+    11-05 08:20:16.170: gps provider received location[1]
+    11-05 08:20:16.211: network provider received location[1]
+    11-05 08:20:16.214: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:20:16.248: fused provider received location[1]
+    11-05 08:20:17.210: gps provider received location[1]
+    11-05 08:20:17.248: network provider received location[1]
+    11-05 08:20:17.249: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:20:17.280: fused provider received location[1]
+    11-05 08:20:18.197: gps provider received location[1]
+    11-05 08:20:18.250: network provider received location[1]
+    11-05 08:20:18.251: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:20:18.286: fused provider received location[1]
+    11-05 08:20:19.213: gps provider received location[1]
+    11-05 08:20:19.243: network provider received location[1]
+    11-05 08:20:19.243: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:20:19.273: fused provider received location[1]
+    11-05 08:20:20.234: gps provider received location[1]
+    11-05 08:20:20.269: network provider received location[1]
+    11-05 08:20:20.271: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:20:20.302: fused provider received location[1]
+    11-05 08:20:21.228: gps provider received location[1]
+    11-05 08:20:21.265: network provider received location[1]
+    11-05 08:20:21.266: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:20:21.291: fused provider received location[1]
+    11-05 08:20:22.252: gps provider received location[1]
+    11-05 08:20:22.287: network provider received location[1]
+    11-05 08:20:22.288: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:20:22.333: fused provider received location[1]
+    11-05 08:20:23.231: gps provider received location[1]
+    11-05 08:20:23.281: network provider received location[1]
+    11-05 08:20:23.283: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:20:23.315: fused provider received location[1]
+    11-05 08:20:24.246: gps provider received location[1]
+    11-05 08:20:24.287: network provider received location[1]
+    11-05 08:20:24.289: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:20:24.333: fused provider received location[1]
+    11-05 08:20:25.244: gps provider received location[1]
+    11-05 08:20:25.283: network provider received location[1]
+    11-05 08:20:25.289: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:20:25.323: fused provider received location[1]
+    11-05 08:20:26.246: gps provider received location[1]
+    11-05 08:20:26.273: network provider received location[1]
+    11-05 08:20:26.275: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:20:26.312: fused provider received location[1]
+    11-05 08:20:27.265: gps provider received location[1]
+    11-05 08:20:27.299: network provider received location[1]
+    11-05 08:20:27.301: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:20:27.334: fused provider received location[1]
+    11-05 08:20:28.262: gps provider received location[1]
+    11-05 08:20:28.306: network provider received location[1]
+    11-05 08:20:28.311: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:20:28.338: fused provider received location[1]
+    11-05 08:20:29.269: gps provider received location[1]
+    11-05 08:20:29.301: network provider received location[1]
+    11-05 08:20:29.302: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:20:29.341: fused provider received location[1]
+    11-05 08:20:30.270: gps provider received location[1]
+    11-05 08:20:30.306: network provider received location[1]
+    11-05 08:20:30.313: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:20:30.347: fused provider received location[1]
+    11-05 08:20:31.277: gps provider received location[1]
+    11-05 08:20:31.322: network provider received location[1]
+    11-05 08:20:31.323: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:20:31.359: fused provider received location[1]
+    11-05 08:20:32.286: gps provider received location[1]
+    11-05 08:20:32.325: network provider received location[1]
+    11-05 08:20:32.326: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:20:32.358: fused provider received location[1]
+    11-05 08:20:33.287: gps provider received location[1]
+    11-05 08:20:33.326: network provider received location[1]
+    11-05 08:20:33.329: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:20:33.377: fused provider received location[1]
+    11-05 08:20:34.289: gps provider received location[1]
+    11-05 08:20:34.323: network provider received location[1]
+    11-05 08:20:34.323: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:20:34.365: fused provider received location[1]
+    11-05 08:20:35.284: gps provider received location[1]
+    11-05 08:20:35.334: network provider received location[1]
+    11-05 08:20:35.341: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:20:35.375: fused provider received location[1]
+    11-05 08:20:36.292: gps provider received location[1]
+    11-05 08:20:36.323: network provider received location[1]
+    11-05 08:20:36.324: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:20:36.359: fused provider received location[1]
+    11-05 08:20:37.299: gps provider received location[1]
+    11-05 08:20:37.365: network provider received location[1]
+    11-05 08:20:37.372: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:20:37.408: fused provider received location[1]
+    11-05 08:20:38.295: gps provider received location[1]
+    11-05 08:20:38.325: network provider received location[1]
+    11-05 08:20:38.326: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:20:38.355: fused provider received location[1]
+    11-05 08:20:39.324: gps provider received location[1]
+    11-05 08:20:39.365: network provider received location[1]
+    11-05 08:20:39.366: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:20:39.409: fused provider received location[1]
+    11-05 08:20:40.309: gps provider received location[1]
+    11-05 08:20:40.354: network provider received location[1]
+    11-05 08:20:40.355: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:20:40.389: fused provider received location[1]
+    11-05 08:20:41.316: gps provider received location[1]
+    11-05 08:20:41.387: network provider received location[1]
+    11-05 08:20:41.389: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:20:41.437: fused provider received location[1]
+    11-05 08:20:42.323: gps provider received location[1]
+    11-05 08:20:42.352: network provider received location[1]
+    11-05 08:20:42.355: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:20:42.384: fused provider received location[1]
+    11-05 08:20:43.334: gps provider received location[1]
+    11-05 08:20:43.394: network provider received location[1]
+    11-05 08:20:43.401: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:20:43.425: fused provider received location[1]
+    11-05 08:20:44.367: gps provider received location[1]
+    11-05 08:20:44.406: network provider received location[1]
+    11-05 08:20:44.407: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:20:44.461: fused provider received location[1]
+    11-05 08:20:45.345: gps provider received location[1]
+    11-05 08:20:45.377: network provider received location[1]
+    11-05 08:20:45.380: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:20:45.412: fused provider received location[1]
+    11-05 08:20:46.361: gps provider received location[1]
+    11-05 08:20:46.392: network provider received location[1]
+    11-05 08:20:46.393: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:20:46.449: fused provider received location[1]
+    11-05 08:20:47.381: gps provider received location[1]
+    11-05 08:20:47.415: network provider received location[1]
+    11-05 08:20:47.416: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:20:47.453: fused provider received location[1]
+    11-05 08:20:48.413: gps provider received location[1]
+    11-05 08:20:48.451: network provider received location[1]
+    11-05 08:20:48.454: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:20:48.497: fused provider received location[1]
+    11-05 08:20:49.382: gps provider received location[1]
+    11-05 08:20:49.412: network provider received location[1]
+    11-05 08:20:49.413: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:20:49.448: fused provider received location[1]
+    11-05 08:20:50.405: gps provider received location[1]
+    11-05 08:20:50.465: network provider received location[1]
+    11-05 08:20:50.466: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:20:50.505: fused provider received location[1]
+    11-05 08:20:51.394: gps provider received location[1]
+    11-05 08:20:51.437: network provider received location[1]
+    11-05 08:20:51.438: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:20:51.464: fused provider received location[1]
+    11-05 08:20:52.419: gps provider received location[1]
+    11-05 08:20:52.467: network provider received location[1]
+    11-05 08:20:52.468: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:20:52.528: fused provider received location[1]
+    11-05 08:20:53.401: gps provider received location[1]
+    11-05 08:20:53.435: network provider received location[1]
+    11-05 08:20:53.435: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:20:53.468: fused provider received location[1]
+    11-05 08:20:54.435: gps provider received location[1]
+    11-05 08:20:54.483: network provider received location[1]
+    11-05 08:20:54.491: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:20:54.517: fused provider received location[1]
+    11-05 08:20:55.429: gps provider received location[1]
+    11-05 08:20:55.490: network provider received location[1]
+    11-05 08:20:55.492: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:20:55.534: fused provider received location[1]
+    11-05 08:20:56.422: gps provider received location[1]
+    11-05 08:20:56.452: network provider received location[1]
+    11-05 08:20:56.453: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:20:56.484: fused provider received location[1]
+    11-05 08:20:57.457: gps provider received location[1]
+    11-05 08:20:57.496: network provider received location[1]
+    11-05 08:20:57.498: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:20:57.540: fused provider received location[1]
+    11-05 08:20:58.431: gps provider received location[1]
+    11-05 08:20:58.466: network provider received location[1]
+    11-05 08:20:58.475: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:20:58.500: fused provider received location[1]
+    11-05 08:20:59.457: gps provider received location[1]
+    11-05 08:20:59.503: network provider received location[1]
+    11-05 08:20:59.505: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:20:59.539: fused provider received location[1]
+    11-05 08:21:00.434: gps provider received location[1]
+    11-05 08:21:00.466: network provider received location[1]
+    11-05 08:21:00.467: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:21:00.512: fused provider received location[1]
+    11-05 08:21:01.457: gps provider received location[1]
+    11-05 08:21:01.506: network provider received location[1]
+    11-05 08:21:01.508: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:21:01.551: fused provider received location[1]
+    11-05 08:21:02.466: gps provider received location[1]
+    11-05 08:21:02.508: network provider received location[1]
+    11-05 08:21:02.509: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:21:02.536: fused provider received location[1]
+    11-05 08:21:03.476: gps provider received location[1]
+    11-05 08:21:03.519: network provider received location[1]
+    11-05 08:21:03.520: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:21:03.567: fused provider received location[1]
+    11-05 08:21:04.455: gps provider received location[1]
+    11-05 08:21:04.484: network provider received location[1]
+    11-05 08:21:04.485: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:21:04.520: fused provider received location[1]
+    11-05 08:21:05.476: gps provider received location[1]
+    11-05 08:21:05.524: network provider received location[1]
+    11-05 08:21:05.525: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:21:05.566: fused provider received location[1]
+    11-05 08:21:06.466: gps provider received location[1]
+    11-05 08:21:06.495: network provider received location[1]
+    11-05 08:21:06.497: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:21:06.544: fused provider received location[1]
+    11-05 08:21:07.479: gps provider received location[1]
+    11-05 08:21:07.510: network provider received location[1]
+    11-05 08:21:07.510: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:21:07.543: fused provider received location[1]
+    11-05 08:21:08.478: gps provider received location[1]
+    11-05 08:21:08.514: network provider received location[1]
+    11-05 08:21:08.515: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:21:08.562: fused provider received location[1]
+    11-05 08:21:09.466: gps provider received location[1]
+    11-05 08:21:09.496: network provider received location[1]
+    11-05 08:21:09.496: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:21:09.533: fused provider received location[1]
+    11-05 08:21:10.499: gps provider received location[1]
+    11-05 08:21:10.533: network provider received location[1]
+    11-05 08:21:10.534: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:21:10.580: fused provider received location[1]
+    11-05 08:21:11.497: gps provider received location[1]
+    11-05 08:21:11.545: network provider received location[1]
+    11-05 08:21:11.546: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:21:11.587: fused provider received location[1]
+    11-05 08:21:12.524: gps provider received location[1]
+    11-05 08:21:12.562: network provider received location[1]
+    11-05 08:21:12.564: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:21:12.614: fused provider received location[1]
+    11-05 08:21:13.494: gps provider received location[1]
+    11-05 08:21:13.527: network provider received location[1]
+    11-05 08:21:13.527: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:21:13.564: fused provider received location[1]
+    11-05 08:21:14.516: gps provider received location[1]
+    11-05 08:21:14.564: network provider received location[1]
+    11-05 08:21:14.565: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:21:14.599: fused provider received location[1]
+    11-05 08:21:15.495: gps provider received location[1]
+    11-05 08:21:15.530: network provider received location[1]
+    11-05 08:21:15.530: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:21:15.564: fused provider received location[1]
+    11-05 08:21:16.525: gps provider received location[1]
+    11-05 08:21:16.562: network provider received location[1]
+    11-05 08:21:16.564: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:21:16.611: fused provider received location[1]
+    11-05 08:21:17.538: gps provider received location[1]
+    11-05 08:21:17.585: network provider received location[1]
+    11-05 08:21:17.586: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:21:17.619: fused provider received location[1]
+    11-05 08:21:18.561: gps provider received location[1]
+    11-05 08:21:18.614: network provider received location[1]
+    11-05 08:21:18.615: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:21:18.656: fused provider received location[1]
+    11-05 08:21:19.545: gps provider received location[1]
+    11-05 08:21:19.575: network provider received location[1]
+    11-05 08:21:19.577: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:21:19.607: fused provider received location[1]
+    11-05 08:21:20.581: gps provider received location[1]
+    11-05 08:21:20.610: network provider received location[1]
+    11-05 08:21:20.611: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:21:20.644: fused provider received location[1]
+    11-05 08:21:21.588: gps provider received location[1]
+    11-05 08:21:21.635: network provider received location[1]
+    11-05 08:21:21.636: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:21:21.668: fused provider received location[1]
+    11-05 08:21:22.601: gps provider received location[1]
+    11-05 08:21:22.638: network provider received location[1]
+    11-05 08:21:22.639: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:21:22.672: fused provider received location[1]
+    11-05 08:21:23.619: gps provider received location[1]
+    11-05 08:21:23.664: network provider received location[1]
+    11-05 08:21:23.666: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:21:23.704: fused provider received location[1]
+    11-05 08:21:24.616: gps provider received location[1]
+    11-05 08:21:24.663: network provider received location[1]
+    11-05 08:21:24.664: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:21:24.709: fused provider received location[1]
+    11-05 08:21:25.620: gps provider received location[1]
+    11-05 08:21:25.668: network provider received location[1]
+    11-05 08:21:25.670: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:21:25.706: fused provider received location[1]
+    11-05 08:21:26.629: gps provider received location[1]
+    11-05 08:21:26.670: network provider received location[1]
+    11-05 08:21:26.671: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:21:26.711: fused provider received location[1]
+    11-05 08:21:27.665: gps provider received location[1]
+    11-05 08:21:27.714: network provider received location[1]
+    11-05 08:21:27.715: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:21:27.764: fused provider received location[1]
+    11-05 08:21:28.669: gps provider received location[1]
+    11-05 08:21:28.704: network provider received location[1]
+    11-05 08:21:28.705: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:21:28.741: fused provider received location[1]
+    11-05 08:21:29.663: gps provider received location[1]
+    11-05 08:21:29.715: network provider received location[1]
+    11-05 08:21:29.717: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:21:29.767: fused provider received location[1]
+    11-05 08:21:30.677: gps provider received location[1]
+    11-05 08:21:30.722: network provider received location[1]
+    11-05 08:21:30.723: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:21:30.755: fused provider received location[1]
+    11-05 08:21:31.670: gps provider received location[1]
+    11-05 08:21:31.708: network provider received location[1]
+    11-05 08:21:31.709: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:21:31.735: fused provider received location[1]
+    11-05 08:21:32.689: gps provider received location[1]
+    11-05 08:21:32.734: network provider received location[1]
+    11-05 08:21:32.735: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:21:32.769: fused provider received location[1]
+    11-05 08:21:33.674: gps provider received location[1]
+    11-05 08:21:33.704: network provider received location[1]
+    11-05 08:21:33.705: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:21:33.741: fused provider received location[1]
+    11-05 08:21:34.668: gps provider received location[1]
+    11-05 08:21:34.732: network provider received location[1]
+    11-05 08:21:34.734: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:21:34.776: fused provider received location[1]
+    11-05 08:21:35.686: gps provider received location[1]
+    11-05 08:21:35.728: network provider received location[1]
+    11-05 08:21:35.729: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:21:35.765: fused provider received location[1]
+    11-05 08:21:36.690: gps provider received location[1]
+    11-05 08:21:36.739: network provider received location[1]
+    11-05 08:21:36.740: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:21:36.781: fused provider received location[1]
+    11-05 08:21:37.691: gps provider received location[1]
+    11-05 08:21:37.719: network provider received location[1]
+    11-05 08:21:37.721: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:21:37.751: fused provider received location[1]
+    11-05 08:21:38.737: gps provider received location[1]
+    11-05 08:21:38.771: network provider received location[1]
+    11-05 08:21:38.772: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:21:38.813: fused provider received location[1]
+    11-05 08:21:39.715: gps provider received location[1]
+    11-05 08:21:39.747: network provider received location[1]
+    11-05 08:21:39.748: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:21:39.782: fused provider received location[1]
+    11-05 08:21:40.736: gps provider received location[1]
+    11-05 08:21:40.789: network provider received location[1]
+    11-05 08:21:40.790: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:21:40.849: fused provider received location[1]
+    11-05 08:21:41.719: gps provider received location[1]
+    11-05 08:21:41.761: network provider received location[1]
+    11-05 08:21:41.762: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:21:41.795: fused provider received location[1]
+    11-05 08:21:42.749: gps provider received location[1]
+    11-05 08:21:42.790: network provider received location[1]
+    11-05 08:21:42.791: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:21:42.820: fused provider received location[1]
+    11-05 08:21:43.757: gps provider received location[1]
+    11-05 08:21:43.796: network provider received location[1]
+    11-05 08:21:43.798: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:21:43.811: network provider +registration 1000/android[OplusLBS]/84AA7865 -> Request[@+1s0ms BALANCED, WorkSource{1000 android}]
+    11-05 08:21:43.811: network provider client 1000/android[OplusLBS]/84AA7865 -> permitted
+    11-05 08:21:43.818: network provider client 1000/android[OplusLBS]/84AA7865 -> foreground
+    11-05 08:21:43.819: network provider request = ProviderRequest[@+1s0ms, WorkSource{1000 android}]
+    11-05 08:21:43.828: fused provider received location[1]
+    11-05 08:21:44.742: gps provider received location[1]
+    11-05 08:21:44.778: network provider received location[1]
+    11-05 08:21:44.779: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:21:44.786: network provider delivered location[1] to 1000/android[OplusLBS]/84AA7865
+    11-05 08:21:44.816: fused provider received location[1]
+    11-05 08:21:45.762: gps provider received location[1]
+    11-05 08:21:45.808: network provider received location[1]
+    11-05 08:21:45.812: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:21:45.813: network provider delivered location[1] to 1000/android[OplusLBS]/84AA7865
+    11-05 08:21:45.858: fused provider received location[1]
+    11-05 08:21:46.755: gps provider received location[1]
+    11-05 08:21:46.792: network provider received location[1]
+    11-05 08:21:46.794: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:21:46.804: network provider delivered location[1] to 1000/android[OplusLBS]/84AA7865
+    11-05 08:21:46.826: fused provider received location[1]
+    11-05 08:21:47.780: gps provider received location[1]
+    11-05 08:21:47.839: network provider received location[1]
+    11-05 08:21:47.840: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:21:47.850: network provider delivered location[1] to 1000/android[OplusLBS]/84AA7865
+    11-05 08:21:47.880: fused provider received location[1]
+    11-05 08:21:48.786: gps provider received location[1]
+    11-05 08:21:48.820: network provider received location[1]
+    11-05 08:21:48.821: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:21:48.824: network provider delivered location[1] to 1000/android[OplusLBS]/84AA7865
+    11-05 08:21:48.852: fused provider received location[1]
+    11-05 08:21:49.796: gps provider received location[1]
+    11-05 08:21:49.843: network provider received location[1]
+    11-05 08:21:49.844: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:21:49.847: network provider delivered location[1] to 1000/android[OplusLBS]/84AA7865
+    11-05 08:21:49.884: fused provider received location[1]
+    11-05 08:21:50.774: gps provider received location[1]
+    11-05 08:21:50.811: network provider received location[1]
+    11-05 08:21:50.812: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:21:50.818: network provider delivered location[1] to 1000/android[OplusLBS]/84AA7865
+    11-05 08:21:50.851: fused provider received location[1]
+    11-05 08:21:51.803: gps provider received location[1]
+    11-05 08:21:51.844: network provider received location[1]
+    11-05 08:21:51.845: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:21:51.847: network provider delivered location[1] to 1000/android[OplusLBS]/84AA7865
+    11-05 08:21:51.877: fused provider received location[1]
+    11-05 08:21:52.804: gps provider received location[1]
+    11-05 08:21:52.850: network provider received location[1]
+    11-05 08:21:52.852: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:21:52.862: network provider delivered location[1] to 1000/android[OplusLBS]/84AA7865
+    11-05 08:21:52.887: fused provider received location[1]
+    11-05 08:21:53.821: network provider -registration 1000/android[OplusLBS]/84AA7865
+    11-05 08:21:53.822: network provider request = ProviderRequest[OFF]
+    11-05 08:21:53.826: gps provider received location[1]
+    11-05 08:21:53.869: network provider received location[1]
+    11-05 08:21:53.870: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:21:53.912: fused provider received location[1]
+    11-05 08:21:54.814: gps provider received location[1]
+    11-05 08:21:54.850: network provider received location[1]
+    11-05 08:21:54.862: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:21:54.899: fused provider received location[1]
+    11-05 08:21:55.828: gps provider received location[1]
+    11-05 08:21:55.875: network provider received location[1]
+    11-05 08:21:55.877: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:21:55.917: fused provider received location[1]
+    11-05 08:21:56.845: gps provider received location[1]
+    11-05 08:21:56.884: network provider received location[1]
+    11-05 08:21:56.886: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:21:56.916: fused provider received location[1]
+    11-05 08:21:57.845: gps provider received location[1]
+    11-05 08:21:57.882: network provider received location[1]
+    11-05 08:21:57.882: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:21:57.919: fused provider received location[1]
+    11-05 08:21:58.848: gps provider received location[1]
+    11-05 08:21:58.887: network provider received location[1]
+    11-05 08:21:58.888: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:21:58.926: fused provider received location[1]
+    11-05 08:21:59.859: gps provider received location[1]
+    11-05 08:21:59.891: network provider received location[1]
+    11-05 08:21:59.894: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:21:59.926: fused provider received location[1]
+    11-05 08:22:00.896: gps provider received location[1]
+    11-05 08:22:01.057: network provider received location[1]
+    11-05 08:22:01.059: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:22:01.106: fused provider received location[1]
+    11-05 08:22:01.882: gps provider received location[1]
+    11-05 08:22:01.922: network provider received location[1]
+    11-05 08:22:01.923: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:22:01.958: fused provider received location[1]
+    11-05 08:22:02.906: gps provider received location[1]
+    11-05 08:22:02.964: network provider received location[1]
+    11-05 08:22:02.965: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:22:03.030: fused provider received location[1]
+    11-05 08:22:03.906: gps provider received location[1]
+    11-05 08:22:03.941: network provider received location[1]
+    11-05 08:22:03.942: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:22:03.989: fused provider received location[1]
+    11-05 08:22:04.902: gps provider received location[1]
+    11-05 08:22:04.959: network provider received location[1]
+    11-05 08:22:04.960: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:22:04.999: fused provider received location[1]
+    11-05 08:22:05.911: gps provider received location[1]
+    11-05 08:22:05.948: network provider received location[1]
+    11-05 08:22:05.949: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:22:06.001: fused provider received location[1]
+    11-05 08:22:06.920: gps provider received location[1]
+    11-05 08:22:06.967: network provider received location[1]
+    11-05 08:22:06.968: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:22:06.994: fused provider received location[1]
+    11-05 08:22:07.954: gps provider received location[1]
+    11-05 08:22:08.002: network provider received location[1]
+    11-05 08:22:08.003: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:22:08.049: fused provider received location[1]
+    11-05 08:22:08.940: gps provider received location[1]
+    11-05 08:22:08.980: network provider received location[1]
+    11-05 08:22:08.981: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:22:09.012: fused provider received location[1]
+    11-05 08:22:09.966: gps provider received location[1]
+    11-05 08:22:10.026: network provider received location[1]
+    11-05 08:22:10.028: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:22:10.074: fused provider received location[1]
+    11-05 08:22:10.961: gps provider received location[1]
+    11-05 08:22:10.996: network provider received location[1]
+    11-05 08:22:10.997: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:22:11.030: fused provider received location[1]
+    11-05 08:22:11.971: gps provider received location[1]
+    11-05 08:22:12.028: network provider received location[1]
+    11-05 08:22:12.030: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:22:12.082: fused provider received location[1]
+    11-05 08:22:12.971: gps provider received location[1]
+    11-05 08:22:13.012: network provider received location[1]
+    11-05 08:22:13.012: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:22:13.043: fused provider received location[1]
+    11-05 08:22:13.988: gps provider received location[1]
+    11-05 08:22:14.038: network provider received location[1]
+    11-05 08:22:14.047: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:22:14.089: fused provider received location[1]
+    11-05 08:22:14.974: gps provider received location[1]
+    11-05 08:22:15.001: network provider received location[1]
+    11-05 08:22:15.002: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:22:15.043: fused provider received location[1]
+    11-05 08:22:15.996: gps provider received location[1]
+    11-05 08:22:16.038: network provider received location[1]
+    11-05 08:22:16.040: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:22:16.080: fused provider received location[1]
+    11-05 08:22:16.994: gps provider received location[1]
+    11-05 08:22:17.030: network provider received location[1]
+    11-05 08:22:17.031: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:22:17.070: fused provider received location[1]
+    11-05 08:22:18.019: gps provider received location[1]
+    11-05 08:22:18.067: network provider received location[1]
+    11-05 08:22:18.068: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:22:18.104: fused provider received location[1]
+    11-05 08:22:19.005: gps provider received location[1]
+    11-05 08:22:19.051: network provider received location[1]
+    11-05 08:22:19.053: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:22:19.079: fused provider received location[1]
+    11-05 08:22:20.013: gps provider received location[1]
+    11-05 08:22:20.055: network provider received location[1]
+    11-05 08:22:20.057: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:22:20.094: fused provider received location[1]
+    11-05 08:22:21.023: gps provider received location[1]
+    11-05 08:22:21.051: network provider received location[1]
+    11-05 08:22:21.053: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:22:21.079: fused provider received location[1]
+    11-05 08:22:22.033: gps provider received location[1]
+    11-05 08:22:22.086: network provider received location[1]
+    11-05 08:22:22.087: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:22:22.128: fused provider received location[1]
+    11-05 08:22:23.051: gps provider received location[1]
+    11-05 08:22:23.104: network provider received location[1]
+    11-05 08:22:23.106: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:22:23.142: fused provider received location[1]
+    11-05 08:22:24.034: gps provider received location[1]
+    11-05 08:22:24.080: network provider received location[1]
+    11-05 08:22:24.081: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:22:24.124: fused provider received location[1]
+    11-05 08:22:25.059: gps provider received location[1]
+    11-05 08:22:25.090: network provider received location[1]
+    11-05 08:22:25.091: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:22:25.138: fused provider received location[1]
+    11-05 08:22:26.035: gps provider received location[1]
+    11-05 08:22:26.068: network provider received location[1]
+    11-05 08:22:26.069: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:22:26.107: fused provider received location[1]
+    11-05 08:22:27.054: gps provider received location[1]
+    11-05 08:22:27.105: network provider received location[1]
+    11-05 08:22:27.106: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:22:27.143: fused provider received location[1]
+    11-05 08:22:28.081: gps provider received location[1]
+    11-05 08:22:28.115: network provider received location[1]
+    11-05 08:22:28.118: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:22:28.163: fused provider received location[1]
+    11-05 08:22:29.078: gps provider received location[1]
+    11-05 08:22:29.120: network provider received location[1]
+    11-05 08:22:29.121: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:22:29.172: fused provider received location[1]
+    11-05 08:22:30.069: gps provider received location[1]
+    11-05 08:22:30.108: network provider received location[1]
+    11-05 08:22:30.109: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:22:30.135: fused provider received location[1]
+    11-05 08:22:31.099: gps provider received location[1]
+    11-05 08:22:31.143: network provider received location[1]
+    11-05 08:22:31.143: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:22:31.181: fused provider received location[1]
+    11-05 08:22:32.085: gps provider received location[1]
+    11-05 08:22:32.128: network provider received location[1]
+    11-05 08:22:32.129: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:22:32.193: fused provider received location[1]
+    11-05 08:22:33.079: gps provider received location[1]
+    11-05 08:22:33.106: network provider received location[1]
+    11-05 08:22:33.107: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:22:33.146: fused provider received location[1]
+    11-05 08:22:34.099: gps provider received location[1]
+    11-05 08:22:34.145: network provider received location[1]
+    11-05 08:22:34.146: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:22:34.193: fused provider received location[1]
+    11-05 08:22:35.108: gps provider received location[1]
+    11-05 08:22:35.166: network provider received location[1]
+    11-05 08:22:35.167: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:22:35.204: fused provider received location[1]
+    11-05 08:22:36.113: gps provider received location[1]
+    11-05 08:22:36.158: network provider received location[1]
+    11-05 08:22:36.159: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:22:36.195: fused provider received location[1]
+    11-05 08:22:37.121: gps provider received location[1]
+    11-05 08:22:37.155: network provider received location[1]
+    11-05 08:22:37.157: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:22:37.191: fused provider received location[1]
+    11-05 08:22:38.145: gps provider received location[1]
+    11-05 08:22:38.190: network provider received location[1]
+    11-05 08:22:38.193: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:22:38.243: fused provider received location[1]
+    11-05 08:22:39.125: gps provider received location[1]
+    11-05 08:22:39.152: network provider received location[1]
+    11-05 08:22:39.154: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:22:39.206: fused provider received location[1]
+    11-05 08:22:40.156: gps provider received location[1]
+    11-05 08:22:40.191: network provider received location[1]
+    11-05 08:22:40.192: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:22:40.238: fused provider received location[1]
+    11-05 08:22:41.127: gps provider received location[1]
+    11-05 08:22:41.169: network provider received location[1]
+    11-05 08:22:41.171: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:22:41.230: fused provider received location[1]
+    11-05 08:22:42.161: gps provider received location[1]
+    11-05 08:22:42.221: network provider received location[1]
+    11-05 08:22:42.222: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:22:42.262: fused provider received location[1]
+    11-05 08:22:43.171: gps provider received location[1]
+    11-05 08:22:43.217: network provider received location[1]
+    11-05 08:22:43.218: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:22:43.275: fused provider received location[1]
+    11-05 08:22:44.180: gps provider received location[1]
+    11-05 08:22:44.226: network provider received location[1]
+    11-05 08:22:44.229: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:22:44.288: fused provider received location[1]
+    11-05 08:22:45.180: gps provider received location[1]
+    11-05 08:22:45.218: network provider received location[1]
+    11-05 08:22:45.219: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:22:45.251: fused provider received location[1]
+    11-05 08:22:46.180: gps provider received location[1]
+    11-05 08:22:46.243: network provider received location[1]
+    11-05 08:22:46.243: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:22:46.283: fused provider received location[1]
+    11-05 08:22:47.175: gps provider received location[1]
+    11-05 08:22:47.211: network provider received location[1]
+    11-05 08:22:47.211: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:22:47.253: fused provider received location[1]
+    11-05 08:22:48.212: gps provider received location[1]
+    11-05 08:22:48.280: network provider received location[1]
+    11-05 08:22:48.282: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:22:48.325: fused provider received location[1]
+    11-05 08:22:49.194: gps provider received location[1]
+    11-05 08:22:49.237: network provider received location[1]
+    11-05 08:22:49.238: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:22:49.281: fused provider received location[1]
+    11-05 08:22:50.223: gps provider received location[1]
+    11-05 08:22:50.263: network provider received location[1]
+    11-05 08:22:50.265: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:22:50.333: fused provider received location[1]
+    11-05 08:22:51.212: gps provider received location[1]
+    11-05 08:22:51.254: network provider received location[1]
+    11-05 08:22:51.256: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:22:51.298: fused provider received location[1]
+    11-05 08:22:52.211: gps provider received location[1]
+    11-05 08:22:52.242: network provider received location[1]
+    11-05 08:22:52.244: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:22:52.275: fused provider received location[1]
+    11-05 08:22:53.220: gps provider received location[1]
+    11-05 08:22:53.261: network provider received location[1]
+    11-05 08:22:53.262: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:22:53.305: fused provider received location[1]
+    11-05 08:22:54.214: gps provider received location[1]
+    11-05 08:22:54.247: network provider received location[1]
+    11-05 08:22:54.248: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:22:54.290: fused provider received location[1]
+    11-05 08:22:55.235: gps provider received location[1]
+    11-05 08:22:55.290: network provider received location[1]
+    11-05 08:22:55.291: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:22:55.332: fused provider received location[1]
+    11-05 08:22:56.238: gps provider received location[1]
+    11-05 08:22:56.287: network provider received location[1]
+    11-05 08:22:56.289: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:22:56.335: fused provider received location[1]
+    11-05 08:22:57.237: gps provider received location[1]
+    11-05 08:22:57.285: network provider received location[1]
+    11-05 08:22:57.285: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:22:57.336: fused provider received location[1]
+    11-05 08:22:58.243: gps provider received location[1]
+    11-05 08:22:58.275: network provider received location[1]
+    11-05 08:22:58.276: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:22:58.350: fused provider received location[1]
+    11-05 08:22:59.259: gps provider received location[1]
+    11-05 08:22:59.338: network provider received location[1]
+    11-05 08:22:59.339: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:22:59.379: fused provider received location[1]
+    11-05 08:23:00.257: gps provider received location[1]
+    11-05 08:23:00.302: network provider received location[1]
+    11-05 08:23:00.303: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:23:00.329: fused provider received location[1]
+    11-05 08:23:01.267: gps provider received location[1]
+    11-05 08:23:01.302: network provider received location[1]
+    11-05 08:23:01.303: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:23:01.333: fused provider received location[1]
+    11-05 08:23:02.261: gps provider received location[1]
+    11-05 08:23:02.292: network provider received location[1]
+    11-05 08:23:02.292: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:23:02.343: fused provider received location[1]
+    11-05 08:23:03.297: gps provider received location[1]
+    11-05 08:23:03.351: network provider received location[1]
+    11-05 08:23:03.352: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:23:03.382: fused provider received location[1]
+    11-05 08:23:04.266: gps provider received location[1]
+    11-05 08:23:04.297: network provider received location[1]
+    11-05 08:23:04.298: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:23:04.335: fused provider received location[1]
+    11-05 08:23:05.298: gps provider received location[1]
+    11-05 08:23:05.347: network provider received location[1]
+    11-05 08:23:05.349: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:23:05.386: fused provider received location[1]
+    11-05 08:23:06.293: gps provider received location[1]
+    11-05 08:23:06.340: network provider received location[1]
+    11-05 08:23:06.341: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:23:06.381: fused provider received location[1]
+    11-05 08:23:07.308: gps provider received location[1]
+    11-05 08:23:07.369: network provider received location[1]
+    11-05 08:23:07.370: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:23:07.389: fused provider received location[1]
+    11-05 08:23:08.328: gps provider received location[1]
+    11-05 08:23:08.373: network provider received location[1]
+    11-05 08:23:08.374: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:23:08.431: fused provider received location[1]
+    11-05 08:23:09.333: gps provider received location[1]
+    11-05 08:23:09.364: network provider received location[1]
+    11-05 08:23:09.364: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:23:09.407: fused provider received location[1]
+    11-05 08:23:10.329: gps provider received location[1]
+    11-05 08:23:10.352: network provider received location[1]
+    11-05 08:23:10.354: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:23:10.384: fused provider received location[1]
+    11-05 08:23:11.349: gps provider received location[1]
+    11-05 08:23:11.381: network provider received location[1]
+    11-05 08:23:11.382: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:23:11.427: fused provider received location[1]
+    11-05 08:23:12.366: gps provider received location[1]
+    11-05 08:23:12.405: network provider received location[1]
+    11-05 08:23:12.406: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:23:12.437: fused provider received location[1]
+    11-05 08:23:13.349: gps provider received location[1]
+    11-05 08:23:13.365: network provider received location[1]
+    11-05 08:23:13.366: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:23:13.395: fused provider received location[1]
+    11-05 08:23:14.360: gps provider received location[1]
+    11-05 08:23:14.409: network provider received location[1]
+    11-05 08:23:14.410: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:23:14.450: fused provider received location[1]
+    11-05 08:23:15.353: gps provider received location[1]
+    11-05 08:23:15.389: network provider received location[1]
+    11-05 08:23:15.390: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:23:15.423: fused provider received location[1]
+    11-05 08:23:16.374: gps provider received location[1]
+    11-05 08:23:16.415: network provider received location[1]
+    11-05 08:23:16.417: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:23:16.451: fused provider received location[1]
+    11-05 08:23:17.376: gps provider received location[1]
+    11-05 08:23:17.409: network provider received location[1]
+    11-05 08:23:17.409: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:23:17.439: fused provider received location[1]
+    11-05 08:23:18.388: gps provider received location[1]
+    11-05 08:23:18.418: network provider received location[1]
+    11-05 08:23:18.419: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:23:18.471: fused provider received location[1]
+    11-05 08:23:19.410: gps provider received location[1]
+    11-05 08:23:19.459: network provider received location[1]
+    11-05 08:23:19.462: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:23:19.495: fused provider received location[1]
+    11-05 08:23:20.389: gps provider received location[1]
+    11-05 08:23:20.420: network provider received location[1]
+    11-05 08:23:20.422: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:23:20.465: fused provider received location[1]
+    11-05 08:23:21.398: gps provider received location[1]
+    11-05 08:23:21.432: network provider received location[1]
+    11-05 08:23:21.434: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:23:21.476: fused provider received location[1]
+    11-05 08:23:22.402: gps provider received location[1]
+    11-05 08:23:22.437: network provider received location[1]
+    11-05 08:23:22.445: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:23:22.464: fused provider received location[1]
+    11-05 08:23:23.407: gps provider received location[1]
+    11-05 08:23:23.444: network provider received location[1]
+    11-05 08:23:23.449: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:23:23.491: fused provider received location[1]
+    11-05 08:23:24.431: gps provider received location[1]
+    11-05 08:23:24.456: network provider received location[1]
+    11-05 08:23:24.457: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:23:24.474: fused provider received location[1]
+    11-05 08:23:25.427: gps provider received location[1]
+    11-05 08:23:25.455: network provider received location[1]
+    11-05 08:23:25.457: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:23:25.504: fused provider received location[1]
+    11-05 08:23:26.425: gps provider received location[1]
+    11-05 08:23:26.459: network provider received location[1]
+    11-05 08:23:26.469: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:23:26.498: fused provider received location[1]
+    11-05 08:23:27.456: gps provider received location[1]
+    11-05 08:23:27.502: network provider received location[1]
+    11-05 08:23:27.504: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:23:27.542: fused provider received location[1]
+    11-05 08:23:28.438: gps provider received location[1]
+    11-05 08:23:28.471: network provider received location[1]
+    11-05 08:23:28.472: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:23:28.501: fused provider received location[1]
+    11-05 08:23:29.459: gps provider received location[1]
+    11-05 08:23:29.507: network provider received location[1]
+    11-05 08:23:29.508: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:23:29.555: fused provider received location[1]
+    11-05 08:23:30.442: gps provider received location[1]
+    11-05 08:23:30.480: network provider received location[1]
+    11-05 08:23:30.481: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:23:30.516: fused provider received location[1]
+    11-05 08:23:31.479: gps provider received location[1]
+    11-05 08:23:31.512: network provider received location[1]
+    11-05 08:23:31.514: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:23:31.557: fused provider received location[1]
+    11-05 08:23:32.455: gps provider received location[1]
+    11-05 08:23:32.486: network provider received location[1]
+    11-05 08:23:32.487: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:23:32.520: fused provider received location[1]
+    11-05 08:23:33.490: gps provider received location[1]
+    11-05 08:23:33.523: network provider received location[1]
+    11-05 08:23:33.524: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:23:33.556: fused provider received location[1]
+    11-05 08:23:34.508: gps provider received location[1]
+    11-05 08:23:34.550: network provider received location[1]
+    11-05 08:23:34.552: network provider delivered location[1] to 1000/android[GnssService]/7230719D
+    11-05 08:23:34.595: fused provider received location[1]
+Geocoder Record:
+  11-05 07:32:27.348: com.oplus.nas start requesting RGC.
+  11-05 07:32:27.361: com.android.phone start requesting RGC.
+  11-05 07:32:27.374: RGC succeed for com.oplus.nas
+  11-05 07:32:27.589: RGC succeed for com.android.phone
+Location related settings change history:
+  LOCATION_MODE:
+  WIFI_SCAN_ALWAYS_AVAILABLE:
+  ASSISTED_GPS_ENABLED:
+
+Exception occurred while dumping:
+java.lang.NullPointerException: Attempt to invoke virtual method 'java.lang.String d6.o.g()' on a null object reference
+	at android.os.Parcel.createExceptionOrNull(Parcel.java:3375)
+	at android.os.Parcel.createException(Parcel.java:3353)
+	at android.os.Parcel.readException(Parcel.java:3336)
+	at android.os.Parcel.readException(Parcel.java:3278)
+	at com.oplus.location.IOplusLocationService$Stub$Proxy.onDump(IOplusLocationService.java:527)
+	at com.android.server.location.ols.OplusLocationServiceProxy.onDump(OplusLocationServiceProxy.java:189)
+	at com.android.server.location.OplusLBSMainClass$DumpHelper.dumpOls(OplusLBSMainClass.java:1449)
+	at com.android.server.location.OplusLBSMainClass.dumpOplusContent(OplusLBSMainClass.java:1414)
+	at com.android.server.location.LocationManagerService.dump(LocationManagerService.java:2024)
+	at android.os.Binder.doDump(Binder.java:1085)
+	at android.os.Binder.dump(Binder.java:1075)
+	at android.os.Binder.onTransact(Binder.java:945)
+	at android.location.ILocationManager$Stub.onTransact(ILocationManager.java:1223)
+	at android.os.Binder.execTransactInternal(Binder.java:1444)
+	at android.os.Binder.execTransact(Binder.java:1378)
