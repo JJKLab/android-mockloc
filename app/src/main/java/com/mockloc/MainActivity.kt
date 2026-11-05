@@ -921,9 +921,14 @@ class MainActivity : Activity() {
         }
     }
 
-    /** 切换单个 App 的 NETCUT：更新 conf → 发布 → root 巡检下一 tick 应用 iptables。 */
+    /**
+     * 切换单个 App 的 NETCUT。名单的唯一真源是致盲作用域（策略页一次选择 = 掐网 + 进程内致盲双用，
+     * 渲染器从同一份名单派生 MOCKLOC_NETCUT 与 MOCKLOC_BLIND_*），所以这里必须**合并**进现有
+     * 作用域——整体覆盖会把策略页选的其他 App 抹掉（2026-11-06 实锤：掐网一关，高德致盲随之丢失，
+     * 高德自有定位引擎立刻回跳真实位置）。
+     */
     private fun toggleNetcut(pkg: String) {
-        val current = Config.netcutPkgs.toMutableSet()
+        val current = bridge.blindScope().packages.toMutableSet()
         if (pkg in current) { current.remove(pkg); toast("已关闭 $pkg 掐网") }
         else { current.add(pkg); toast("已开启 $pkg 掐网") }
         bridge.setBlindScope(Scope.only(current.toList()))
@@ -931,7 +936,7 @@ class MainActivity : Activity() {
             runCatching {
                 if (RootInjector.rootAvailable()) {
                     RootInjector.publishConfig(this@MainActivity, bridge.render())
-                    RootInjector.netcutApply(Config.netcutPkgs.toList())
+                    RootInjector.netcutApply(current.toList())
                 }
             }
         }

@@ -180,6 +180,9 @@ object RootInjector {
             "cmd location set-location-enabled true",
         )
         providers.forEach { p ->
+            // 先移除再注册：同名 provider 若残留（App 侧回落会话留下的别的身份），add 会报
+            // already-exists 而整条管线退化。跨身份的移除被系统静默忽略，同身份的确保干净。
+            cmds += "cmd location providers remove-test-provider $p 2>/dev/null; true"
             cmds += "cmd location providers add-test-provider $p"
             cmds += "cmd location providers set-test-provider-enabled $p true"
             cmds += ("cmd location providers set-test-provider-location $p " +
