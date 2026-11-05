@@ -1178,6 +1178,35 @@ FakeLoc/XposedFakeLocation 都有同样的取舍，并用"每个字段单独开�
 
 ## 附录 D 版本历史
 
+- **v1.1.1**（2026-11-06）高德回跳与 LSP 管理器两个顽疾根因定位 + 修复（全程真机复现）：
+  ① **高德「先对后跳回真实地址」完整证据链（Observed）**：a) 关盲化+关掐网复现——高德自有融合 SDK
+  用真实 WiFi(AP=10)/基站(5) 立即自算位置覆盖注入点（截图连州 vs 注入广州二沙岛）；b) 模块自检行
+  `泄露反推: AP=10 基站=5 已连BSSID=... → 有真实射频证据泄露` 即为根因读数——进程内 38 处挂钩
+  （读+写+反mock）工作正常，蓝点画的是引擎自算值；c) 盲化+掐网开着时 10 分钟旧点也稳。
+  结论与 README 旧结论一致：**致盲是高德唯一认的开关**。
+  ② **真 bug A（root 巡检空转）**：Android 16 上 test provider 有写权身份门槛——App 注册的
+  provider（identity=10304）静默拒绝其他身份的 setTestProviderLocation（root cmd RC=0 但 fix 不落盘，
+  实测喂 23.9999 坐标纹丝不动）。而 MockService.startLoop 在 root 模式下仍先注册 App 侧 provider 再用
+  root 喂点 ⇒ 每 tick 全部空转，唯一落盘的 fix 来自 5s 时 patrol() 的 App 侧自愈，此后时间戳无限老化
+  （实测 et=+17h）。修复：root 模式由 root 注册并首喂（apply 加 remove-first 幂等），patrol 自愈按模式
+  分流，自愈判据加陈旧检测（fix 时间戳 >60s 视为空转）。装机验收：identity=0 ×3，读回 age=350ms。
+  ③ **真 bug B（掐网开关抹掉致盲名单）**：v1.1.0 的 toggleNetcut 把 NETCUT 名单整体写入致盲作用域
+  （Scope.only(掐网名单)），关一次就把策略页选的致盲配置清空 → 高德引擎复活回跳（正是操作员踩到的
+  序列）。修复：掐网并入现有作用域（合并而非替换）。一键三写实测：BLIND_WIFI/BLIND_CELL/NETCUT
+  同步落 conf + iptables v4/v6 ×2 落地。
+  ④ **LSP 管理器入口（实锤寄生管理器）**：本机无独立管理器包名（roro.stellar.manager 实为 Shizuku
+  fork，pm 拆包见 "ADB wireless pairing service"）；入口= lspd 守护进程寄生的
+  `com.android.shell/.BugreportWarningActivity`，但外部直接 start（含 root+LAUNCH_MANAGER category）
+  只弹原生 bugreport 对话框——UI 交换只认守护进程自己的启动。可靠入口是守护进程注册的模块广播
+  `am broadcast -a <UUID> -d module://com.mockloc:0`（UUID 每会话变），App 从 root 的
+  `dumpsys activity intents` 动态解析 UUID 后重放，实测直开本模块作用域页（启用模块/系统框架/高德/
+  WeChat 全勾）。
+  ⑤ **竞品对照（com.vincenthzr.locationspoofer 3.0.14，pm 拆包）**：其 hookAMapSDK=22 处
+  hookAllMethods + hookGoogleFusedLocation + hookTencentLocation + system_server 侧
+  LocationManagerService([SysHook]) + CellInfo 合成（buildFakeCellInfoList synthetic-lte）。本项目已有
+  AmapSdk(读+写+反mock 三平面 38 处)/TencentSdk(动态代理)/GmsHooks 对应覆盖；差距仅剩 system_server
+  源头改写与 CellInfo 合成——均在「明确不做」清单（稳定性雷区，理由见附录 B）。
+  装机 1.1.0-37c93aa：端到端高德蓝点钉在注入点，75s 强刷不回跳。
 - **v1.1.0**（2026-11-05）状态页按操作员要求重做 + 管理器口径修正：
   ① **状态页三卡结构**：顶部「当前状态」卡（大字 ●模拟中 / ◐已配置未生效 / ○未注入 + WGS 与高德显示位
   双坐标 + 目标来源 + 停止注入按钮）；中部「目标 App」快捷卡（高德/微信/美团/大众点评，装机检测后才显示，
