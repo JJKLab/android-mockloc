@@ -1191,8 +1191,22 @@ FakeLoc/XposedFakeLocation 都有同样的取舍，并用"每个字段单独开�
   策略页独立点位对话框新增「输出坐标系 WGS84→GCJ02→BD09」轮换项（选点位时顺手切，重启目标 App 生效）。
   ③ ConfigCheck +16 断言（BLE 解析/命中、坐标系解析、漏斗换算方向、渲染回读），总 168 项全过；
   类型检查 0 错误；CI 绿（run 42138440844）。
-  ④ 待真机项：BLE 盲化实测（蓝牙 Beacon App 蓝点）、坐标系切换实测（高德喂 GCJ 不再二次偏移的
-  对比）、system_server 投递面 hook 与 app_process 巡检 worker（v1.2 后续，需真机护航）。
+  ④ **真机复测（2026-11-06/07 夜，Observed）**：
+  - BLE 盲化装机生效——`[BleBlind]: BLE 盲化已挂钩 8 处`（locationservice+widgetProvider 双进程），
+    模块自检读数从昨夜 `泄露反推: AP=10 基站=5 已连BSSID=... → 有真实射频证据泄露` 变为
+    **`AP=0 基站=0 已连BSSID= → 致盲面闭合`**；
+  - 按 App 坐标系闭环——策略页轮换 WGS84→GCJ02，无独立点位时经 `MOCKLOC_APP_COORD.<pkg>` 下发
+    （修掉"只挂 APP 行、点位为空即丢失"的缺口），高德进程内读回变 `gps=23.1092,113.3044`（GCJ 值）；
+    验证完已切回 WGS84（高德自转换，喂 GCJ 会双倍偏移——README 既有结论）；
+  - **新发现：ColorOS 冻结 App uid（`/sys/fs/cgroup/apps/uid_10304/cgroup.freeze=1`，前台服务也挡不住）**
+    ——冻结期间巡检停摆、解冻后 4s 自动恢复（tick 循环/SuSession/自愈全部健在）。已在巡检里加冻结
+    检测（tick 间隔 >30s 记台账）+ 状态页展示；根治靠 app_process root worker（v1.2.1 首项）；
+  - **新修复：NETCUT 即时应用缺口**——以前只有手动拨开关或模块开机循环才落 iptables，重注入后规则
+    真空；现在注入即应用（清零→注入→1+1 规则无歧义验证）；
+  - 终态：identity=0 ×3、BLIND_BLE 落 conf、iptables 1+1、高德蓝点钉二沙岛、美团读 mock 点
+    （上车点显示新世界花园别墅=二沙岛注入点地址）。
+  ⑤ v1.2 后续（需真机护航）：system_server 投递面 hook（LocationProviderManager 三方法 + Transport，
+  一处挂钩覆盖全 App）、app_process root 巡检 worker（冻结免疫 + 会话无关）。
 - **v1.1.1**（2026-11-06）高德回跳与 LSP 管理器两个顽疾根因定位 + 修复（全程真机复现）：
   ① **高德「先对后跳回真实地址」完整证据链（Observed）**：a) 关盲化+关掐网复现——高德自有融合 SDK
   用真实 WiFi(AP=10)/基站(5) 立即自算位置覆盖注入点（截图连州 vs 注入广州二沙岛）；b) 模块自检行
