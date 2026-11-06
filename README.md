@@ -1201,11 +1201,17 @@ FakeLoc/XposedFakeLocation 都有同样的取舍，并用"每个字段单独开�
   `am broadcast -a <UUID> -d module://com.mockloc:0`（UUID 每会话变），App 从 root 的
   `dumpsys activity intents` 动态解析 UUID 后重放，实测直开本模块作用域页（启用模块/系统框架/高德/
   WeChat 全勾）。
-  ⑤ **竞品对照（com.vincenthzr.locationspoofer 3.0.14，pm 拆包）**：其 hookAMapSDK=22 处
-  hookAllMethods + hookGoogleFusedLocation + hookTencentLocation + system_server 侧
-  LocationManagerService([SysHook]) + CellInfo 合成（buildFakeCellInfoList synthetic-lte）。本项目已有
-  AmapSdk(读+写+反mock 三平面 38 处)/TencentSdk(动态代理)/GmsHooks 对应覆盖；差距仅剩 system_server
-  源头改写与 CellInfo 合成——均在「明确不做」清单（稳定性雷区，理由见附录 B）。
+  ⑤ **竞品对照升级（com.vincenthzr.locationspoofer，3.0.14 与 3.1.5 两次拆包，样本固化 `.tmp/lsp315/`）**：
+  3.0.14=hookAMapSDK 22 处+GoogleFused+TencentLocation+CellInfo 合成；**3.1.5 跃升四项**——
+  a) system_server 投递面 hook（LocationProviderManager onReportLocation/getLast/getCurrent +
+  Listener/PendingIntent/GetCurrentLocation 三个 Transport + GNSS/NMEA 代理 + BLE IScannerCallback，
+  一处挂钩覆盖全 App）；b) app_process root 常驻 worker（`nohup /system/bin/app_process
+  --nice-name=... RootRuntimeMain`，父级 init 绕开 KernelSU 会话回收）；c) native 传感器仿真
+  （shadowhook 挂 libsensorservice.so + 自带 ELF 迷你符号执行器自动适配 ROM + 云端传感器补丁 +
+  步频/加速度步态仿真）；d) 按 App 坐标系（WGS84/GCJ02/BD09/BD09MC）+ 真实射频指纹录制回放。
+  本项目 AmapSdk(读+写+反mock 三平面 38 处)/TencentSdk(动态代理)/GmsHooks 已对齐应用层；
+  行动清单：v1.2 候选=system_server 投递面 + app_process 巡检 worker，低成本=BLE 盲化（射频第四路
+  缺口）+ 按 App 输出坐标系；CellInfo 合成仍在「明确不做」。详见 `.tmp/lsp315/ANALYSIS.md`。
   装机 1.1.0-37c93aa：端到端高德蓝点钉在注入点，75s 强刷不回跳。
 - **v1.1.0**（2026-11-05）状态页按操作员要求重做 + 管理器口径修正：
   ① **状态页三卡结构**：顶部「当前状态」卡（大字 ●模拟中 / ◐已配置未生效 / ○未注入 + WGS 与高德显示位
