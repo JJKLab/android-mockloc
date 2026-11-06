@@ -146,6 +146,15 @@ class ModuleBridge(context: Context) {
     fun appCoord(pkg: String): String =
         prefs.getString("$KEY_APP_COORD_PREFIX$pkg", "WGS84").orEmpty().ifBlank { "WGS84" }
 
+    /** 所有已设置的按 App 坐标系（含未设独立点位的——它们走 MOCKLOC_APP_COORD 独立键下发）。 */
+    fun coordApps(): Map<String, String> = prefs.all.entries
+        .filter { it.key.startsWith(KEY_APP_COORD_PREFIX) }
+        .mapNotNull { (k, v) ->
+            val pkg = k.removePrefix(KEY_APP_COORD_PREFIX)
+            val coord = (v as? String)?.ifBlank { "WGS84" } ?: "WGS84"
+            if (pkg.isNotEmpty()) pkg to coord else null
+        }.toMap()
+
     fun setAppCoord(pkg: String, coord: String) {
         prefs.edit().putString("$KEY_APP_COORD_PREFIX$pkg", coord).apply()
         store()
@@ -255,6 +264,7 @@ class ModuleBridge(context: Context) {
             pkg to ("%.7f,%.7f,%.1f".format(point[0], point[1], point.getOrElse(2) { 5.0 })
                 + if (coord == "WGS84") "" else ",$coord")
         },
+        appCoordsNoPoint = coordApps().filterKeys { it !in appPoints() },
         stackClean = prefs.getBoolean(KEY_STACK_CLEAN, true),
         hidePkgs = hidePkgs(),
         sensorFreeze = prefs.getBoolean(KEY_SENSOR_FREEZE, false),
@@ -321,6 +331,7 @@ class ModuleBridge(context: Context) {
             routeStarted: String = "0",
             routeLoop: Boolean = false,
             appPoints: List<Pair<String, String>> = emptyList(),
+            appCoordsNoPoint: Map<String, String> = emptyMap(),
             stackClean: Boolean = true,
             hidePkgs: List<String> = emptyList(),
             sensorFreeze: Boolean = false,
@@ -355,6 +366,10 @@ class ModuleBridge(context: Context) {
             appendLine("MOCKLOC_FORGE_WIFI=$forgeWifi")
             appendLine("MOCKLOC_GMS=$gms")
             appPoints.forEach { (pkg, point) -> appendLine("MOCKLOC_APP.$pkg=$point") }
+            // 坐标系不带独立点位的 App 单独下发：只挂在 APP 行会丢（点空时该行不存在）。
+            appCoordsNoPoint.forEach { (pkg, coord) ->
+                if (coord != "WGS84") appendLine("MOCKLOC_APP_COORD.$pkg=$coord")
+            }
         }
     }
 }

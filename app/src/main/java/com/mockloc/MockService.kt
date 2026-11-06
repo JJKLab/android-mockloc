@@ -46,6 +46,9 @@ class MockService : Service() {
     private var ticks = 0L
     private var healFails = 0
 
+    /** 上个 tick 的墙钟；tick 间隔突然拉大 = 进程被系统冻结过（ColorOS 后台管控，2026-11-06 实锤）。 */
+    private var lastTickAt = 0L
+
     /** ROOT 巡检：注入经持久 su 会话（identity=0），不建 App 侧 test provider。 */
     private var patrolMode = false
 
@@ -351,6 +354,17 @@ class MockService : Service() {
             override fun run() {
                 if (!running || paused) return
                 val now = System.currentTimeMillis()
+                if (lastTickAt != 0L) {
+                    val gap = now - lastTickAt
+                    if (gap > FREEZE_GAP_MS) {
+                        lastFreezeGapMs = gap
+                        Diagnostics.note(
+                            "进程被系统冻结 ${gap / 1000}s（厂商后台管控），巡检已自动恢复；" +
+                                "建议给 mockloc 开「允许后台运行/不清理」",
+                        )
+                    }
+                }
+                lastTickAt = now
                 val sample = routeSample(now)
                 val (baseLat, baseLng) = if (sample != null) {
                     sample.lat to sample.lng
@@ -588,6 +602,13 @@ class MockService : Service() {
         const val HEAL_DRIFT_LIMIT_M = 200.0
         // fix 时间戳超过这个值就视为喂点空转（实测 root 命令被静默拒绝时坐标不变、时间无限老化）。
         const val HEAL_STALE_LIMIT_MS = 60_000L
+
+        /** 最近一次检测到的冻结时长（ms），0 = 本会话没被冻过。状态页读取展示。 */
+        @Volatile
+        var lastFreezeGapMs: Long = 0L
+            private set
+        // tick 间隔超过这个值 = 中途被冻结/挂起过（正常 tick 间隔 ≤ patrol 背压的 10s）。
+        const val FREEZE_GAP_MS = 30_000L
         const val MAX_HEAL_FAILS = 5
 
         /** tappable "恢复注入" fallback for the boot path when Android refuses the foreground start. */

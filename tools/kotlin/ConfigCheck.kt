@@ -40,6 +40,7 @@ private val sample = """
     MOCKLOC_BLIND_BLE=com.tencent.mm
     MOCKLOC_PROBE=true
     MOCKLOC_APP.com.autonavi.minimap=30.2638384,120.1927132,6.0,GCJ02
+    MOCKLOC_APP_COORD.com.tencent.mm=BD09
 """.trimIndent()
 
 // Exactly what an older build of the CLI writes: no anti-detection keys at all.
@@ -86,7 +87,8 @@ fun main() {
     check("blindBle 命中微信", Config.blindBleFor("com.tencent.mm"), true)
     check("blindBle 不命中高德", Config.blindBleFor("com.autonavi.minimap"), false)
     check("app 坐标系 GCJ02", Config.appCoordFor("com.autonavi.minimap"), "GCJ02")
-    check("app 坐标系默认 WGS84", Config.appCoordFor("com.tencent.mm"), "WGS84")
+    check("app 坐标系默认 WGS84（APP 行未带段）", Config.appCoordFor("com.dianping.v1"), "WGS84")
+    check("独立坐标系键 BD09", Config.appCoordFor("com.tencent.mm"), "BD09")
     // 漏斗：GCJ02 输出 = WGS 独立点换算后的值（30.2638384,120.1927132 杭州附近 → GCJ 约 +6s 级偏移）
     run {
         val out = Config.currentOutCoordsFor("com.autonavi.minimap")

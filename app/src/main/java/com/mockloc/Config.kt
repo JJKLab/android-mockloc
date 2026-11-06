@@ -283,7 +283,17 @@ object Config {
                 else -> {
                     // Per-app fixed points: MOCKLOC_APP.<pkg>=lat,lng[,acc]. The key contains a dot
                     // by design, which the indexOf('=') split above handles natively.
-                    if (key.startsWith("MOCKLOC_APP.")) {
+                    if (key.startsWith("MOCKLOC_APP_COORD.")) {
+                        // 无独立点位、只要坐标系的 App：MOCKLOC_APP_COORD.<pkg>=GCJ02|BD09
+                        val pkg = key.removePrefix("MOCKLOC_APP_COORD.")
+                        val coord = value.trim().uppercase().replace("-", "")
+                        if (pkg.isNotEmpty()) {
+                            nextAppCoord[pkg] = when (coord) {
+                                "GCJ02", "BD09" -> coord
+                                else -> "WGS84"
+                            }
+                        }
+                    } else if (key.startsWith("MOCKLOC_APP.")) {
                         val pkg = key.removePrefix("MOCKLOC_APP.")
                         val tokens = value.split(',').map { it.trim() }
                         val lat = tokens.getOrNull(0)?.toDoubleOrNull()

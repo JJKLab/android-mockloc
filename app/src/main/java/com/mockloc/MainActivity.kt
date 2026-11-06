@@ -1046,7 +1046,11 @@ class MainActivity : Activity() {
                 append("  → 回到上方点「同步到模块」一键解决\n")
             }
             append("\n运行管线\n")
-            append("  ROOT 巡检: ${if (RootInjector.SuSession.alive() && serviceRunning()) "运行中（持久 su 会话）" else "未运行"}\n")
+            append("  ROOT 巡检: ${if (RootInjector.SuSession.alive() && serviceRunning()) "运行中（持久 su 会话）" else "未运行"}")
+            if (MockService.lastFreezeGapMs > 0L) {
+                append("，曾被系统冻结 ${MockService.lastFreezeGapMs / 1000}s 后自动恢复")
+            }
+            append("\n")
             append("  LSP 模块: ${if (selfCheck()) "已挂载（进程内改写）" else "未启用（可选，微信等 App 需要）"}\n")
             append("  NETCUT 掐网: ${if (Config.netcutPkgs.isEmpty()) "未配置" else Config.netcutPkgs.joinToString()}\n")
             append("  BLE 盲化: ${if (Config.blindBle.packages.isEmpty()) "未配置" else Config.blindBle.render()}\n")
