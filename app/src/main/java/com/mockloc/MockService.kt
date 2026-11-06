@@ -331,6 +331,13 @@ class MockService : Service() {
                 out.contains("not a test provider")) {
                 Log.w(TAG, "root apply failed, falling back to app providers: ${out.take(120)}")
                 patrolMode = false
+            } else {
+                // conf 里的 NETCUT 名单跟着注入一起即时落 iptables——以前只有手动拨开关或模块
+                // 开机循环才会应用，重注入后规则真空直到下一轮（2026-11-06 实测抓到）。
+                Config.refresh()
+                if (Config.netcutPkgs.isNotEmpty()) {
+                    RootInjector.netcutApply(Config.netcutPkgs.toList())
+                }
             }
         }
         if (!patrolMode) {
