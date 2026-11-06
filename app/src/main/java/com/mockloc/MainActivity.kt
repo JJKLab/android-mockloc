@@ -1049,11 +1049,19 @@ class MainActivity : Activity() {
             append("  ROOT 巡检: ${if (RootInjector.SuSession.alive() && serviceRunning()) "运行中（持久 su 会话）" else "未运行"}\n")
             append("  LSP 模块: ${if (selfCheck()) "已挂载（进程内改写）" else "未启用（可选，微信等 App 需要）"}\n")
             append("  NETCUT 掐网: ${if (Config.netcutPkgs.isEmpty()) "未配置" else Config.netcutPkgs.joinToString()}\n")
+            append("  BLE 盲化: ${if (Config.blindBle.packages.isEmpty()) "未配置" else Config.blindBle.render()}\n")
             append("\n模块配置（${Config.DEFAULT_PATH}）\n")
             append("  开关=${onOff(Config.enabled)} 全局=${onOff(Config.global)} 卫星=${onOff(Config.gnssSpoof)}\n")
-            append("  致盲 WiFi=${Config.blindWifi.render()} 基站=${Config.blindCell.render()}\n")
+            append("  致盲 WiFi=${Config.blindWifi.render()} 基站=${Config.blindCell.render()} BLE=${Config.blindBle.render()}\n")
             append("  路线=${if (Config.routeActive) "运行中 ${Config.routeWaypoints.size}点 @${Config.speedMps}m/s" else "未配置"}")
-            append("  独立点位=${Config.appPoints.size}个\n")
+            append("  独立点位=${Config.appPoints.size}个")
+            run {
+                val custom = Config.appCoord.filterValues { it != "WGS84" }
+                if (custom.isNotEmpty()) {
+                    append("（输出坐标系 " + custom.entries.joinToString { "${it.key.substringBeforeLast('.')}=${it.value}" } + "）")
+                }
+            }
+            append("\n")
             append("  读回: ${Config.lastError ?: "正常（写入于 ${Config.lastLoadedAgo}ms 前）"}\n")
             // 高德机制：自有融合 SDK（真实 WiFi/基站/服务器定位）优先级高于系统 LocationManager，
             // 不盲化它就直接拿真数据定位覆盖注入点——2026-11-05 实机复现（关盲化即回跳真实位置）。
@@ -1537,25 +1545,37 @@ class MainActivity : Activity() {
         if (current != null) {
             options.add("清除独立点位（当前 ${"%.5f".format(current[0])},${"%.5f".format(current[1])}）")
         }
+        // 输出坐标系轮换：瓦片直读型 App（不自己 WGS→GCJ 的）喂 GCJ 免二次偏移；百度系喂 BD09。
+        val coord = bridge.appCoord(pkg)
+        val next = when (coord) { "WGS84" -> "GCJ02"; "GCJ02" -> "BD09"; else -> "WGS84" }
+        options.add("输出坐标系：$coord → 切到 $next（默认 WGS84，改完重启该 App）")
         if (options.isEmpty()) {
             return toast("先注入一个点，再来给这个 App 指定独立点位")
         }
         android.app.AlertDialog.Builder(this)
             .setTitle("$label 的独立点位")
             .setItems(options.toTypedArray()) { _, which ->
-                if (options[which].startsWith("用最近")) {
-                    val parts = last!!.split(',')
-                    val la = parts.getOrNull(0)?.trim()?.toDoubleOrNull()
-                    val ln = parts.getOrNull(1)?.trim()?.toDoubleOrNull()
-                    if (la == null || ln == null) {
-                        toast("最近点位读不懂：$last")
-                    } else {
-                        bridge.setAppPoint(pkg, la, ln)
-                        toast("已设 $label 独立点 $last；重新注入生效，并重启该 App")
+                when {
+                    options[which].startsWith("用最近") -> {
+                        val parts = last!!.split(',')
+                        val la = parts.getOrNull(0)?.trim()?.toDoubleOrNull()
+                        val ln = parts.getOrNull(1)?.trim()?.toDoubleOrNull()
+                        if (la == null || ln == null) {
+                            toast("最近点位读不懂：$last")
+                        } else {
+                            bridge.setAppPoint(pkg, la, ln)
+                            toast("已设 $label 独立点 $last；重新注入生效，并重启该 App")
+                        }
                     }
-                } else {
-                    bridge.clearAppPoint(pkg)
-                    toast("已清除 $label 的独立点位")
+                    options[which].startsWith("清除") -> {
+                        bridge.clearAppPoint(pkg)
+                        bridge.setAppCoord(pkg, "WGS84")
+                        toast("已清除 $label 的独立点位")
+                    }
+                    else -> {
+                        bridge.setAppCoord(pkg, next)
+                        toast("$label 输出坐标系 → $next；重启该 App 生效")
+                    }
                 }
                 policyPointed = bridge.appPoints().keys
                 renderPolicyRows()

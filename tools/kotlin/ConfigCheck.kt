@@ -37,7 +37,9 @@ private val sample = """
     MOCKLOC_GNSS=true
     MOCKLOC_BLIND_WIFI=true
     MOCKLOC_BLIND_CELL=false
+    MOCKLOC_BLIND_BLE=com.tencent.mm
     MOCKLOC_PROBE=true
+    MOCKLOC_APP.com.autonavi.minimap=30.2638384,120.1927132,6.0,GCJ02
 """.trimIndent()
 
 // Exactly what an older build of the CLI writes: no anti-detection keys at all.
@@ -80,6 +82,20 @@ fun main() {
     check("blindCell", Config.blindCell.render(), "false")
     check("blindWifi 覆盖任意包", Config.blindWifiFor("com.autonavi.minimap"), true)
     check("blindCell 不覆盖任何包", Config.blindCellFor("com.autonavi.minimap"), false)
+    check("blindBle 按包", Config.blindBle.render(), "com.tencent.mm")
+    check("blindBle 命中微信", Config.blindBleFor("com.tencent.mm"), true)
+    check("blindBle 不命中高德", Config.blindBleFor("com.autonavi.minimap"), false)
+    check("app 坐标系 GCJ02", Config.appCoordFor("com.autonavi.minimap"), "GCJ02")
+    check("app 坐标系默认 WGS84", Config.appCoordFor("com.tencent.mm"), "WGS84")
+    // 漏斗：GCJ02 输出 = WGS 独立点换算后的值（30.2638384,120.1927132 杭州附近 → GCJ 约 +6s 级偏移）
+    run {
+        val out = Config.currentOutCoordsFor("com.autonavi.minimap")
+        val wgs = Config.currentLatFor("com.autonavi.minimap") to Config.currentLngFor("com.autonavi.minimap")
+        check("漏斗 lat ≠ WGS（发生了换算）", out[0] != wgs.first, true)
+        check("漏斗 lng ≠ WGS", out[1] != wgs.second, true)
+        val wgsOut = Config.currentOutCoordsFor("com.tencent.mm")
+        check("默认输出不换算", wgsOut[0] == Config.currentLatFor("com.tencent.mm"), true)
+    }
     check("probe", Config.probe, true)
     check("lastError", Config.lastError, null)
     check("alt", Config.alt, 12.5)

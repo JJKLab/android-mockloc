@@ -51,6 +51,7 @@ class ModuleEntry : XposedModule() {
         installCoordinates(kit, locationClass, param.classLoader, pkg)
         MockTrace(this, param.classLoader, pkg).init()
         Sensors(this, param.classLoader, pkg).init()
+        BleBlind(this, param.classLoader, pkg).init()
         GnssStream(this, param.classLoader, pkg).init()
         TencentSdk(this, param.classLoader, pkg).init()
         AmapSdk(this, param.classLoader, pkg).init()
@@ -61,7 +62,7 @@ class ModuleEntry : XposedModule() {
         log(
             Log.INFO, tag,
             "$pkg: providers=${Config.providers} global=${Config.global} " +
-                "gnss=${Config.gnssSpoof} blind=${Config.blindWifi}/${Config.blindCell} " +
+                "gnss=${Config.gnssSpoof} blind=${Config.blindWifi}/${Config.blindCell}/${Config.blindBle} " +
                 "probe=${Config.probe} notes=${Diagnostics.snapshot().size}"
         )
     }
@@ -77,11 +78,13 @@ class ModuleEntry : XposedModule() {
     private fun installCoordinates(kit: HookKit, clazz: Class<*>, classLoader: ClassLoader, pkg: String) {
         // Per-app points (REFACTOR-PLAN 2.2): a listed app reads its own coordinate, everyone else
         // the global one - from the same shared jitter offset.
+        // 输出坐标走 currentOutCoordsFor：独立点位 + 抖动 + 按 App 坐标系一次算齐，lat/lng 成对
+        // （GCJ/BD09 换算是二元函数，拆开各自换算会错位）。
         kit.install(kit.methodsOf(clazz, "getLatitude")) { chain ->
-            if (SpoofLogic.isActive(pkg)) Config.currentLatFor(pkg) else chain.proceed()
+            if (SpoofLogic.isActive(pkg)) Config.currentOutCoordsFor(pkg)[0] else chain.proceed()
         }
         kit.install(kit.methodsOf(clazz, "getLongitude")) { chain ->
-            if (SpoofLogic.isActive(pkg)) Config.currentLngFor(pkg) else chain.proceed()
+            if (SpoofLogic.isActive(pkg)) Config.currentOutCoordsFor(pkg)[1] else chain.proceed()
         }
 
         val lmClass = kit.findClass(classLoader, LocationManager::class.java.name) ?: return

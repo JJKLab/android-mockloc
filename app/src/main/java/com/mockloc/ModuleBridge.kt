@@ -138,6 +138,19 @@ class ModuleBridge(context: Context) {
 
     fun clearAppPoint(pkg: String) = editAppPoints { it.remove(pkg) }
 
+    /**
+     * 按 App 输出坐标系（对标 LocationSpoofer appCoordinateSystems）：`WGS84`（默认，GPS 语义）/
+     * `GCJ02`（高德/腾讯瓦片直读型 App）/`BD09`（百度系 App）。只影响进程内 Location 读数，
+     * 系统 provider 仍是 WGS——系统层事实不变，转换发生在喂给 App 的那一刻。
+     */
+    fun appCoord(pkg: String): String =
+        prefs.getString("$KEY_APP_COORD_PREFIX$pkg", "WGS84").orEmpty().ifBlank { "WGS84" }
+
+    fun setAppCoord(pkg: String, coord: String) {
+        prefs.edit().putString("$KEY_APP_COORD_PREFIX$pkg", coord).apply()
+        store()
+    }
+
     private inline fun editAppPoints(edit: (JSONObject) -> Unit) {
         val obj = runCatching {
             JSONObject(prefs.getString(KEY_APP_POINTS, "{}").orEmpty())
@@ -238,7 +251,9 @@ class ModuleBridge(context: Context) {
         routeStarted = prefs.getString(KEY_ROUTE_STARTED, "0").orEmpty(),
         routeLoop = prefs.getBoolean(KEY_ROUTE_LOOP, false),
         appPoints = appPoints().map { (pkg, point) ->
-            pkg to "%.7f,%.7f,%.1f".format(point[0], point[1], point.getOrElse(2) { 5.0 })
+            val coord = appCoord(pkg)
+            pkg to ("%.7f,%.7f,%.1f".format(point[0], point[1], point.getOrElse(2) { 5.0 })
+                + if (coord == "WGS84") "" else ",$coord")
         },
         stackClean = prefs.getBoolean(KEY_STACK_CLEAN, true),
         hidePkgs = hidePkgs(),
@@ -268,6 +283,7 @@ class ModuleBridge(context: Context) {
         const val KEY_ROUTE_STARTED = "module_route_started"
         const val KEY_ROUTE_LOOP = "module_route_loop"
         const val KEY_APP_POINTS = "module_app_points"
+        const val KEY_APP_COORD_PREFIX = "module_app_coord."
         const val KEY_STACK_CLEAN = "module_stack_clean"
         const val KEY_HIDE_PKGS = "module_hide_pkgs"
         const val KEY_SENSOR_FREEZE = "module_sensor_freeze"
@@ -326,6 +342,7 @@ class ModuleBridge(context: Context) {
             appendLine("MOCKLOC_GNSS=true")
             appendLine("MOCKLOC_BLIND_WIFI=${blind.render()}")
             appendLine("MOCKLOC_BLIND_CELL=${blind.render()}")
+            appendLine("MOCKLOC_BLIND_BLE=${blind.render()}")
             appendLine("MOCKLOC_NETCUT=${netcut.joinToString(",")}")
             appendLine("MOCKLOC_PROBE=${if (probe) "true" else "false"}")
             appendLine("MOCKLOC_SPEED_MPS=${if (speed.isBlank()) DEFAULT_SPEED else speed}")

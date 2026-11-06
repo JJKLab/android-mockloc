@@ -25,8 +25,9 @@ object SpoofLogic {
     fun fakeLocation(original: Location?, provider: String?, pkg: String? = null): Location {
         val name = provider?.takeUnless { it.isEmpty() } ?: Config.provider
         val out = Location(name)
-        out.latitude = Config.currentLatFor(pkg)
-        out.longitude = Config.currentLngFor(pkg)
+        val outCoord = Config.currentOutCoordsFor(pkg)
+        out.latitude = outCoord[0]
+        out.longitude = outCoord[1]
         out.accuracy = Config.accuracyFor(pkg)
         out.speed = Config.currentSpeedMps.toFloat()
         out.bearing = Config.currentBearingDeg.toFloat()

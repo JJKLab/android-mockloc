@@ -159,9 +159,16 @@ object Config {
     var blindCell: Scope = Scope.None
         private set
 
+    /** BLE 是射频盲化第四路（WiFi/基站/BLE/GNSS）：Beacon 定位 SDK 用真实 BLE 指纹自算位置。 */
+    @Volatile
+    var blindBle: Scope = Scope.None
+        private set
+
     fun blindWifiFor(packageName: String?) = blindWifi.covers(packageName)
 
     fun blindCellFor(packageName: String?) = blindCell.covers(packageName)
+
+    fun blindBleFor(packageName: String?) = blindBle.covers(packageName)
 
     /** Log which positioning APIs the target app really calls; changes nothing (see Probe.kt). */
     @Volatile
@@ -218,6 +225,7 @@ object Config {
         var nextRouteStarted = 0L
         var nextRouteLoop = false
         val nextAppPoints = HashMap<String, DoubleArray>()
+        val nextAppCoord = HashMap<String, String>()
         var nextStackClean = true
         val nextHide = LinkedHashSet<String>()
         val nextNetcut = LinkedHashSet<String>()
@@ -233,6 +241,7 @@ object Config {
         var nextGnss = true
         var nextBlindWifi = Scope.None
         var nextBlindCell = Scope.None
+        var nextBlindBle = Scope.None
         var nextProbe = false
         text.lineSequence().forEach { line ->
             val idx = line.indexOf('=')
@@ -257,6 +266,7 @@ object Config {
                 "MOCKLOC_GNSS" -> nextGnss = value != "false" && value != "0"
                 "MOCKLOC_BLIND_WIFI" -> nextBlindWifi = Scope.parse(value)
                 "MOCKLOC_BLIND_CELL" -> nextBlindCell = Scope.parse(value)
+                "MOCKLOC_BLIND_BLE" -> nextBlindBle = Scope.parse(value)
                 "MOCKLOC_PROBE" -> nextProbe = value == "true" || value == "1"
                 "MOCKLOC_SPEED_MPS" -> nextSpeed = value.toDoubleOrNull()?.coerceIn(0.1, 60.0) ?: nextSpeed
                 "MOCKLOC_ROUTE_WAYPOINTS" -> nextRoute = Route.decode(value)
@@ -275,11 +285,18 @@ object Config {
                     // by design, which the indexOf('=') split above handles natively.
                     if (key.startsWith("MOCKLOC_APP.")) {
                         val pkg = key.removePrefix("MOCKLOC_APP.")
-                        val parts = value.split(',').map { it.trim().toDoubleOrNull() }
-                        val lat = parts.getOrNull(0)
-                        val lng = parts.getOrNull(1)
+                        val tokens = value.split(',').map { it.trim() }
+                        val lat = tokens.getOrNull(0)?.toDoubleOrNull()
+                        val lng = tokens.getOrNull(1)?.toDoubleOrNull()
                         if (pkg.isNotEmpty() && lat != null && lng != null) {
-                            nextAppPoints[pkg] = doubleArrayOf(lat, lng, parts.getOrNull(2) ?: 5.0)
+                            nextAppPoints[pkg] =
+                                doubleArrayOf(lat, lng, tokens.getOrNull(2)?.toDoubleOrNull() ?: 5.0)
+                            // 第 4 段 = 输出坐标系；只认三个合法值，其余回落 WGS84。
+                            val coord = tokens.getOrNull(3)?.uppercase()?.replace("-", "")
+                            nextAppCoord[pkg] = when (coord) {
+                                "GCJ02", "BD09" -> coord
+                                else -> "WGS84"
+                            }
                         }
                     }
                 }
@@ -297,6 +314,7 @@ object Config {
         routeStartedMs = nextRouteStarted
         routeLoop = nextRouteLoop
         appPoints = nextAppPoints
+        appCoord = nextAppCoord
         stackClean = nextStackClean
         hidePkgs = nextHide
         netcutPkgs = nextNetcut
@@ -311,6 +329,7 @@ object Config {
         gnssSpoof = nextGnss
         blindWifi = nextBlindWifi
         blindCell = nextBlindCell
+        blindBle = nextBlindBle
         probe = nextProbe
     }
 
@@ -391,6 +410,31 @@ object Config {
 
     /** A per-app fixed point overrides the global one entirely (REFACTOR-PLAN 2.2). */
     fun appPointFor(pkg: String?): DoubleArray? = pkg?.let { appPoints[it] }
+
+    /**
+     * 按 App 输出坐标系（`MOCKLOC_APP.<pkg>=lat,lng[,acc[,GCJ02|BD09]]` 第 4 段）：瓦片直读型 App
+     * （不自己 WGS→GCJ 的）直接喂 GCJ/BD09 免二次偏移。默认 WGS84——GPS 语义下绝大多数 App
+     * 自己转换，全局改它反而制造双倍偏移；这是逐 App 的显式选择。
+     */
+    @Volatile
+    var appCoord: Map<String, String> = emptyMap()
+        private set
+
+    fun appCoordFor(pkg: String?): String = pkg?.let { appCoord[it] } ?: "WGS84"
+
+    /** 该 App 最终读到的坐标（含独立点位、抖动与输出坐标系换算）。lat/lng 永远成对返回。 */
+    fun currentOutCoordsFor(pkg: String?): DoubleArray {
+        val lat = currentLatFor(pkg)
+        val lng = currentLngFor(pkg)
+        return when (appCoordFor(pkg)) {
+            "GCJ02" -> CoordTransform.wgs84ToGcj02(lat, lng)
+            "BD09" -> {
+                val g = CoordTransform.wgs84ToGcj02(lat, lng)
+                CoordTransform.gcj02ToBd09(g[0], g[1])
+            }
+            else -> doubleArrayOf(lat, lng)
+        }
+    }
 
     fun currentLatFor(pkg: String?): Double = appPointFor(pkg)?.get(0)?.plus(jitterDLat) ?: currentLat
 
