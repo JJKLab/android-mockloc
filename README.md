@@ -852,7 +852,7 @@ CLI set --persist  ->  /data/adb/mockloc/config.prop      (root 专属，App 进
 键：`MOCKLOC_ENABLED / GLOBAL / PROVIDERS / LAT / LNG / ACC / RADIUS / INTERVAL / TARGETS / LABEL
 / GNSS / BLIND_WIFI / BLIND_CELL`。
 后三个是档 3 的反检测开关，**只在进程 attach 时读一次**（挂钩本身是按进程装的，改完要把目标 App 重启才生效）；
-`GNSS` 默认开，`BLIND_WIFI/BLIND_CELL` 默认关——致盲会真的破坏目标 App 自己的 WiFi/基站功能，不能默认打开。
+`GNSS` 默认开，`BLIND_WIFI/BLIND_CELL/BLIND_BLE` 默认关——致盲会真的破坏目标 App 自己的 WiFi/基站/BLE 功能，不能默认打开。
 缺键按默认值处理，所以旧配置在新模块上行为不变（`tools/kotlin/ConfigCheck.kt` 把这条契约钉住了）。
 配置入口是 **`/data/local/tmp/mockloc.in`（shell 可写的收件箱）**，root 模块的 `sync_inbox` 再把它镜像到
 `/data/adb/mockloc/config.prop`。这么设计是因为 A0 实测：KernelSU 不给 adb shell 提供 `su`，
@@ -882,6 +882,7 @@ PC 端根本写不了 `/data/adb`——收件箱让"只刷模块、不依赖 su"
 | `app/.../HookKit.kt` | 挂钩管线：按名查类/方法、批量安装、`Chain.withArg`；外加 `Diagnostics` 失败台账 |
 | `app/.../MockTrace.kt` | 抹掉系统测试 provider 留下的痕迹（mock 位、extras、`Settings.Secure`、provider 列表、Parcel 路径）|
 | `app/.../Sensors.kt` | 一致性层：伪 `GnssStatus`（含每秒回调）、可选致盲 WiFi/基站 |
+| `app/.../BleBlind.kt` | BLE 盲化（v1.2.0）：致盲作用域内吞掉 `BluetoothLeScanner.startScan*` 与 `startLeScan`，封堵 Beacon 定位第四路 |
 | `app/.../Probe.kt` | `--probe` 打开时的定位 API 调用记录（只记不改值），用来把"该钩什么"变成读日志 |
 | `app/.../Nmea.kt` | 纯函数 NMEA 句子生成（`$`+语句号+逗号字段+`*`校验和），可在 JVM 上验收 |
 | `app/.../GnssStream.kt` | GNSS 原始测量 + NMEA 注入（全反射造对象，字段自洽见 A9）|

@@ -603,8 +603,9 @@ class MainActivity : Activity() {
         val intro = ui.card()
         intro.addView(ui.title("哪些 App 要抽空输入"))
         intro.addView(ui.body(
-            "勾上的包会屏蔽自己的 WiFi/基站扫描结果，逼它落回系统定位——实测只有高德这类" +
-                "「自己算路」的 App 需要。没勾的 App 不受影响。「位置」按钮给它设独立点位。",
+            "勾上的包会屏蔽自己的 WiFi/基站/BLE 扫描结果，逼它落回系统定位——实测只有高德这类" +
+                "「自己算路」的 App 需要。没勾的 App 不受影响。「位置」按钮给它设独立点位与输出坐标系" +
+                "（默认 WGS84；瓦片直读型 App 选 GCJ02）。",
         ))
         policyList.addHeaderView(listHeader(intro))
         val legend = ui.card()

@@ -20,7 +20,7 @@ object Tiers {
         /** Reads the system provider: any tier works, even the no-root one. */
         SYSTEM("①系统provider即可", "普通 App / Shizuku / root 任一档都能改到它"),
         /** Ignores or discards the system provider; needs its radio inputs emptied (Tier 2 断网 or Tier 3 致盲). */
-        INPUT("②要抽空输入", "它自己算路：致盲 WiFi/基站或按 uid 断网才落回系统定位"),
+        INPUT("②要抽空输入", "它自己算路：致盲 WiFi/基站/BLE 或按 uid 断网才落回系统定位"),
         /** Reads its own SDK inside its process and checks the mock flag: only Tier 3 reaches it. */
         PROCESS("③要进进程", "只有 LSPosed 作用域内的进程内改写有效，且要在它自家 SDK 上挂钩"),
         UNKNOWN("未测", "还没有本机结论，先按①试，不行再升到②/③"),
