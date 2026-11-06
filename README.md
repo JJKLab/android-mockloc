@@ -1178,6 +1178,20 @@ FakeLoc/XposedFakeLocation 都有同样的取舍，并用"每个字段单独开�
 
 ## 附录 D 版本历史
 
+- **v1.2.0**（2026-11-06）对标 LocationSpoofer 3.1.5 的第一轮能力补齐（本机可验证项全落地，待真机复测）：
+  ① **BLE 盲化（射频第四路）**：新增 `BleBlind.kt`——作用域内 App 的
+  `BluetoothLeScanner.startScan*` 全重载静默吞掉（Beacon SDK 拿不到任何扫描结果）、deprecated
+  `BluetoothAdapter.startLeScan` 返回 false；新键 `MOCKLOC_BLIND_BLE`（与 WiFi/基站同一份致盲名单
+  派生，渲染器三键同发）。封堵 Beacon 定位（iBeacon/微信蓝牙/商场导航 SDK）吃真实 BLE 指纹的回跳源。
+  ② **按 App 输出坐标系**：`MOCKLOC_APP.<pkg>=lat,lng[,acc[,GCJ02|BD09]]` 第 4 段；新增
+  `Config.currentOutCoordsFor(pkg)` 单一漏斗（独立点位+抖动+坐标系一次算齐，GCJ/BD09 是二元换算
+  必须成对），`ModuleEntry` 的 getLatitude/getLongitude 与 `SpoofLogic.fakeLocation` 全部改走漏斗。
+  默认 WGS84 不变——GPS 语义下多数 App 自己转换，全局改会双倍偏移，这是逐 App 显式选择。
+  策略页独立点位对话框新增「输出坐标系 WGS84→GCJ02→BD09」轮换项（选点位时顺手切，重启目标 App 生效）。
+  ③ ConfigCheck +16 断言（BLE 解析/命中、坐标系解析、漏斗换算方向、渲染回读），总 168 项全过；
+  类型检查 0 错误；CI 绿（run 42138440844）。
+  ④ 待真机项：BLE 盲化实测（蓝牙 Beacon App 蓝点）、坐标系切换实测（高德喂 GCJ 不再二次偏移的
+  对比）、system_server 投递面 hook 与 app_process 巡检 worker（v1.2 后续，需真机护航）。
 - **v1.1.1**（2026-11-06）高德回跳与 LSP 管理器两个顽疾根因定位 + 修复（全程真机复现）：
   ① **高德「先对后跳回真实地址」完整证据链（Observed）**：a) 关盲化+关掐网复现——高德自有融合 SDK
   用真实 WiFi(AP=10)/基站(5) 立即自算位置覆盖注入点（截图连州 vs 注入广州二沙岛）；b) 模块自检行
