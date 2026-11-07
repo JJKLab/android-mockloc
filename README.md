@@ -1576,6 +1576,63 @@ FakeLoc/XposedFakeLocation 都有同样的取舍，并用"每个字段单独开�
   真机验收 C37 待装机。
 
 
+## 附录 G · 本机常见 App 定位方式与最小权限（2026-11-07 普查）
+
+> 方法：adb 拉包 → 全 dex 字符串扫描（定位 SDK 指纹 + mock 检测面），脚本 `.tmp/survey/scan.py`；
+> 样本 15 个（12 个批量 + 3 个专测）。判据沿用 A15 三杠杆：①系统 provider / ②抽空射频输入 /
+> ③进程内改写。「最小权限」指"能稳定骗到"的最低配置组合，未实测的行标（推断）。
+
+### G.1 三档判据
+
+| 档 | 组合 | 适用目标 |
+|---|---|---|
+| **开发者模式（非 root）** | 档0/1（App 内 provider 或 shell 直写） | 只读系统 provider 且不因 isMock 拒绝的 App（天气、内容展示类） |
+| **ROOT** | 档2 注入 + 致盲(WiFi/基站/BLE) + NETCUT | 内嵌厂商定位 SDK 的 App：SDK 服务器定位被掐后落回系统 provider |
+| **LSP 模块** | 档3 进程内改写 + mock 痕迹清洗（StackClean/MockTrace） | 支付/风控级 mock 拒绝：isMockGuide 面板、SDK isMock 丢弃、native 引擎 |
+
+### G.2 普查结果
+
+| App | dex 实测定位方式 | 最小权限 |
+|---|---|---|
+| 高德地图 | 高德 sdkh 无痕栈（native 坐标）+ 系统 | **ROOT**（致盲+NETCUT，A14 实测；AmapSdk 38 处钩为 LSP 增强） |
+| 微信 | 内嵌腾讯系 SDK + isMock 丢弃 | **LSP**（实测：ROOT 管线无法覆盖） |
+| 美团/美团外卖 | 系统定位读回 | 开发者模式即可（实测蓝点跟随；风控未验证） |
+| 饿了么 | AMap+百度 双 SDK + 系统 | ROOT（推断） |
+| 淘宝 | AMap+百度 双 SDK + 系统 | ROOT（推断） |
+| 京东 | 百度地图+腾讯定位+系统 | ROOT（推断） |
+| 滴滴出行 | 百度地图+系统 LM，服务端多源融合 | ROOT 起步；行程级风控未验证 |
+| 招商银行(cmb.pb) | 百度定位+百度地图+mock 检测 | **LSP**（推断：银行风控） |
+| 工商银行 | AMap+百度+腾讯+GMS 四装+mock | **LSP**（推断：银行风控） |
+| ColorOS 天气 | AMap+百度+系统 | 开发者模式即可（展示类） |
+| **中油好客e站** | AMap 定位+百度定位双装+系统 LM+isMockGuide+阿里 SecurityGuard | **LSP**（加油支付场景；详见 G.3） |
+| 海科加油(hkgt) | AMap+百度+腾讯+GMS 四装 | LSP 起步（推断） |
+| 石油云服(syyf.quickpay) / 云闪付TSM | 无定位 SDK | 无需处理 |
+
+**结构性结论：主流 App 全部内嵌 2-3 家厂商定位 SDK 组成降级链**（AMap→百度→腾讯→系统），任一家
+失败切下一家 ⇒ 单一致盲不够，必须三路全盲（本模块 Scope 三键同发）+ NETCUT 断其服务器定位，
+它们才会落到系统 provider 吃注入值。
+
+### G.3 中油好客e站（com.sunboxsoft.charge.institute v3.7.8，dex 70MB 实测）
+
+- **定位栈**：`AMapLocationClient/APSService`（高德定位 SDK）+ `BDLocation`（百度定位）+
+  系统 `LocationManager.requestLocationUpdates` 直用——三路并存。
+- **mock 检测面**：`isFromMockProvider` / `isMockEnable` / `isMockSettings` / `isMockLocation`
+  多点读取；**`isMockGuide` + `isAllowShowPanel: isMockGuide` = 用户可见的"检测到模拟定位"引导
+  面板**（支付前拦截形态）；反射 `Location.setIsFromMockProvider`（SDK 层有改写 mock 位的能力，
+  对抗时也会用它自证）。
+- **风控**：阿里 SecurityGuard（getAuthCodeForSecurityGuard）+ 设备指纹链
+  （cookieCode/IMEI/IMSI/wifiMacAddress 序列化）。
+- **结论**：找加油站/油价展示 = ROOT+致盲即可；**一键加油支付 = LSP 必需**——要同时中和
+  isMock 判定、洗 mock 位、过 SecurityGuard 采集面。本模块 AmapSdk 的反 mock 三平面钩子
+  （MockHelper.isMock/isFilterMock/ForgeryLabeling）对高德 sdkh 栈直接适用；若它走的是标准
+  `com.amap.api.location` 包（本 App 是），Location.getLatitude 全局钩 + MockTrace 即覆盖。
+
+### G.4 易捷加油（待装机）
+
+内地版包名未能远程确认（Google Play 海外版 `uni.UNI42811E9` 是 uni-app 重打包，非内地版；
+应用宝页面未暴露包名）。装机后一条命令进同一管线：`adb shell pm path <pkg>` → pull → scan.py。
+按品类先验（中石化加油支付）：预期与中油好客同级，**LSP 必需**。
+
 ## 附录 F · Android 12–17 兼容矩阵与厂商守卫（v1.0.0）
 
 | 版本 | 与本 App 相关的差异 | 代码落点 | 验证 |
