@@ -1,10 +1,14 @@
 # mockloc 重构方案（v0.7 → v1.0）
 
-> 依据：README v0.6.1 全量现状 + A0–A15 实测结论 + `app/`、`rootmodule/`、`tools/` 源码走查
-> + `refs/`（AnyWhere / FakeLoc / fakelocation / GoGoGo / gps-locator / HideMockLocation /
-> LocationSpoofer / XposedFakeLocation）+ `参考/`（AnyDoor / allmapLocation / FakeLoc / 全域 / 天下游）。
-> 原则与 README 一致：**判据先行、配置渲染器唯一、本地可验证、真机实测才标"通过"**。
-> 每一项工作都带验收判据；没有判据的条目不排期。
+> 依据：README 全量现状 + A0–A15 实测结论 + `app/`、`rootmodule/`、`tools/` 源码走查。
+> 原参考库（`refs/` 8 个竞品仓库、`参考/` 4 个）调研已完成并沉淀进 README 附录（2026-11-07 已从
+> 本地清理；LocationSpoofer 3.1.5 拆包报告在 `.tmp/lsp315/ANALYSIS.md`，竞品对照见 README
+> v1.1.1/v1.2.0 版本历史与附录 G）。原则与 README 一致：**判据先行、配置渲染器唯一、本地可验证、
+> 真机实测才标"通过"**。每一项工作都带验收判据；没有判据的条目不排期。
+>
+> **状态（2026-11-07）**：本计划阶段 1–4 全部实施完毕并真机验证（v1.2.0：ROOT 巡检自包含、
+> BLE 盲化、按 App 坐标系、状态页三卡、冻结检测）；下一阶段 = v1.2.1 app_process root 巡检
+> worker（ColorOS 冻结根治）+ system_server 投递面 hook。
 
 ---
 
