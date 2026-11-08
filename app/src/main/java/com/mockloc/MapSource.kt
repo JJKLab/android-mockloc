@@ -91,7 +91,9 @@ class BaiduTiles : XYTileSource(
         val bx = xRaw.toLong() - half
         val by = half - 1 - yRaw.toLong()
         val host = HOSTS[((bx + by).toInt()).mod(HOSTS.size)]
-        return "$host/tile/?qt=tile&x=$bx&y=$by&z=$z&styles=pl&scaler=1&udt=$UDT"
+        val url = "$host/tile/?qt=tile&x=$bx&y=$by&z=$z&styles=pl&scaler=1&udt=$UDT"
+        android.util.Log.d("BaiduTiles", "slippy($zRaw,$xRaw,$yRaw) -> $url")
+        return url
     }
 
     private companion object {

@@ -340,6 +340,10 @@ class MainActivity : Activity() {
         // Google Maps 式布局：全屏地图 + 顶部悬浮搜索条 + 底部选点面板/搜索浮层。
         val page = FrameLayout(this)
         map = MapView(this)
+        // 百度/谷歌的瓦片端点会拒非浏览器 UA（osmdroid 默认 UA 直接 403，实测百度全空）：
+        // 全局换成浏览器 UA，高德不检查 UA 不受影响。
+        org.osmdroid.config.Configuration.getInstance().userAgentValue =
+            "Mozilla/5.0 (Linux; Android 16) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Mobile Safari/537.36"
         mapSrc = MapSource.entries.firstOrNull {
             it.name == prefs.getString(KEY_MAP_SOURCE, "AMAP")
         } ?: MapSource.AMAP
