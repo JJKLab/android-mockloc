@@ -1,0 +1,43 @@
+name: codeql
+
+# GitHub 原生代码扫描：java-kotlin（Kotlin 源码 + 依赖面），每周例行 + 手动触发。
+# 结论看 Security → Code scanning alerts（公开仓库免登录可读）。
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "23 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  security-events: write
+  contents: read
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: java-kotlin
+          build-mode: manual
+
+      # 无 gradlew（本仓库从不在开发机构建），与 build.yml 同款固定版本分发。
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: "8.9"
+
+      - name: Build for analysis
+        run: gradle --no-daemon :app:assembleDebug
+
+      - uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:java-kotlin"

@@ -1,0 +1,12 @@
+version: 2
+updates:
+  # 运行时依赖只有三个（osmdroid/hiddenapibypass/libxposed），gradle 目录没有 wrapper 依赖。
+  - package-ecosystem: gradle
+    directory: "/"
+    schedule:
+      interval: weekly
+  # 锁定 CI 用到的第三方 action 版本更新
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly

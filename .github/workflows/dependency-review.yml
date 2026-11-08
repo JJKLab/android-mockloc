@@ -1,0 +1,17 @@
+name: dependency-review
+
+# PR 引入的依赖变更做漏洞/许可证门禁（对 main 的 push 不触发——本仓库主开发是直推）。
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
