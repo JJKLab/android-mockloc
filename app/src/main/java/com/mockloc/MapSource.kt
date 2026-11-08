@@ -95,8 +95,8 @@ class BaiduTiles : XYTileSource(
     }
 
     private companion object {
-        const val BASE = "https://map0.bdimg.com/tile"
-        val HOSTS = (0..3).map { "https://map$it.bdimg.com" }
+        const val BASE = "https://maponline0.bdimg.com/tile"
+        val HOSTS = (0..3).map { "https://maponline$it.bdimg.com" }
         const val UDT = "20241015"
         val TAIL = Regex("""(\d+)/(\d+)/(\d+)""")
     }
