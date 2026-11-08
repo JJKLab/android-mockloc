@@ -1597,6 +1597,13 @@ FakeLoc/XposedFakeLocation 都有同样的取舍，并用"每个字段单独开�
 **已知取舍**：`/data/local/tmp/mockloc.conf` 为 world-readable（root 模块与 LSP 侧都要读，设计使然）；
 `QUERY_ALL_PACKAGES` 为策略页 App 清单所需（定位工具的品类豁免）。
 
+**首跑结果（2026-11-08）**：CodeQL 两次运行全部成功（init/build/analyze 全绿，Kotlin 源码已入扫描
+面）；Dependabot 立即开出 **6 个依赖升级 PR**（kotlin / AGP / hiddenapibypass / 三个 github-actions
+版本）。**待仓库所有者一步操作**：Settings → Code security and analysis → 勾选 **Dependency
+graph**——未勾选时 dependency-review 会以 "Dependency review is not supported" 失败（2026-11-08
+实测，4 个 PR 被 thus 拦红，不是漏洞）；勾选后重跑 review 即成为真实门禁，同时 Dependabot 告警
+（含传递依赖 CVE）开始工作。
+
 ## 附录 G · 本机常见 App 定位方式与最小权限（2026-11-07 普查）
 
 > 方法：adb 拉包 → 全 dex 字符串扫描（定位 SDK 指纹 + mock 检测面），脚本 `.tmp/survey/scan.py`；
