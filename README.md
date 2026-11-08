@@ -1576,6 +1576,27 @@ FakeLoc/XposedFakeLocation 都有同样的取舍，并用"每个字段单独开�
   真机验收 C37 待装机。
 
 
+## 附录 H · 安全工程（2026-11-08）
+
+**GitHub 原生扫描已接入**（结论看仓库 Security 标签页，公开仓库免登录可读）：
+
+| 机制 | 触发 | 覆盖 |
+|---|---|---|
+| **CodeQL**（`.github/workflows/codeql.yml`） | push main + 每周一例行 + 手动 | Kotlin/Java 源码静态分析（注入、反射滥用、Intent 重定向、权限面等规则集） |
+| **Dependency Review**（`dependency-review.yml`） | PR | 引入的依赖带已知 CVE（severity ≥ high 门禁拒绝）或许可证变更即报 |
+| **Dependabot**（`.github/dependabot.yml`） | 每周 | gradle 依赖 + github-actions 版本更新 PR；安全告警为公开仓库默认开启 |
+| **Secret scanning / push protection** | 实时 | 公开仓库默认开启 |
+
+**代码面安全设计**（扫描之外的既有约束）：
+- Manifest：`allowBackup=false`；`MockService` exported 但挂 `DUMP` 签名级门禁（第三方 App 拿不到）；
+  `BootReceiver` 只吃受保护的系统广播；无 `usesCleartextTraffic`（targetSdk 28+ 默认禁明文）。
+- 运行时：conf 渲染器单源 + 数值全部 `toDoubleOrNull` 校验后落盘；CLI 侧 `shlex.quote` 防 shell 注入；
+  高德 key 存 App 私有 prefs 不出进程。
+- CI：workflow `permissions: contents: read` 最小化；产物走 release 而非需登录的 artifacts。
+
+**已知取舍**：`/data/local/tmp/mockloc.conf` 为 world-readable（root 模块与 LSP 侧都要读，设计使然）；
+`QUERY_ALL_PACKAGES` 为策略页 App 清单所需（定位工具的品类豁免）。
+
 ## 附录 G · 本机常见 App 定位方式与最小权限（2026-11-07 普查）
 
 > 方法：adb 拉包 → 全 dex 字符串扫描（定位 SDK 指纹 + mock 检测面），脚本 `.tmp/survey/scan.py`；
