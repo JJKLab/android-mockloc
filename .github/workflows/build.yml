@@ -126,10 +126,10 @@ jobs:
       group: release-latest
       cancel-in-progress: false
     steps:
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           name: mockloc-apk
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           name: mockloc-root-module
       - name: Publish to the rolling latest release
