@@ -77,6 +77,11 @@ object CoordTransform {
         return doubleArrayOf(z * sin(theta), z * cos(theta))
     }
 
+    fun wgs84ToBd09(lat: Double, lng: Double): DoubleArray {
+        val g = wgs84ToGcj02(lat, lng)
+        return gcj02ToBd09(g[0], g[1])
+    }
+
     fun bd09ToWgs84(lat: Double, lng: Double): DoubleArray {
         val gcj = bd09ToGcj02(lat, lng)
         return gcj02ToWgs84(gcj[0], gcj[1])

@@ -82,6 +82,8 @@ class MainActivity : Activity() {
 
     private var hits: List<Hit> = emptyList()
     private var pickedWgs: DoubleArray? = null
+    private lateinit var mapSrc: MapSource
+    private lateinit var sourceChips: LinearLayout
     private var marker: Marker? = null
     private var pasteGcj = true
 
@@ -124,7 +126,7 @@ class MainActivity : Activity() {
         Configuration.getInstance().load(applicationContext, prefs)
         Configuration.getInstance().setUserAgentValue(packageName)
         setContentView(buildUi())
-        map.setTileSource(AmapTiles())
+        map.setTileSource(mapSrc.tileSource())
         map.setMultiTouchControls(true)
         map.controller.setZoom(11.0)
         // setCenter before the first layout is dropped by osmdroid, which leaves the view parked at
@@ -338,7 +340,10 @@ class MainActivity : Activity() {
         // Google Maps 式布局：全屏地图 + 顶部悬浮搜索条 + 底部选点面板/搜索浮层。
         val page = FrameLayout(this)
         map = MapView(this)
-        map.setTileSource(AmapTiles())
+        mapSrc = MapSource.entries.firstOrNull {
+            it.name == prefs.getString(KEY_MAP_SOURCE, "AMAP")
+        } ?: MapSource.AMAP
+        map.setTileSource(mapSrc.tileSource())
         map.setMultiTouchControls(true)
         map.controller.setZoom(11.0)
         map.post { centerOn(31.2304, 121.4737) }
@@ -374,6 +379,18 @@ class MainActivity : Activity() {
             FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT,
             Gravity.TOP or Gravity.CENTER_HORIZONTAL,
         ).apply { setMargins(ui.dp(12), ui.dp(12), ui.dp(12), 0) })
+
+        // 源切换 chips：右上角悬浮。切源 = 换瓦片 + 全部覆盖物按新坐标系重投。
+        sourceChips = ui.row().apply {
+            background = ui.pillSurface()
+            elevation = ui.dp(4).toFloat()
+            setPadding(ui.dp(6), ui.dp(4), ui.dp(6), ui.dp(4))
+        }
+        renderSourceChips()
+        page.addView(sourceChips, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
+            Gravity.TOP or Gravity.END,
+        ).apply { setMargins(0, ui.dp(64), ui.dp(10), 0) })
 
         // 底部选点面板：点图后浮起，坐标双系 + 动作。
         pickGcjView = TextView(this@MainActivity).apply { textSize = 13f; setTextColor(ui.bodyColor()) }
@@ -1142,7 +1159,7 @@ class MainActivity : Activity() {
         val lng = lastLng()
         if (lat == 0.0 && lng == 0.0) return
         if (!::map.isInitialized) return
-        val g = CoordTransform.wgs84ToGcj02(lat, lng)
+        val g = mapSrc.toDisplay(lat, lng)
         val pos = GeoPoint(g[0], g[1])
         val existing = injectMarker
         if (existing == null) {
@@ -1254,7 +1271,7 @@ class MainActivity : Activity() {
     }
 
     private fun onMapTap(point: GeoPoint) {
-        val w = CoordTransform.gcj02ToWgs84(point.latitude, point.longitude)
+        val w = mapSrc.toWgs(point.latitude, point.longitude)
         pickedWgs = w
         val existing = marker
         if (existing == null) {
@@ -1266,7 +1283,7 @@ class MainActivity : Activity() {
             existing.setPosition(point)
         }
         closeSearch()
-        pickGcjView.text = "GCJ  ${"%.6f".format(point.latitude)},${"%.6f".format(point.longitude)}"
+        pickGcjView.text = "${mapSrc.label}  ${"%.6f".format(point.latitude)},${"%.6f".format(point.longitude)}"
         pickWgsView.text = "WGS  ${"%.6f".format(w[0])},${"%.6f".format(w[1])}   ← 注入用这组"
         pickPanel.visibility = View.VISIBLE
     }
@@ -1416,7 +1433,7 @@ class MainActivity : Activity() {
         routeWaypoints.forEachIndexed { index, pt ->
             val m = Marker(routeMap, this).apply {
                 // Tiles are GCJ: draw the marker where the tap landed, not at the raw WGS value.
-                val g = CoordTransform.wgs84ToGcj02(pt.lat, pt.lng)
+                val g = mapSrc.toDisplay(pt.lat, pt.lng)
                 // setPosition/setTitle, not the Kotlin property form: osmdroid 6.1.20 has no
                 // matching getter pair here (the README recorded this trap in v0.4.0).
                 setPosition(GeoPoint(g[0], g[1]))
@@ -1524,7 +1541,7 @@ class MainActivity : Activity() {
                         routeWaypoints.clear()
                         routeWaypoints.addAll(pts)
                         renderRouteWaypoints()
-                        val g = CoordTransform.wgs84ToGcj02(pts[0].lat, pts[0].lng)
+                        val g = mapSrc.toDisplay(pts[0].lat, pts[0].lng)
                         routeMap.controller.setCenter(GeoPoint(g[0], g[1]))
                         toast("导入 ${pts.size} 个航点")
                     }
@@ -1696,10 +1713,36 @@ class MainActivity : Activity() {
             .show()
     }
 
+    /** 切换地图源：换瓦片源 + 把所有已画覆盖物按新坐标系重投（坐标真值全部存在 WGS，重画零损耗）。 */
+    private fun switchSource(src: MapSource) {
+        if (src == mapSrc) return
+        mapSrc = src
+        prefs.edit().putString(KEY_MAP_SOURCE, src.name).apply()
+        map.setTileSource(src.tileSource())
+        updateInjectMarker()
+        pickedWgs?.let { w ->
+            val g = src.toDisplay(w[0], w[1])
+            marker?.setPosition(GeoPoint(g[0], g[1]))
+        }
+        lastLat().takeIf { it != 0.0 }?.let { centerOn(it, lastLng()) }
+        renderSourceChips()
+        toast("地图源 → ${src.label}（${src.hint}）")
+    }
+
+    private fun renderSourceChips() {
+        if (!::sourceChips.isInitialized) return
+        sourceChips.removeAllViews()
+        MapSource.entries.forEach { src ->
+            sourceChips.addView(ui.chip(src.label, if (src == mapSrc) Ui.State.OK else Ui.State.OFF).apply {
+                setOnClickListener { switchSource(src) }
+            })
+        }
+    }
+
     private fun centerOn(lat: Double, lng: Double) {
-        // 瓦片是 GCJ 参考：拿 WGS 值直接 setCenter 会让地图停在真实选点旁 ~470m——
-        // "App 自己的地图都偏了"是用户报定位偏移的观感来源之一，注入值本身没错。
-        val g = CoordTransform.wgs84ToGcj02(lat, lng)
+        // 瓦片参考系随源变（高德 GCJ / 谷歌 WGS / 百度 BD09）：拿 WGS 值直接 setCenter 会在
+        // 非谷歌源上停在真实选点旁几百米——注入值本身没错，显示参考系不同。
+        val g = mapSrc.toDisplay(lat, lng)
         map.controller.setCenter(GeoPoint(g[0], g[1]))
     }
 
@@ -1765,6 +1808,7 @@ class MainActivity : Activity() {
         const val PREFS = "settings"
         const val KEY_AMAP = "amap_key"
         const val KEY_LAST = "last_injected"
+        const val KEY_MAP_SOURCE = "map_source"
         const val KEY_LAST_LABEL = "last_label"
         const val KEY_WIZARD_SKIP = "wizard_skip"
         const val KEY_PASTE_GCJ = "paste_gcj"

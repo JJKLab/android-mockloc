@@ -95,8 +95,9 @@ fun main() {
         val wgs = Config.currentLatFor("com.autonavi.minimap") to Config.currentLngFor("com.autonavi.minimap")
         check("漏斗 lat ≠ WGS（发生了换算）", out[0] != wgs.first, true)
         check("漏斗 lng ≠ WGS", out[1] != wgs.second, true)
-        val wgsOut = Config.currentOutCoordsFor("com.tencent.mm")
-        check("默认输出不换算", wgsOut[0] == Config.currentLatFor("com.tencent.mm"), true)
+        // com.dianping.v1 没有任何坐标系键 → 默认 WGS84 原样直出（com.tencent.mm 已被样本设成 BD09）。
+        val wgsOut = Config.currentOutCoordsFor("com.dianping.v1")
+        check("默认输出不换算", wgsOut[0] == Config.currentLatFor("com.dianping.v1"), true)
     }
     check("probe", Config.probe, true)
     check("lastError", Config.lastError, null)
