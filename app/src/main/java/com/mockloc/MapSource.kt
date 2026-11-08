@@ -17,7 +17,9 @@ enum class MapSource(val label: String, val hint: String) {
     fun tileSource(): XYTileSource = when (this) {
         AMAP -> AmapTiles()
         GOOGLE -> GoogleTiles()
-        BAIDU -> BaiduTiles()
+        // 百度网格与标准 slippy 差 1.674 倍，瓦片由 BaiduOverlay 自绘；
+        // 基底给高德源只为避免空白（百度瓦片不透明，铺上后完全覆盖）。
+        BAIDU -> AmapTiles()
     }
 
     /** WGS-84 → 该源的显示坐标（画标记/画线/设中心）。 */
@@ -63,43 +65,6 @@ class GoogleTiles : XYTileSource(
     private companion object {
         const val BASE = "https://mt0.google.com/vt/lyrs=m"
         val HOSTS = (0..3).map { "https://mt$it.google.com" }
-        val TAIL = Regex("""(\d+)/(\d+)/(\d+)""")
-    }
-}
-
-/**
- * 百度瓦片：BD09 参考系 + **中心原点索引**（x/y 以 BD09(0,0) 所在瓦片为 0，y 向北增长），与
- * slippy 网格差一个原点平移和 y 翻转——这是各家百度瓦片接入（leaflet-tileLayer-baidu 等）的
- * 公式：bx = x - 2^(z-1)，by = 2^(z-1) - 1 - y。对齐精度依赖"BD09MC ≈ 标准 Mercator(BD09LL)"
- * 的近似，装机目视校验过偏差在瓦片内。
- */
-class BaiduTiles : XYTileSource(
-    "BaiduMaps",
-    3,
-    19,
-    256,
-    ".png",
-    arrayOf(BASE),
-    "© 百度地图",
-) {
-    override fun getTileURLString(tile: Long): String {
-        val built = super.getTileURLString(tile)
-        val match = TAIL.find(built) ?: return built
-        val (zRaw, xRaw, yRaw) = match.destructured
-        val z = zRaw.toInt()
-        val half = 1L shl (z - 1)
-        val bx = xRaw.toLong() - half
-        val by = half - 1 - yRaw.toLong()
-        val host = HOSTS[((bx + by).toInt()).mod(HOSTS.size)]
-        val url = "$host/tile/?qt=tile&x=$bx&y=$by&z=$z&styles=pl&scaler=1&udt=$UDT"
-        android.util.Log.d("BaiduTiles", "slippy($zRaw,$xRaw,$yRaw) -> $url")
-        return url
-    }
-
-    private companion object {
-        const val BASE = "https://maponline0.bdimg.com/tile"
-        val HOSTS = (0..3).map { "https://maponline$it.bdimg.com" }
-        const val UDT = "20241015"
         val TAIL = Regex("""(\d+)/(\d+)/(\d+)""")
     }
 }

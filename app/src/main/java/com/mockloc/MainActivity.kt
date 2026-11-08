@@ -84,6 +84,7 @@ class MainActivity : Activity() {
     private var pickedWgs: DoubleArray? = null
     private lateinit var mapSrc: MapSource
     private lateinit var sourceChips: LinearLayout
+    private lateinit var baiduOverlay: BaiduOverlay
     private var marker: Marker? = null
     private var pasteGcj = true
 
@@ -355,6 +356,8 @@ class MainActivity : Activity() {
         map.setMultiTouchControls(true)
         map.controller.setZoom(11.0)
         map.post { centerOn(31.2304, 121.4737) }
+        baiduOverlay = BaiduOverlay(map).apply { active = mapSrc == MapSource.BAIDU }
+        map.getOverlays().add(baiduOverlay)
         map.getOverlays().add(MapEventsOverlay(object : MapEventsReceiver {
             override fun singleTapConfirmedHelper(p: GeoPoint): Boolean {
                 onMapTap(p)
@@ -1728,6 +1731,7 @@ class MainActivity : Activity() {
         prefs.edit().putString(KEY_MAP_SOURCE, src.name).apply()
         map.setTileSource(src.tileSource())
         updateInjectMarker()
+        if (::baiduOverlay.isInitialized) baiduOverlay.active = src == MapSource.BAIDU
         pickedWgs?.let { w ->
             val g = src.toDisplay(w[0], w[1])
             marker?.setPosition(GeoPoint(g[0], g[1]))
