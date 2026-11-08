@@ -1627,7 +1627,20 @@ FakeLoc/XposedFakeLocation 都有同样的取舍，并用"每个字段单独开�
   （MockHelper.isMock/isFilterMock/ForgeryLabeling）对高德 sdkh 栈直接适用；若它走的是标准
   `com.amap.api.location` 包（本 App 是），Location.getLatitude 全局钩 + MockTrace 即覆盖。
 
-### G.4 易捷加油（待装机）
+### G.4 全机普查（2026-11-08，206 个第三方 App 全量 dex 扫描）
+
+完整逐 App 结果：`docs/location-survey.tsv`（流式拉包扫描，不落盘样本）。
+
+| 分组 | 数量 | 说明 |
+|---|---|---|
+| 内嵌厂商定位 SDK（AMap/百度/腾讯/GMS 任一） | **99** | ROOT+致盲+NETCUT 起步；SDK 服务器定位被掐后落回系统 provider |
+| 仅系统 LocationManager | 18 | 开发者模式即可（多为工具/系统类） |
+| 无定位 SDK | 89 | 无需处理 |
+| 含 mock 读数面（isFromMockProvider/isMockEnable 等） | 125 | 大多是 SDK 内置读数并上送风控；是否"拒绝"需业务实测 |
+| 含 BLE 指纹（iBeacon/Eddystone/LeScanner） | 81 | BLE 盲化（v1.2.0）覆盖面 |
+| 含 mock 引导面板（isMockGuide） | **1**（中油好客e站） | 支付前拦截形态，LSP 必需的强信号 |
+
+### G.5 易捷加油（待装机）
 
 内地版包名未能远程确认（Google Play 海外版 `uni.UNI42811E9` 是 uni-app 重打包，非内地版；
 应用宝页面未暴露包名）。装机后一条命令进同一管线：`adb shell pm path <pkg>` → pull → scan.py。
