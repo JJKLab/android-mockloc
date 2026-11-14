@@ -892,6 +892,11 @@ class MainActivity : Activity() {
         KnownApp("微信", "com.tencent.mm", needsLsp = true),
         KnownApp("美团", "com.sankuai.meituan"),
         KnownApp("大众点评", "com.dianping.v1"),
+        // 银行/生活类是 mock 读数重灾区（读到 isMock=true 就丢弃修复）：
+        // 掐网能断它自己服务器的交叉验证，LSP 档（若加固后不再闪退）才洗得掉 mock 位。
+        KnownApp("阳光惠生活", "com.cebbank.yaoyao"),
+        KnownApp("光大银行", "com.cebbank.mobile.cemb"),
+        KnownApp("饿了么", "me.ele"),
     )
 
     private fun renderAppRows() {
