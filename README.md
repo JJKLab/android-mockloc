@@ -1655,6 +1655,22 @@ graph**——未勾选时 dependency-review 会以 "Dependency review is not sup
   （MockHelper.isMock/isFilterMock/ForgeryLabeling）对高德 sdkh 栈直接适用；若它走的是标准
   `com.amap.api.location` 包（本 App 是），Location.getLatitude 全局钩 + MockTrace 即覆盖。
 
+### G.4 定位获取分层（2026-11-14）：为什么有的 App 读到真实位置
+
+以阳光惠生活（com.cebbank.yaoyao v4.4.2）为例——dex 扫描 = **仅系统 LM + mock 读数，无厂商 SDK**：
+
+1. 系统 test provider（identity=0）已覆盖 `gps/network/fused/passive` 四个名字，**LocationManager
+   这条路全是 mock 值**——不存在"root 之后还能从 LocationManager 读到真实 GPS"的通道；
+2. 它读到真实位置 = **读到 mock 后主动丢弃**（isMock 读数就是干这个的），再展示自家缓存的
+   最后真实位置/IP 定位；
+3. mock 位只能在进程内洗掉（Tier 3 LSP）——此 App 勾 LSP 即闪退的根因是组件异常拖死
+   onPackageReady，**v1.3.0 已做组件级隔离修复**（见版本历史），重勾作用域不再闪退即可用
+   LSP 档洗 mock 位；
+4. LSP 不可用时退而求其次：**掐网**（状态页目标 App 卡一键）断它服务器交叉验证，
+   App 要么显示 mock 点要么无定位——不会再显示真实位置。
+
+判据不变：`mock 位 = Tier3 边界`，Tiers.kt ③ 的文档化就是从这类 App 来的。
+
 ### G.4 全机普查（2026-11-08，206 个第三方 App 全量 dex 扫描）
 
 完整逐 App 结果：`docs/location-survey.tsv`（流式拉包扫描，不落盘样本）。
@@ -1668,7 +1684,15 @@ graph**——未勾选时 dependency-review 会以 "Dependency review is not sup
 | 含 BLE 指纹（iBeacon/Eddystone/LeScanner） | 81 | BLE 盲化（v1.2.0）覆盖面 |
 | 含 mock 引导面板（isMockGuide） | **1**（中油好客e站） | 支付前拦截形态，LSP 必需的强信号 |
 
-### G.5 易捷加油（待装机）
+### G.5 搜索与周边 POI（v1.3.0）
+
+搜索从单 geocode 升级为**双查合并**：`place/text`（POI 关键词，800 条池）+ `geocode/geo`
+（门牌号），按名称+坐标去重。条目双行：名称（带距离）/ 地址·类别。
+**门牌号点选 → `place/around` 300m 按距离排序**——列出该门牌下的公司/餐厅/入口（实测
+南京东路100号：DQ 0m、星巴克 1m、酒店 7m…600 个），点条目选精确入口坐标，不再"门牌坐标
+与实际目的地隔几十米"。三个 API 已用本机 key 实测通过（status=1，见版本历史 v1.3.0）。
+
+### G.6 易捷加油（待装机）
 
 内地版包名未能远程确认（Google Play 海外版 `uni.UNI42811E9` 是 uni-app 重打包，非内地版；
 应用宝页面未暴露包名）。装机后一条命令进同一管线：`adb shell pm path <pkg>` → pull → scan.py。
