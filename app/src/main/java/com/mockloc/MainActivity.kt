@@ -81,6 +81,7 @@ class MainActivity : Activity() {
     private lateinit var placeAdapter: ArrayAdapter<String>
 
     private var hits: List<Hit> = emptyList()
+    private var aroundAnchor: Hit? = null
     private var pickedWgs: DoubleArray? = null
     private lateinit var mapSrc: MapSource
     private lateinit var sourceChips: LinearLayout
@@ -1225,15 +1226,38 @@ class MainActivity : Activity() {
     private fun renderHits() {
         hitRows.removeAllViews()
         hits.forEachIndexed { index, hit ->
-            val btn = ui.button(hit.label, Ui.Btn.GHOST) { onPickHit(index) }
-            btn.gravity = Gravity.START
-            hitRows.addView(btn)
+            val row = ui.row().apply {
+                setPadding(0, ui.dp(6), 0, ui.dp(6))
+                background = ui.pillSurface()
+                setPadding(ui.dp(12), ui.dp(10), ui.dp(12), ui.dp(10))
+            }
+            val textCol = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+            textCol.addView(TextView(this).apply {
+                text = hit.title
+                textSize = 14f
+                setTextColor(ui.bodyColor())
+            })
+            if (hit.sub.isNotEmpty() && hit.sub != "无地址") {
+                textCol.addView(TextView(this).apply {
+                    text = hit.sub
+                    textSize = 12f
+                    setTextColor(ui.hintColor())
+                    maxLines = 1
+                })
+            }
+            row.addView(textCol, ui.fill())
+            row.setOnClickListener { onPickHit(index) }
+            hitRows.addView(row)
         }
         if (hits.isEmpty()) {
             hitRows.addView(ui.body("还没有结果：填好 key 后搜一个地点"))
         }
     }
 
+    /**
+     * 双查合并：geocode（门牌号/区域，"XX路100号"型）+ POI 文本搜（"星巴克"型）。
+     * 两个 API 各有所长，混着搜再按名称去重，就是高德 App 搜索框的形态。
+     */
     private fun runSearch() {
         val key = keyField.text.toString().trim()
         val query = queryField.text.toString().trim()
@@ -1242,11 +1266,19 @@ class MainActivity : Activity() {
         toast("搜索中…")
         thread {
             try {
-                val found = AmapSearch.geocode(key, query)
+                val geos = runCatching { AmapSearch.geocode(key, query) }.getOrDefault(emptyList())
+                val pois = runCatching { AmapSearch.poiText(key, query) }.getOrDefault(emptyList())
+                val errors = listOfNotNull(
+                    if (geos.isEmpty() && pois.isEmpty()) "两条 API 都没有结果（检查 key 与关键词）" else null,
+                )
+                // 合并去重：POI 优先（有精确入口坐标），geocode 补门牌/区域
+                val merged = (pois + geos).distinctBy {
+                    it.name to "%.4f".format(it.latGcj) + "%.4f".format(it.lngGcj)
+                }
                 runOnUiThread {
-                    hits = found
+                    hits = merged
                     renderHits()
-                    if (found.isEmpty()) toast("没有解析结果")
+                    errors.forEach { toast(it) }
                 }
             } catch (t: Throwable) {
                 runOnUiThread { toast("失败：${t.message}") }
@@ -1254,12 +1286,63 @@ class MainActivity : Activity() {
         }
     }
 
+    /**
+     * 搜索结果点选：
+     * - POI → 直接选点（POI 坐标是精确入口）
+     * - 门牌号/区域 → 拉周边 POI 列表（"XX号下的公司/餐厅"，和高德 App 同款体验），
+     *   空结果（野外门牌）才直接选门牌坐标。
+     */
     private fun onPickHit(index: Int) {
         val hit = hits.getOrNull(index) ?: return
-        val w = CoordTransform.gcj02ToWgs84(hit.latGcj, hit.lngGcj)
+        if (hit.source != "geo") return pickHitPoint(hit)
+        toast("正在取 ${hit.name.substringBefore('号')}附近的地点…")
+        thread {
+            val near = runCatching {
+                AmapSearch.around(keyField.text.toString().trim(), hit.latGcj, hit.lngGcj)
+            }.getOrDefault(emptyList())
+            runOnUiThread {
+                if (near.isNotEmpty()) {
+                    showAround(hit, near)
+                } else {
+                    pickHitPoint(hit)
+                }
+            }
+        }
+    }
+
+    /** 周边 POI 列表替换结果区（带"返回搜索"项），点一条选那个 POI 的精确入口。 */
+    private fun showAround(anchor: Hit, near: List<Hit>) {
+        val w = CoordTransform.gcj02ToWgs84(anchor.latGcj, anchor.lngGcj)
         centerOn(w[0], w[1])
+        aroundAnchor = anchor
+        hits = near
+        renderHits()
+        val back = ui.button("↑ 返回「${anchor.name.substringBefore('号')}」的搜索结果", Ui.Btn.GHOST) {
+            aroundAnchor = null
+            hits = emptyList()
+            runSearch()
+        }
+        hitRows.addView(back, 0)
+    }
+
+    private fun pickHitPoint(hit: Hit) {
+        val w = CoordTransform.gcj02ToWgs84(hit.latGcj, hit.lngGcj)
+        pickedWgs = w
         closeSearch()
-        inject(w[0], w[1], hit.name)
+        val g = mapSrc.toDisplay(w[0], w[1])
+        val existing = marker
+        if (existing == null) {
+            marker = Marker(map, this).also {
+                it.setPosition(GeoPoint(g[0], g[1]))
+                map.getOverlays().add(it)
+            }
+        } else {
+            existing.setPosition(GeoPoint(g[0], g[1]))
+        }
+        pickGcjView.text = "${mapSrc.label}  ${"%.6f".format(g[0])},${"%.6f".format(g[1])}"
+        pickWgsView.text = "WGS  ${"%.6f".format(w[0])},${"%.6f".format(w[1])}   ← 注入用这组"
+        pickPanel.visibility = View.VISIBLE
+        toast("已选「${hit.name}」——按注入生效")
     }
 
     private fun updatePastePreview() {

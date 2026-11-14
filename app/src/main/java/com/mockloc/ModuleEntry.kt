@@ -47,18 +47,27 @@ class ModuleEntry : XposedModule() {
         Config.refresh()
         val kit = HookKit(this, tag)
         val locationClass = kit.findClass(param.classLoader, Location::class.java.name) ?: return
-        if (Config.probe) Probe(this, param.classLoader).init()
-        installCoordinates(kit, locationClass, param.classLoader, pkg)
-        MockTrace(this, param.classLoader, pkg).init()
-        Sensors(this, param.classLoader, pkg).init()
-        BleBlind(this, param.classLoader, pkg).init()
-        GnssStream(this, param.classLoader, pkg).init()
-        TencentSdk(this, param.classLoader, pkg).init()
-        AmapSdk(this, param.classLoader, pkg).init()
-        StackClean(this, param.classLoader, pkg).init()
-        PkgHide(this, param.classLoader, pkg).init()
-        GmsHooks(this, param.classLoader, pkg).init()
-        SelfTest.schedule(pkg) { message -> log(Log.INFO, tag, message) }
+        // 组件级隔离：任何一个 hooker 的异常只丢它自己的钩子，绝不带崩宿主进程——
+        // 2026-11-14 实锤：阳光惠生活(com.cebbank.yaoyao) 勾进作用域即闪退，就是某个组件
+        // 在银行加固壳里抛异常把 onPackageReady 一起拖死。修好后它才能用 LSP 档。
+        fun safeInstall(name: String, block: () -> Unit) {
+            runCatching(block).onFailure {
+                Diagnostics.note("$pkg: 组件 $name 异常(已跳过，不影响其他组件): ${it.message ?: it.javaClass.simpleName}")
+                log(Log.WARN, tag, "$pkg: $name init failed: ${it}")
+            }
+        }
+        if (Config.probe) safeInstall("Probe") { Probe(this, param.classLoader).init() }
+        safeInstall("Coordinates") { installCoordinates(kit, locationClass, param.classLoader, pkg) }
+        safeInstall("MockTrace") { MockTrace(this, param.classLoader, pkg).init() }
+        safeInstall("Sensors") { Sensors(this, param.classLoader, pkg).init() }
+        safeInstall("BleBlind") { BleBlind(this, param.classLoader, pkg).init() }
+        safeInstall("GnssStream") { GnssStream(this, param.classLoader, pkg).init() }
+        safeInstall("TencentSdk") { TencentSdk(this, param.classLoader, pkg).init() }
+        safeInstall("AmapSdk") { AmapSdk(this, param.classLoader, pkg).init() }
+        safeInstall("StackClean") { StackClean(this, param.classLoader, pkg).init() }
+        safeInstall("PkgHide") { PkgHide(this, param.classLoader, pkg).init() }
+        safeInstall("GmsHooks") { GmsHooks(this, param.classLoader, pkg).init() }
+        safeInstall("SelfTest") { SelfTest.schedule(pkg) { message -> log(Log.INFO, tag, message) } }
         log(
             Log.INFO, tag,
             "$pkg: providers=${Config.providers} global=${Config.global} " +
