@@ -29,7 +29,7 @@ import kotlin.concurrent.thread
 import kotlin.math.abs
 
 /** 致盲三路：策略页的三个独立开关（v1.3.0 走查 P1-1）。 */
-private enum class BlindKind { WIFI, CELL, BLE }
+internal enum class BlindKind { WIFI, CELL, BLE }
 
 /**
  * Five tabs: search, pick on the map, favourites, which apps are affected, and what the device is
@@ -45,52 +45,52 @@ class MainActivity : Activity() {
     /** Rewritten by the module; false means LSPosed never loaded it into this process. */
     fun selfCheck(): Boolean = false
 
-    private val prefs by lazy { getSharedPreferences(PREFS, Context.MODE_PRIVATE) }
+    // 这些成员被 pages/ 里的页面类共用（阶段四拆分）：internal = 本 module 内可见。
+    internal val prefs by lazy { getSharedPreferences(PREFS, Context.MODE_PRIVATE) }
     private val places by lazy { Places(this) }
-    private val bridge by lazy { ModuleBridge(this) }
-    private val ui by lazy { Ui(this) }
+    internal val bridge by lazy { ModuleBridge(this) }
+    internal val ui by lazy { Ui(this) }
 
     private lateinit var flipper: ViewFlipper
-    private lateinit var map: MapView
-    private lateinit var statusPillView: TextView
+    internal lateinit var map: MapView
+    internal lateinit var statusPillView: TextView
     private lateinit var pickGcjView: TextView
     private lateinit var pickWgsView: TextView
     private lateinit var searchSheet: View
     private lateinit var searchBar: View
     private lateinit var pickPanel: View
-    private lateinit var statusBigText: TextView
-    private lateinit var statusCoordWgs: TextView
-    private lateinit var statusCoordGcj: TextView
-    private lateinit var statusTarget: TextView
-    private lateinit var stopBtn: Button
-    private lateinit var appRows: LinearLayout
-    private lateinit var diagSection: LinearLayout
-    private lateinit var diagToggleBtn: Button
-    private var diagExpanded = false
-    private lateinit var statusDetailText: TextView
-    private lateinit var riskSummary: TextView
-    private lateinit var riskRows: LinearLayout
-    private lateinit var riskToggleBtn: Button
-    private var riskExpanded = false
+    internal lateinit var statusBigText: TextView
+    internal lateinit var statusCoordWgs: TextView
+    internal lateinit var statusCoordGcj: TextView
+    internal lateinit var statusTarget: TextView
+    internal lateinit var stopBtn: Button
+    internal lateinit var appRows: LinearLayout
+    internal lateinit var diagSection: LinearLayout
+    internal lateinit var diagToggleBtn: Button
+    internal var diagExpanded = false
+    internal lateinit var statusDetailText: TextView
+    internal lateinit var riskSummary: TextView
+    internal lateinit var riskRows: LinearLayout
+    internal lateinit var riskToggleBtn: Button
+    internal var riskExpanded = false
     private lateinit var keyField: EditText
     private lateinit var queryField: EditText
     private lateinit var pasteField: EditText
     private lateinit var pastePreview: TextView
-    private var injectMarker: Marker? = null
-    private lateinit var policyList: ListView
-    private val policyAdapter = PolicyAdapter()
-    private var policyPointed: Set<String> = emptySet()
-    private var policyLoadMs = 0L
-    private lateinit var policyFilter: EditText
-    private lateinit var policyCount: TextView
-    private lateinit var appOpChipRow: LinearLayout
+    internal var injectMarker: Marker? = null
+    internal lateinit var policyList: ListView
+    internal var policyPointed: Set<String> = emptySet()
+    internal var policyLoadMs = 0L
+    internal lateinit var policyFilter: EditText
+    internal lateinit var policyCount: TextView
+    internal lateinit var appOpChipRow: LinearLayout
     private lateinit var hitRows: LinearLayout
     private lateinit var placeAdapter: ArrayAdapter<String>
 
     private var hits: List<Hit> = emptyList()
     private var aroundAnchor: Hit? = null
     private var pickedWgs: DoubleArray? = null
-    private lateinit var mapSrc: MapSource
+    internal lateinit var mapSrc: MapSource
     private lateinit var sourceChips: LinearLayout
     private lateinit var baiduOverlay: BaiduOverlay
     private var marker: Marker? = null
@@ -107,13 +107,13 @@ class MainActivity : Activity() {
     private var routeGpxUri: android.net.Uri? = null
 
     /** Everything the policy list knows, kept out of the views so filtering is cheap. */
-    private var policyAll: List<Pair<String, String>> = emptyList()
-    private val policyChecked = linkedSetOf<String>()
-    private var policyIncludeSystem = false
-    private var policyLoaded = false
-    private lateinit var blindWifiBtn: Button
-    private lateinit var blindCellBtn: Button
-    private lateinit var blindBleBtn: Button
+    internal var policyAll: List<Pair<String, String>> = emptyList()
+    internal val policyChecked = linkedSetOf<String>()
+    internal var policyIncludeSystem = false
+    internal var policyLoaded = false
+    internal lateinit var blindWifiBtn: Button
+    internal lateinit var blindCellBtn: Button
+    internal lateinit var blindBleBtn: Button
 
     /** The route page carries a whole second MapView; built lazily on first tab show. */
     private var routePageBuilt = false
@@ -123,8 +123,58 @@ class MainActivity : Activity() {
     /** 本轮注入是否走 ROOT 巡检（供状态页展示与停止路径选择）。 */
     private var useRootPipeline = false
 
-    private fun serviceRunning(): Boolean =
-        prefs.getBoolean(MockService.KEY_SERVICE_RUNNING, false)
+
+    // ---------------------------------------------------------------- 页面拆分（阶段四）
+
+    /** 状态页整块搬到了 pages/StatusPage.kt；这里只留薄委托，调用点保持不变。 */
+    private val statusPageView by lazy { com.mockloc.pages.StatusPage(this) }
+
+    /** 策略页搬到了 pages/PolicyPage.kt。 */
+    private val policyPageView by lazy { com.mockloc.pages.PolicyPage(this) }
+
+    internal fun statusPage(): View = statusPageView.build()
+    internal fun policyPage(): View = policyPageView.build()
+    internal fun listHeader(card: LinearLayout): android.view.View = policyPageView.listHeader(card)
+    internal fun loadPolicyList() = policyPageView.loadList()
+    internal fun renderPolicyRows() = policyPageView.renderRows()
+    internal fun saveBlindScope() = policyPageView.save()
+    internal fun publishBridge() = policyPageView.publish()
+    internal fun cycleBlind(kind: BlindKind) = policyPageView.cycleBlind(kind)
+    internal fun renderBlindChips() = policyPageView.renderBlindChips()
+    internal fun blindLabel(scope: Scope): String = policyPageView.blindLabel(scope)
+    internal fun renderAppOpChips() = policyPageView.renderAppOpChips()
+
+    internal var lastRiskReport: RiskScore.Report? = null
+
+    internal fun refreshStatus() = statusPageView.refresh()
+    internal fun renderStatusBar(mockActive: Boolean, label: String) =
+        statusPageView.renderStatusBar(mockActive, label)
+    internal fun hasLocationGrant(): Boolean = statusPageView.hasLocationGrant()
+    internal fun serviceRunning(): Boolean = statusPageView.serviceRunning()
+    internal fun lastLat(): Double = statusPageView.lastLat()
+    internal fun lastLng(): Double = statusPageView.lastLng()
+    internal fun onOff(value: Boolean): String = statusPageView.onOff(value)
+    internal fun readback(): List<String> = statusPageView.readback()
+    internal fun maybeAutoResume(fixes: List<String>) = statusPageView.maybeAutoResume(fixes)
+    internal fun updateInjectMarker() = statusPageView.updateInjectMarker()
+    internal fun toggleRisk() = statusPageView.toggleRisk()
+    internal fun toggleDiag() = statusPageView.toggleDiag()
+    internal fun renderRiskCard(report: RiskScore.Report) = statusPageView.renderRiskCard(report)
+    internal fun renderRiskRows(report: RiskScore.Report) = statusPageView.renderRiskRows(report)
+    internal fun buildRiskSnapshot(fixes: List<String>, confMatch: Boolean) =
+        statusPageView.buildRiskSnapshot(fixes, confMatch)
+    internal fun guardianFresh(): Boolean? = statusPageView.guardianFresh()
+    internal fun renderAppRows(installed: Set<String>) = statusPageView.renderAppRows(installed)
+    internal fun toggleNetcut(pkg: String) = statusPageView.toggleNetcut(pkg)
+    internal fun onSyncToModule() = statusPageView.onSyncToModule()
+    internal fun showSyncFallbackDialog() = statusPageView.showSyncFallbackDialog()
+    internal fun applyStatus(
+        last: String,
+        label: String,
+        fixes: List<String>,
+        mockActive: Boolean,
+        installed: Set<String>,
+    ) = statusPageView.apply(last, label, fixes, mockActive, installed)
 
     /** 选中态是用户判断"我在哪一页"的唯一线索。 */
     private fun styleNav(selected: Int) {
@@ -244,12 +294,12 @@ class MainActivity : Activity() {
             Triple(R.drawable.ic_tab_fav, "收藏") { openTab(2) },
             Triple(R.drawable.ic_tab_policy, "策略") {
                 openTab(3)
-                renderAppOpChips()
+                policyPageView.renderAppOpChips()
                 if (!policyLoaded) {
                     policyLoaded = true
                     // 勾选框现在只管掐网名单；致盲三路由上方三个按钮单独设（P1-1/P1-2）。
                     policyChecked.addAll(bridge.netcutPkgs())
-                    loadPolicyList()
+                    policyPageView.loadList()
                 }
             },
             Triple(R.drawable.ic_tab_status, "状态") { openTab(4) },
@@ -265,7 +315,7 @@ class MainActivity : Activity() {
     }
 
     /** 统一的目的地切换：页面 + 导航选中态 + 惰性构建副作用。 */
-    private fun openTab(index: Int) {
+    internal fun openTab(index: Int) {
         flipper.displayedChild = index
         navItems.forEachIndexed { i, item -> item.restyle(i == index) }
         if (index == TABS.indexOf("路线")) {
@@ -274,7 +324,7 @@ class MainActivity : Activity() {
         if (index == TABS.lastIndex) refreshStatus()
     }
 
-    private fun weightParams() =
+    internal fun weightParams() =
         LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
 
     private fun pageParams() = FrameLayout.LayoutParams(
@@ -522,561 +572,7 @@ class MainActivity : Activity() {
         return page
     }
 
-    private fun policyPage(): View {
-        // The app list is a real ListView, not rows built into a scroll column: rebuilding up to
-        // 593 CheckBoxes per filter keystroke was the 950ms frame the on-device baseline caught.
-        // The list gets its own scroll region (a ListView inside a ScrollView fights the parent
-        // for the drag - the trap the first version fell into), and the informational cards ride
-        // as list headers so they keep their place without stealing fixed height.
-        val page = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
 
-        val preflight = ui.card()
-        preflight.addView(ui.title("免 root 档自检"))
-        appOpChipRow = ui.chipRow()
-        preflight.addView(appOpChipRow)
-        preflight.addView(ui.button("去开发者选项") {
-            val intent = if (Tiers.developerOptionsEnabled(this@MainActivity)) {
-                Tiers.developmentSettingsIntent()
-            } else {
-                toast("开发者选项还没打开，先到设备信息里连点版本号")
-                Tiers.fallbackSettingsIntent()
-            }
-            runCatching { startActivity(intent) }
-                .onFailure { toast("这个 ROM 不让我直接跳，请手动进设置") }
-        })
-        preflight.addView(ui.hint(
-            "「选择虚拟定位应用」只能由设置进程授权（本机 shell 被摘了 MANAGE_APP_OPS_MODES）；" +
-                "重装 App 会清掉那次授权，所以这一栏每次进来都重读。",
-        ))
-        page.addView(preflight)
-
-        val filterRow = ui.row().apply { setPadding(ui.dp(12), ui.dp(4), ui.dp(12), 0) }
-        policyFilter = EditText(this).apply {
-            hint = "过滤名称或包名"
-            isSingleLine = true
-            addTextChangedListener(object : android.text.TextWatcher {
-                override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
-                override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
-                override fun afterTextChanged(s: android.text.Editable?) = renderPolicyRows()
-            })
-        }
-        filterRow.addView(policyFilter, ui.fill())
-        filterRow.addView(android.widget.CheckBox(this).apply {
-            text = "含系统"
-            isChecked = policyIncludeSystem
-            setOnCheckedChangeListener { _, on ->
-                policyIncludeSystem = on
-                renderPolicyRows()
-            }
-        })
-        page.addView(filterRow)
-
-        // 致盲三路独立开关：关 → 全部 → 按所选（勾选的包）。
-        val blindRow = ui.row().apply { setPadding(ui.dp(12), ui.dp(4), ui.dp(12), 0) }
-        blindWifiBtn = ui.button("致盲WiFi") { cycleBlind(BlindKind.WIFI) }
-        blindCellBtn = ui.button("致盲基站") { cycleBlind(BlindKind.CELL) }
-        blindBleBtn = ui.button("致盲BLE") { cycleBlind(BlindKind.BLE) }
-        blindRow.addView(blindWifiBtn, ui.fill())
-        blindRow.addView(blindCellBtn, ui.fill())
-        blindRow.addView(blindBleBtn, ui.fill())
-        page.addView(blindRow)
-        renderBlindChips()
-
-        policyCount = TextView(this).apply {
-            textSize = 12f
-            setTextColor(ui.hintColor())
-            setPadding(ui.dp(14), ui.dp(4), ui.dp(14), ui.dp(4))
-        }
-        page.addView(policyCount)
-
-        policyList = ListView(this).apply {
-            adapter = policyAdapter
-            divider = null
-            cacheColorHint = 0
-        }
-        val intro = ui.card()
-        intro.addView(ui.title("哪些 App 要抽空输入"))
-        intro.addView(ui.body(
-            "勾上的包会被 ROOT 守护按 uid 掐网（实测对高德这类「自己算路」的 App 有效）；" +
-                "致盲 WiFi/基站/BLE 用上方三个按钮单独设（关 → 全部 → 按所选）。" +
-                "「位置」按钮给它设独立点位与输出坐标系（默认 WGS84；瓦片直读型 App 选 GCJ02）。",
-        ))
-        policyList.addHeaderView(listHeader(intro))
-        val legend = ui.card()
-        legend.addView(ui.title("三件事互相独立"))
-        legend.addView(ui.body(Tiers.summary().trim()))
-        legend.addView(ui.hint(
-            "①/②/③ 不是「权限越高越有效」的阶梯：0、1、2 档给目标 App 的是同一个系统 provider，" +
-                "所以 Tier 0 推不动的 App，Tier 2 也推不动。",
-        ))
-        policyList.addHeaderView(listHeader(legend))
-        val limits = ui.card()
-        limits.addView(ui.title("这几样定位层改不了"))
-        limits.addView(ui.body(Tiers.outsideScope.joinToString("\n")))
-        policyList.addHeaderView(listHeader(limits))
-        page.addView(policyList, weightParams())
-
-        val policyButtons = ui.row().apply { setPadding(ui.dp(10), ui.dp(4), ui.dp(10), ui.dp(8)) }
-        policyButtons.addView(ui.button("保存", Ui.Btn.PRIMARY) { saveBlindScope() }, ui.fill())
-        policyButtons.addView(ui.button("清空") {
-            policyChecked.clear()
-            renderPolicyRows()
-        }, ui.fill())
-        page.addView(policyButtons)
-        return page
-    }
-
-    /**
-     * ListView headers must carry AbsListView.LayoutParams - `ui.card()` pre-sets a
-     * LinearLayout.LayoutParams, and ListView's removeUnusedFixedViews casts unconditionally,
-     * which is a ClassCastException on the second layout pass (found on device: first entry
-     * worked, re-entering the tab crashed). Wrapping in a bare FrameLayout defers the
-     * LayoutParams to ListView's own generator.
-     */
-    private fun listHeader(card: LinearLayout): android.view.View =
-        android.widget.FrameLayout(this).apply { addView(card) }
-
-    /**
-     * Enumerating 593 packages with permissions + resolving every label is a multi-hundred-ms
-     * binder grind; on the UI thread it was the frozen frame on first entry. Runs off-thread and
-     * fills the adapter when done - the count line shows progress meanwhile.
-     */
-    private fun loadPolicyList() {
-        policyCount.text = "正在读取应用列表…"
-        thread {
-            runCatching {
-                val t0 = System.currentTimeMillis()
-                val packages = runCatching {
-                    packageManager.getInstalledPackages(android.content.pm.PackageManager.GET_PERMISSIONS)
-                }.getOrElse { emptyList() }
-                val result = packages.mapNotNull { info ->
-                    val pkg = info.packageName
-                    if (pkg == packageName) return@mapNotNull null
-                    val permissions = info.requestedPermissions ?: return@mapNotNull null
-                    val asksForLocation =
-                        android.Manifest.permission.ACCESS_FINE_LOCATION in permissions ||
-                            android.Manifest.permission.ACCESS_COARSE_LOCATION in permissions
-                    if (!asksForLocation) return@mapNotNull null
-                    val appInfo = info.applicationInfo
-                    // A phone has hundreds of platform packages that nominally ask for location;
-                    // listing them buries the handful the user could possibly mean. Updated system
-                    // apps stay in, because preinstalled OEM maps and delivery apps are exactly those.
-                    val system = appInfo != null &&
-                        (appInfo.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0 &&
-                        (appInfo.flags and android.content.pm.ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) == 0
-                    if (system && !policyIncludeSystem) return@mapNotNull null
-                    val label = runCatching {
-                        packageManager.getApplicationLabel(appInfo!!).toString()
-                    }.getOrDefault(pkg)
-                    pkg to label
-                }.sortedBy { it.second }
-                val elapsed = System.currentTimeMillis() - t0
-                runOnUiThread {
-                    policyAll = result
-                    policyLoaded = true
-                    policyLoadMs = elapsed
-                    policyPointed = bridge.appPoints().keys
-                    renderPolicyRows()
-                }
-            }
-        }
-    }
-
-    private fun renderPolicyRows() {
-        val needle = policyFilter.text.toString().trim().lowercase()
-        policyAdapter.refill(policyAll.filter { (pkg, label) ->
-            needle.isEmpty() || label.lowercase().contains(needle) || pkg.lowercase().contains(needle)
-        })
-        policyCount.text = buildString {
-            append("共 ${policyAdapter.shown.size} 个可选项，已选 ${policyChecked.size} 个掐网")
-            if (policyPointed.isNotEmpty()) append("，${policyPointed.size} 个独立点位")
-            if (!policyIncludeSystem) append("（已隐藏系统 App）")
-            if (policyLoadMs > 0) append(" · 列表加载 ${policyLoadMs}ms")
-            // "作用域内全部" is not expressible as a ticked list, so saving from here would quietly
-            // narrow it. Say so instead of letting the write look like a no-op that lost their setting.
-            if (bridge.netcutScope().mode == com.mockloc.Scope.Mode.ALL) {
-                append("\n当前生效的是「作用域内全部」；在这里保存会改成只掐网勾上的包")
-            }
-        }
-    }
-
-    /**
-     * RecyclerView would be the modern pick; ListView with a ViewHolder buys the same property -
-     * only visible rows get bound, so a keystroke rebinds ~7 rows instead of rebuilding 593 -
-     * without adding a dependency this project's local typecheck would have to carry.
-     */
-    private inner class PolicyAdapter : android.widget.BaseAdapter() {
-        var shown: List<Pair<String, String>> = emptyList()
-
-        fun refill(list: List<Pair<String, String>>) {
-            shown = list
-            notifyDataSetChanged()
-        }
-
-        override fun getCount(): Int = shown.size
-        override fun getItem(position: Int): Pair<String, String> = shown[position]
-        override fun getItemId(position: Int): Long = position.toLong()
-
-        override fun getView(position: Int, convertView: View?, parent: android.view.ViewGroup): View {
-            val holder = (convertView?.tag as? Holder) ?: Holder().also { vh ->
-                vh.row = ui.row().apply { gravity = Gravity.CENTER_VERTICAL }
-                vh.box = android.widget.CheckBox(this@MainActivity).apply {
-                    textSize = 13f
-                    setPadding(0, ui.dp(6), 0, ui.dp(6))
-                }
-                vh.point = Button(this@MainActivity).apply {
-                    isAllCaps = false
-                    setTextSize(11f)
-                }
-                vh.row.addView(vh.box, ui.fill())
-                vh.row.addView(vh.point)
-                vh.row.tag = vh
-            }
-            val (pkg, label) = getItem(position)
-            // Recycled views carry the previous row's state and listener: reset in the fixed
-            // order (listener off → state on → listener on) or ticks migrate between rows.
-            holder.box.setOnCheckedChangeListener(null)
-            holder.box.text = "$label  ${Tiers.needsOf(pkg).label.take(1)}\n$pkg"
-            holder.box.isChecked = pkg in policyChecked
-            holder.box.setOnCheckedChangeListener { _, on ->
-                if (on) policyChecked.add(pkg) else policyChecked.remove(pkg)
-            }
-            // Per-app fixed point (REFACTOR-PLAN 2.2): the pill marks apps that have one, and the
-            // tap offers "reuse the last injected point / clear" - no second map picker needed.
-            holder.point.text = if (pkg in policyPointed) "📍" else "位置"
-            holder.point.setOnClickListener { promptAppPoint(pkg, label) }
-            return holder.row
-        }
-    }
-
-    private class Holder {
-        lateinit var row: LinearLayout
-        lateinit var box: android.widget.CheckBox
-        lateinit var point: Button
-    }
-
-    private fun saveBlindScope() {
-        val picked = policyChecked.toList()
-        bridge.setNetcutPkgs(picked)
-        toast(
-            if (picked.isEmpty()) "已清空掐网名单"
-            else "已选 ${picked.size} 个掐网（ROOT 守护=按 uid 断网；致盲请用上方三个按钮）"
-        )
-        // ROOT 守护运行时，conf 一发布循环就在下一个 tick 应用（掐网即时生效，无需重启目标 App）；
-        // LSP 路径的致盲钩子仍按进程启动时装，改动后要重启目标 App。
-        publishBridge()
-    }
-
-    /** 把 bridge 的渲染体发布到模块通道，并在读回窗口后刷新状态。 */
-    private fun publishBridge() {
-        thread {
-            runCatching {
-                if (RootInjector.rootAvailable()) {
-                    RootInjector.publishConfig(this@MainActivity, bridge.render())
-                }
-            }
-        }
-        thread {
-            runCatching { Thread.sleep(1200) }
-            runOnUiThread { refreshStatus() }
-        }
-    }
-
-    /** 致盲三路循环：关 → 全部 → 按所选（策略页勾选的包）。 */
-    private fun cycleBlind(kind: BlindKind) {
-        val cur = when (kind) {
-            BlindKind.WIFI -> bridge.blindWifiScope()
-            BlindKind.CELL -> bridge.blindCellScope()
-            BlindKind.BLE -> bridge.blindBleScope()
-        }
-        val next = when (cur.mode) {
-            Scope.Mode.NONE -> Scope.All
-            Scope.Mode.ALL -> Scope.only(policyChecked)
-            else -> Scope.None
-        }
-        when (kind) {
-            BlindKind.WIFI -> bridge.setBlindWifiScope(next)
-            BlindKind.CELL -> bridge.setBlindCellScope(next)
-            BlindKind.BLE -> bridge.setBlindBleScope(next)
-        }
-        renderBlindChips()
-        publishBridge()
-    }
-
-    private fun renderBlindChips() {
-        blindWifiBtn.text = "致盲WiFi：" + blindLabel(bridge.blindWifiScope())
-        blindCellBtn.text = "致盲基站：" + blindLabel(bridge.blindCellScope())
-        blindBleBtn.text = "致盲BLE：" + blindLabel(bridge.blindBleScope())
-    }
-
-    private fun blindLabel(scope: Scope): String = when (scope.mode) {
-        Scope.Mode.NONE -> "关"
-        Scope.Mode.ALL -> "全部"
-        else -> "所选 ${scope.packages.size}"
-    }
-
-    private fun statusPage(): View {
-        val page = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-
-        // ---- 当前状态卡 ----
-        val statusCard = ui.card()
-        statusBigText = TextView(this).apply {
-            textSize = 20f
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setPadding(0, 0, 0, ui.dp(4))
-        }
-        statusCard.addView(statusBigText)
-        statusCoordWgs = TextView(this).apply { textSize = 14f; setTextColor(ui.bodyColor()) }
-        statusCard.addView(statusCoordWgs)
-        statusCoordGcj = TextView(this).apply { textSize = 14f; setTextColor(ui.hintColor()) }
-        statusCard.addView(statusCoordGcj)
-        statusTarget = TextView(this).apply {
-            textSize = 12f; setTextColor(ui.hintColor()); setPadding(0, ui.dp(4), 0, 0)
-        }
-        statusCard.addView(statusTarget)
-        stopBtn = ui.button("停止注入", Ui.Btn.DANGER) {
-            startService(Intent(this@MainActivity, MockService::class.java)
-                .putExtra(MockService.EXTRA_CMD, "stop"))
-            bridge.clear()
-            thread {
-                val out = RootInjector.teardown(DEFAULT_PROVIDERS.split(','))
-                runOnUiThread {
-                    refreshStatus()
-                    if (out.contains("Error") || out.contains("denied")) toast("root 停止异常：${out.take(60)}")
-                }
-            }
-        }
-        stopBtn.visibility = View.GONE
-        statusCard.addView(stopBtn, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT,
-        ).apply { topMargin = ui.dp(10) })
-        page.addView(statusCard)
-
-        // ---- 暴露风险卡（16 维）----
-        // README 阶段四 ⑭ 声称已落地但代码里没有，这里补齐。评的是暴露面不是效果。
-        val riskCard = ui.card()
-        riskSummary = TextView(this).apply {
-            textSize = 14f
-            setTextColor(ui.bodyColor())
-            setPadding(0, 0, 0, ui.dp(4))
-        }
-        riskCard.addView(riskSummary)
-        riskToggleBtn = ui.button("16 维明细 ▼") { toggleRisk() }
-        riskCard.addView(riskToggleBtn)
-        riskRows = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            visibility = View.GONE
-        }
-        riskCard.addView(riskRows)
-        riskCard.addView(ui.hint("评的是暴露面（这条面收口了没有），不是效果（目标 App 认不认）"))
-        page.addView(riskCard)
-
-        // ---- 目标 App 快捷控制 ----
-        val appCard = ui.card()
-        appCard.addView(ui.title("目标 App"))
-        appRows = ui.column()
-        appCard.addView(appRows)
-        appCard.addView(ui.button("更多 App → 策略页", Ui.Btn.GHOST) { openTab(TABS.indexOf("策略")) },
-            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
-        page.addView(appCard)
-
-        // ---- 操作行 ----
-        val actions = ui.row().apply { setPadding(ui.dp(10), ui.dp(6), ui.dp(10), ui.dp(4)) }
-        actions.addView(ui.button("同步到模块", Ui.Btn.PRIMARY) { onSyncToModule() }, ui.fill())
-        actions.addView(ui.button("刷新") { refreshStatus() }, ui.fill())
-        diagToggleBtn = ui.button("诊断详情 ▼") { toggleDiag() }
-        actions.addView(diagToggleBtn, ui.fill())
-        page.addView(actions)
-
-        // ---- 诊断详情（折叠）----
-        diagSection = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        statusDetailText = TextView(this).apply {
-            textSize = 12f
-            setTextColor(ui.bodyColor())
-            setPadding(ui.dp(14), ui.dp(6), ui.dp(14), ui.dp(6))
-            setLineSpacing(0f, 1.15f)
-        }
-        diagSection.addView(statusDetailText)
-        diagSection.visibility = View.GONE
-        page.addView(diagSection)
-
-        return ScrollView(this).apply { addView(page); isFillViewport = true }
-    }
-
-    private fun toggleRisk() {
-        riskExpanded = !riskExpanded
-        riskToggleBtn.text = if (riskExpanded) "16 维明细 ▲" else "16 维明细 ▼"
-        riskRows.visibility = if (riskExpanded) View.VISIBLE else View.GONE
-        if (riskExpanded) {
-            // 展开时才重建明细，避免每次刷新都重建 16 行。
-            lastRiskReport?.let { renderRiskRows(it) }
-        }
-    }
-
-    private var lastRiskReport: RiskScore.Report? = null
-
-    private fun buildRiskSnapshot(fixes: List<String>, confMatch: Boolean): RiskScore.Snapshot {
-        return RiskScore.Snapshot(
-            confEnabled = Config.enabled,
-            mockProviders = fixes.count { "mock=true" in it },
-            mockTotal = fixes.size,
-            confMatch = confMatch,
-            loopIntervalSec = Config.loopIntervalSec,
-            blindWifi = bridge.blindWifiScope().enabled,
-            blindCell = bridge.blindCellScope().enabled,
-            blindBle = bridge.blindBleScope().enabled,
-            netcutCount = bridge.netcutPkgs().size,
-            forgeWifi = Config.forgeWifi,
-            sensorFreeze = Config.sensorFreeze,
-            hidePkgsCount = Config.hidePkgs.size,
-            stackClean = Config.stackClean,
-            gmsSpoof = Config.gmsSpoof,
-            gnssSpoof = Config.gnssSpoof,
-            hasSatellites = Sky.SATS.isNotEmpty(),
-            dopplerNonZero = Config.gnssSpoof,
-            guardianFresh = guardianFresh(),
-            leakClosed = null, // 反推在目标进程里跑，App 进程拿不到结论；探针未开时就是 OFF
-        )
-    }
-
-    /**
-     * 守护循环每 tick 都会 publish() 一次，所以 conf 的 mtime 就是心跳。App 进程能读这个文件
-     * （Config 本身就靠它），不需要 root。
-     */
-    private fun guardianFresh(): Boolean? {
-        val f = java.io.File(Config.DEFAULT_PATH)
-        if (!f.exists()) return null
-        val age = System.currentTimeMillis() - f.lastModified()
-        return age in 0..15_000L
-    }
-
-    private fun renderRiskCard(report: RiskScore.Report) {
-        lastRiskReport = report
-        riskSummary.text = "暴露面 ${report.level}（BAD ${report.bad} / WARN ${report.warn} / 共 16 维）"
-        if (riskExpanded) renderRiskRows(report)
-    }
-
-    private fun renderRiskRows(report: RiskScore.Report) {
-        riskRows.removeAllViews()
-        report.dims.forEach { d ->
-            val state = when (d.state) {
-                RiskScore.State.OK -> Ui.State.OK
-                RiskScore.State.WARN -> Ui.State.WARN
-                RiskScore.State.BAD -> Ui.State.BAD
-                RiskScore.State.OFF -> Ui.State.OFF
-            }
-            riskRows.addView(ui.chip("${d.name} · ${d.state}", state))
-            riskRows.addView(ui.hint(d.note))
-        }
-    }
-
-    private fun toggleDiag() {
-        diagExpanded = !diagExpanded
-        diagSection.visibility = if (diagExpanded) View.VISIBLE else View.GONE
-        diagToggleBtn.text = if (diagExpanded) "诊断详情 ▲" else "诊断详情 ▼"
-    }
-
-    /** 常用目标 App 与管线的对应关系。needsLsp = 该 App 只能通过 LSP 进程内改写生效。 */
-    private data class KnownApp(val label: String, val pkg: String, val needsLsp: Boolean = false)
-
-    private val KNOWN_APPS = listOf(
-        KnownApp("高德地图", "com.autonavi.minimap"),
-        KnownApp("微信", "com.tencent.mm", needsLsp = true),
-        KnownApp("美团", "com.sankuai.meituan"),
-        KnownApp("大众点评", "com.dianping.v1"),
-        // 银行/生活类是 mock 读数重灾区（读到 isMock=true 就丢弃修复）：
-        // 掐网能断它自己服务器的交叉验证，LSP 档（若加固后不再闪退）才洗得掉 mock 位。
-        KnownApp("阳光惠生活", "com.cebbank.yaoyao"),
-        KnownApp("光大银行", "com.cebbank.mobile.cemb"),
-        KnownApp("饿了么", "me.ele"),
-    )
-
-    private fun renderAppRows(installed: Set<String>) {
-        appRows.removeAllViews()
-        for (app in KNOWN_APPS) {
-            // installed 集合由 refreshStatus 在后台线程算好（P1-16），这里只做 UI。
-            if (app.pkg !in installed) continue
-            val row = ui.row().apply { setPadding(0, ui.dp(6), 0, ui.dp(6)) }
-            row.addView(TextView(this).apply {
-                text = app.label
-                textSize = 14f
-                setTextColor(ui.bodyColor())
-            }, ui.fill())
-            if (app.needsLsp) {
-                // 微信等 App 自带定位 SDK 不读系统 provider，ROOT 管线改不到它，
-                // 只能在 LSP 管理器里把 mockloc 勾进作用域走进程内改写。
-                val lspOn = selfCheck() && Config.shouldSpoof(app.pkg)
-                row.addView(ui.chip(if (lspOn) "LSP ✓" else "需 LSP",
-                    if (lspOn) Ui.State.OK else Ui.State.WARN))
-                row.addView(ui.button("LSP 管理器", Ui.Btn.GHOST) {
-                    thread {
-                        // 寄生管理器没有独立包名：start BugreportWarningActivity 只会弹原生 bugreport
-                        // 对话框（守护进程的 UI 交换不认外部身份，root+category 实测无效）。可靠入口
-                        // 是守护进程注册的模块广播——通知点击即 am broadcast -a <UUID> -d module://<pkg>:0，
-                        // 管理器直接打开本模块作用域页。UUID 每个守护进程会话都变，从 root 的
-                        // PendingIntent 记录动态解析；解析不到再退回独立管理器包名。
-                        val dump = runCatching {
-                            RootInjector.runSu(listOf("dumpsys activity intents")).getOrDefault("")
-                        }.getOrDefault("")
-                        val uuid = Regex("act=([0-9a-f-]{36}) dat=module://" + Regex.escape(packageName))
-                            .find(dump)?.groupValues?.get(1)
-                        if (uuid != null) {
-                            RootInjector.runSu(listOf("am broadcast -a $uuid -d module://$packageName:0"))
-                            runOnUiThread { toast("已打开 LSP 管理器（本模块作用域页）") }
-                        } else {
-                            val intent = packageManager.getLaunchIntentForPackage("org.lsposed.manager")
-                            runCatching { startActivity(intent) }
-                                .onFailure { runOnUiThread { toast("请下拉通知栏，点 LSPosed 的通知打开管理器") } }
-                        }
-                    }
-                })
-            } else {
-                // NETCUT 切换：root 管线按 uid 掐掉该 App 的真实网络定位。
-                val on = app.pkg in Config.netcutPkgs
-                val toggle = Button(this).apply {
-                    text = if (on) "掐网 ✓" else "掐网"
-                    isAllCaps = false
-                    setTextSize(12f)
-                    val (fill, fg) = if (on) Pair(Md.scheme.primaryContainer, Md.scheme.onPrimaryContainer)
-                                     else Pair(Md.scheme.surfaceHigh, Md.scheme.onSurfaceVariant)
-                    setTextColor(fg)
-                    background = GradientDrawable().apply {
-                        setColor(fill); cornerRadius = ui.dp(16).toFloat()
-                    }
-                    stateListAnimator = null
-                    setPadding(ui.dp(12), ui.dp(6), ui.dp(12), ui.dp(6))
-                }
-                toggle.setOnClickListener { toggleNetcut(app.pkg) }
-                row.addView(toggle)
-            }
-            appRows.addView(row, LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT,
-            ))
-        }
-    }
-
-    /**
-     * 切换单个 App 的 NETCUT。名单独立于致盲（v1.3.0 走查 P1-2）：旧版与致盲共用一个作用域，
-     * 掐网一关会把高德致盲一起抹掉（2026-11-06 实锤）。现在只写 module_netcut。
-     */
-    private fun toggleNetcut(pkg: String) {
-        val current = bridge.netcutPkgs().toMutableSet()
-        if (pkg in current) { current.remove(pkg); toast("已关闭 $pkg 掐网") }
-        else { current.add(pkg); toast("已开启 $pkg 掐网") }
-        bridge.setNetcutPkgs(current.toList())
-        thread {
-            runCatching {
-                if (RootInjector.rootAvailable()) {
-                    RootInjector.publishConfig(this@MainActivity, bridge.render())
-                    RootInjector.netcutApply(current.toList())
-                }
-            }
-        }
-        thread {
-            runCatching { Thread.sleep(1500) }
-            runOnUiThread { refreshStatus() }
-        }
-    }
 
     /**
      * The app-only sync (REFACTOR-PLAN C34): the module reads /data/local/tmp/mockloc.conf, which
@@ -1084,252 +580,24 @@ class MainActivity : Activity() {
      * (the spawn itself is what pops the grant dialog the first time), then publish the rendered
      * conf straight to both locations. No PC, no waiting for the module's mtime loop.
      */
-    private fun onSyncToModule() {
-        toast("正在尝试 root 通道…（首次会弹 KernelSU 授权，请允许）")
-        thread {
-            runCatching {
-                if (!RootInjector.rootAvailable(force = true)) {
-                    runOnUiThread { showSyncFallbackDialog() }
-                    return@runCatching
-                }
-                val published = RootInjector.publishConfig(this@MainActivity, bridge.render())
-                runOnUiThread {
-                    toast(if (published) "已同步（su 直写模块配置）" else "su 写入失败：检查 KernelSU 授权与磁盘")
-                    // Config carries a 1s stat cache; give it a beat before the read-back verdict.
-                    thread {
-                        runCatching { Thread.sleep(1200) }
-                        runOnUiThread { refreshStatus() }
-                    }
-                }
-            }.onFailure {
-                runOnUiThread { toast("同步失败：${it.javaClass.simpleName} ${it.message.orEmpty().take(60)}") }
-            }
-        }
-    }
-
-    private fun showSyncFallbackDialog() {
-        android.app.AlertDialog.Builder(this)
-            .setTitle("需要一条 root 通道")
-            .setMessage(
-                "模块读的是 /data/local/tmp/mockloc.conf，App 进程自己写不进去。按顺序试：\n\n" +
-                    "① KernelSU/APatch 管理器里给 mockloc 授予 root，回来再点一次「同步到模块」（刚才弹的授权框点了允许就直接成功）；\n" +
-                    "② 刷 mockloc-root.zip，模块循环会自动搬运 App 的选点；\n" +
-                    "③ 最后手段：PC 上跑 python tools/mockloc.py sync。",
-            )
-            .setPositiveButton("知道了", null)
-            .show()
-    }
 
     // ---------------------------------------------------------------- status
 
-    private fun refreshStatus() {
-        val last = prefs.getString(KEY_LAST, "无")
-        val label = prefs.getString(KEY_LAST_LABEL, "")
-        // 重活挪到后台：readback 的 4 次 getLastKnownLocation、Config.refresh 读文件、
-        // renderAppRows 的逐个 getPackageInfo——onResume/每次注入都跑，主线程做会掉帧（P1-16）。
-        thread {
-            val fixes = readback()
-            Config.refresh()
-            val installed = KNOWN_APPS.mapNotNull { a ->
-                runCatching { packageManager.getPackageInfo(a.pkg, 0) }.getOrNull()?.let { a.pkg }
-            }.toSet()
-            val mockActive = fixes.any { "mock=true" in it }
-            runOnUiThread { applyStatus(last ?: "无", label ?: "", fixes, mockActive, installed) }
-        }
-    }
-
-    private fun applyStatus(
-        last: String,
-        label: String,
-        fixes: List<String>,
-        mockActive: Boolean,
-        installed: Set<String>,
-    ) {
-        renderStatusBar(mockActive, label)
-
-        val mismatch = Config.enabled && last != "无" &&
-            (abs(Config.centerLat - lastLat()) > 1e-3 || abs(Config.centerLng - lastLng()) > 1e-3)
-
-        // ---- 当前状态卡：一句话说清在不在跑 ----
-        statusBigText.text = when {
-            mockActive -> "● 模拟中"
-            Config.enabled -> "◐ 已配置未生效"
-            else -> "○ 未注入"
-        }
-        statusBigText.setTextColor(
-            if (mockActive) Md.scheme.primary else Md.scheme.onSurfaceVariant,
-        )
-        if (last != "无" && lastLat() != 0.0) {
-            statusCoordWgs.text = "WGS  ${"%.5f".format(lastLat())}, ${"%.5f".format(lastLng())}"
-            // 地图 App（高德/腾讯/百度）按 GCJ-02 瓦片渲染，注入的 WGS 值会被换算——
-            // 两行坐标差 ~500m 是坐标系不同，不是偏移（2026-11 实测高德蓝点位置正确）。
-            val g = CoordTransform.wgs84ToGcj02(lastLat(), lastLng())
-            statusCoordGcj.text = "高德显示位  ${"%.5f".format(g[0])}, ${"%.5f".format(g[1])}"
-            statusTarget.text = "目标：${label?.ifBlank { "手动坐标" } ?: "手动坐标"}"
-        } else {
-            statusCoordWgs.text = "尚未选择注入点"
-            statusCoordGcj.text = ""
-            statusTarget.text = ""
-        }
-        stopBtn.visibility = if (mockActive || serviceRunning()) View.VISIBLE else View.GONE
-
-        renderAppRows(installed)
-        renderRiskCard(RiskScore.score(buildRiskSnapshot(fixes, mismatch)))
-
-        // ---- 诊断详情：技术细节收进折叠区，默认不展开 ----
-        statusDetailText.text = buildString {
-            append("系统 provider 读回\n")
-            fixes.forEach { append("  $it\n") }
-            if (mismatch) {
-                append("\n⚠ App 选点与模块配置不一致\n")
-                append("  App : $label $last\n")
-                append("  模块: ${Config.label} ${"%.5f".format(Config.centerLat)},${"%.5f".format(Config.centerLng)}\n")
-                append("  → 回到上方点「同步到模块」一键解决\n")
-            }
-            append("\n运行管线\n")
-            append("  ROOT 巡检: ${if (RootInjector.SuSession.alive() && serviceRunning()) "运行中（持久 su 会话）" else "未运行"}")
-            if (MockService.lastFreezeGapMs > 0L) {
-                append("，曾被系统冻结 ${MockService.lastFreezeGapMs / 1000}s 后自动恢复")
-            }
-            append("\n")
-            append("  LSP 模块: ${if (selfCheck()) "已挂载（进程内改写）" else "未启用（可选，微信等 App 需要）"}\n")
-            append("  NETCUT 掐网: ${if (Config.netcutPkgs.isEmpty()) "未配置" else Config.netcutPkgs.joinToString()}\n")
-            append("  BLE 盲化: ${if (Config.blindBle.packages.isEmpty()) "未配置" else Config.blindBle.render()}\n")
-            append("\n模块配置（${Config.DEFAULT_PATH}）\n")
-            append("  开关=${onOff(Config.enabled)} 全局=${onOff(Config.global)} 卫星=${onOff(Config.gnssSpoof)}\n")
-            append("  致盲 WiFi=${Config.blindWifi.render()} 基站=${Config.blindCell.render()} BLE=${Config.blindBle.render()}\n")
-            append("  路线=${if (Config.routeActive) "运行中 ${Config.routeWaypoints.size}点 @${Config.speedMps}m/s" else "未配置"}")
-            append("  独立点位=${Config.appPoints.size}个")
-            run {
-                val custom = Config.appCoord.filterValues { it != "WGS84" }
-                if (custom.isNotEmpty()) {
-                    append("（输出坐标系 " + custom.entries.joinToString { "${it.key.substringBeforeLast('.')}=${it.value}" } + "）")
-                }
-            }
-            append("\n")
-            append("  读回: ${Config.lastError ?: "正常（写入于 ${Config.lastLoadedAgo}ms 前）"}\n")
-            // 高德机制：自有融合 SDK（真实 WiFi/基站/服务器定位）优先级高于系统 LocationManager，
-            // 不盲化它就直接拿真数据定位覆盖注入点——2026-11-05 实机复现（关盲化即回跳真实位置）。
-            append("\n高德提示：高德自带定位引擎优先用自己的真实 WiFi/基站数据，系统注入点会被它覆盖；" +
-                "所以高德必须开「致盲 WiFi/基站」（策略页上方三个按钮）+ 掐网，改动后要重启高德。" +
-                "微信等 App 读系统定位，LSP 挂上就稳。\n")
-            val notes = Diagnostics.snapshot()
-            if (notes.isNotEmpty()) {
-                append("\n本进程挂钩记录\n")
-                notes.forEach { append("  $it\n") }
-            }
-        }
-
-        maybeAutoResume(fixes)
-        updateInjectMarker()
-        updatePastePreview()
-    }
 
     /**
      * The two facts the no-root tier actually depends on, read fresh every time: the app-op grant
      * (a reinstall clears it) and whether 开发者选项 is even reachable on this ROM.
      */
-    private fun renderAppOpChips() {
-        appOpChipRow.removeAllViews()
-        val allowed = Tiers.mockAppOpAllowed(this)
-        appOpChipRow.addView(
-            ui.chip("虚拟定位授权", if (allowed) Ui.State.OK else Ui.State.BAD),
-        )
-        appOpChipRow.addView(
-            ui.chip(
-                "开发者选项",
-                if (Tiers.developerOptionsEnabled(this)) Ui.State.OK else Ui.State.WARN,
-            ),
-        )
-        appOpChipRow.addView(
-            ui.chip("本 App 定位权限", if (hasLocationGrant()) Ui.State.OK else Ui.State.BAD),
-        )
-    }
 
-    private fun hasLocationGrant(): Boolean =
-        checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) ==
-            android.content.pm.PackageManager.PERMISSION_GRANTED
 
-    /**
-     * A force-stop or process reclaim takes the tier-0 provider with the app's own process, so
-     * "reopen the app" is the natural recovery point: the service_running marker says we were
-     * spoofing, the read-back says nothing is - replay the last injection (10s throttle). A user
-     * 暂停 or 停止 marks/clears the state so this never fights an explicit stop.
-     */
-    private fun maybeAutoResume(fixes: List<String>) {
-        if (!prefs.getBoolean(MockService.KEY_SERVICE_RUNNING, false)) return
-        if (prefs.getBoolean(MockService.KEY_PAUSED, false)) return
-        if (fixes.any { "mock=true" in it }) return
-        if (!hasLocationGrant()) return
-        val last = prefs.getString(KEY_LAST, "无") ?: return
-        if (last == "无") return
-        val now = System.currentTimeMillis()
-        if (now - lastAutoResume < 10_000L) return
-        lastAutoResume = now
-        inject(lastLat(), lastLng(), prefs.getString(KEY_LAST_LABEL, "恢复上次注入") ?: "恢复上次注入")
-    }
-
-    private var lastAutoResume = 0L
+    internal var lastAutoResume = 0L
 
     /**
      * 地图页常驻"当前注入点"蓝标（WGS→GCJ 转回显示）：用户一眼核对系统指向与选点是否重合，
      * 偏移感的三种来源（坐标系看串、App 内地图显示偏移、真·注入漂移）当场可分辨。
      */
-    private fun updateInjectMarker() {
-        val last = prefs.getString(KEY_LAST, "无") ?: return
-        if (last == "无") return
-        val lat = lastLat()
-        val lng = lastLng()
-        if (lat == 0.0 && lng == 0.0) return
-        if (!::map.isInitialized) return
-        val g = mapSrc.toDisplay(lat, lng)
-        val pos = GeoPoint(g[0], g[1])
-        val existing = injectMarker
-        if (existing == null) {
-            injectMarker = Marker(map, this).apply {
-                setPosition(pos)
-                setTitle("当前注入点 · WGS ${"%.5f".format(lat)},${"%.5f".format(lng)}")
-                map.getOverlays().add(this)
-            }
-        } else {
-            existing.setPosition(pos)
-            existing.title = "当前注入点 · WGS ${"%.5f".format(lat)},${"%.5f".format(lng)}"
-        }
-    }
 
     /** One glanceable verdict, colored before it is worded (same rule as the chips). */
-    private fun renderStatusBar(mockActive: Boolean, label: String) {
-        // 顶栏胶囊只说一句话：实色=在跑，灰=空闲/待确认。细节在诊断页。
-        val (text, running) = when {
-            mockActive -> "模拟中${if (label.isNotBlank()) " · $label" else ""}" to true
-            Config.enabled -> "配置生效 · 待确认" to false
-            else -> "未注入" to false
-        }
-        ui.styleStatusPill(statusPillView, text, running)
-    }
-
-    private fun lastLat(): Double =
-        prefs.getString(KEY_LAST, "")?.substringBefore(',')?.toDoubleOrNull() ?: 0.0
-
-    private fun lastLng(): Double =
-        prefs.getString(KEY_LAST, "")?.substringAfter(',', "")?.toDoubleOrNull() ?: 0.0
-
-    private fun onOff(value: Boolean) = if (value) "开" else "关"
-
-    // Both accessors are shown on purpose: older apps still call the deprecated one, and the whole
-    // point of this screen is to see which flag a target app would be reading.
-    @Suppress("DEPRECATION")
-    private fun readback(): List<String> {
-        val lm = getSystemService(LOCATION_SERVICE) as? android.location.LocationManager
-        return listOf("gps", "fused", "network", "passive").map { name ->
-            val line = runCatching {
-                val loc = lm?.getLastKnownLocation(name)
-                if (loc == null) "null"
-                else "${"%.6f".format(loc.latitude)},${"%.6f".format(loc.longitude)} acc=${loc.accuracy} mock=${loc.isFromMockProvider}"
-            }.getOrElse { "需授权（${it.javaClass.simpleName}）" }
-            "$name : $line"
-        }
-    }
 
     // ---------------------------------------------------------------- actions
 
@@ -1456,7 +724,7 @@ class MainActivity : Activity() {
         toast("已选「${hit.name}」——按注入生效")
     }
 
-    private fun updatePastePreview() {
+    internal fun updatePastePreview() {
         if (!::pastePreview.isInitialized) return
         pastePreview.text = CoordTransform.dualPreview(pasteField.text.toString(), pasteGcj)
             ?: "格式：纬度,经度（经度在前也认）"
@@ -1764,7 +1032,7 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun promptAppPoint(pkg: String, label: String) {
+    internal fun promptAppPoint(pkg: String, label: String) {
         val current = bridge.appPoints()[pkg]
         val last = prefs.getString(KEY_LAST, "")
         val options = mutableListOf<String>()
@@ -1805,7 +1073,7 @@ class MainActivity : Activity() {
                     }
                 }
                 policyPointed = bridge.appPoints().keys
-                renderPolicyRows()
+                policyPageView.renderRows()
                 refreshStatus()
             }
             .setNegativeButton("取消", null)
@@ -1817,7 +1085,7 @@ class MainActivity : Activity() {
         inject(w[0], w[1], fallbackName)
     }
 
-    private fun inject(lat: Double, lng: Double, label: String) {
+    internal fun inject(lat: Double, lng: Double, label: String) {
         prefs.edit()
             .putString(KEY_LAST_LABEL, label)
             .putString(KEY_LAST, "%.7f,%.7f".format(lat, lng))
@@ -2008,7 +1276,7 @@ class MainActivity : Activity() {
             .show()
     }
 
-    private fun toast(message: String) = Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+    internal fun toast(message: String) = Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
 
     private companion object {
         const val PREFS = "settings"
