@@ -164,8 +164,14 @@ sync_app_prefs() {
   [ -s "$_tmp" ] || { rm -f "$_tmp"; return 1; }
   # Android's XmlUtils writes a newline as &#10;, so without this the whole config lands on one
   # line and the module's parser reads ENABLED's value as "true&#10;GLOBAL=..." - i.e. spoofing off.
-  sed -i 's/&#10;/
-/g; s/&lt;/</g; s/&gt;/>/g; s/&quot;/"/g; s/&amp;/\&/g' "$_tmp"
+  sed -i 's/&#10;/\n/g; s/&lt;/</g; s/&gt;/>/g; s/&quot;/"/g; s/&amp;/\&/g' "$_tmp"
+  # 安全网：反转义后仍含 &#10; 说明提取/反转义失败——宁可跳过本次写入（保留上一份好 CFG），
+  # 也不要把一行式坏配置写进去让 tier-3 直接关（真机实测过这种坏文件）。
+  if grep -q '&#10;' "$_tmp" 2>/dev/null; then
+    echo "mockloc: sync_app_prefs 反转义失败，跳过本次写入" >> /data/adb/mockloc/service.log
+    rm -f "$_tmp"
+    return 1
+  fi
   cp "$_tmp" "$CFG" 2>/dev/null
   chmod 600 "$CFG" 2>/dev/null
   rm -f "$_tmp"

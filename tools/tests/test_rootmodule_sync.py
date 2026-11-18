@@ -36,8 +36,9 @@ def main():
     check("有损坏自愈守卫（&#10; 或 XML 残尾）",
           "&#10;" in lib and "<string" in lib and "grep -q" in lib)
 
-    # 3) 反转义仍在（Android XmlUtils 把换行写成 &#10;）。
+    # 3) 反转义仍在（Android XmlUtils 把换行写成 &#10;），且反转义失败时不许写坏 CFG。
     check("保留 &#10; 反转义", "s/&#10;/" in lib)
+    check("反转义失败有安全网", "反转义失败" in lib)
 
     # 4) 真机实测：早期启动 sleep 不可用会让循环空转、刷爆 service.log（43 万条）。
     check("service.sh 有日志上限", "service.log" in svc and "1048576" in svc)
