@@ -29,6 +29,27 @@ object Sky {
     private const val EARTH_RADIUS_M = 6_371_000.0
     private const val GPS_ORBIT_RADIUS_M = 20_200_000.0
     private const val SPEED_OF_LIGHT = 299_792_458.0
+    private const val GPS_EPOCH_OFFSET_SECONDS = 315_964_800L // 1980-01-06
+    private const val GPS_WEEK_NANOS = 604_800L * 1_000_000_000L
+
+    /**
+     * 一个历元的时间基准三元组。消费者按
+     *   pseudorange = (timeNanos - fullBiasNanos - biasNanos - receivedSvTimeNanos) * c
+     * 反推伪距，所以三者必须落在同一基准（v1.3.0 走查 P1-12）。抽成纯函数是为了能在 JVM 上断言。
+     */
+    data class GnssTimeBase(val timeNanos: Long, val fullBiasNanos: Long, val gpsWeekNanos: Long) {
+        fun receivedSvTimeNanos(elevationDeg: Double): Long = gpsWeekNanos - travelNanos(elevationDeg)
+
+        /** 消费者反推的伪距，应等于几何斜距。 */
+        fun pseudorangeMeters(elevationDeg: Double): Double =
+            (timeNanos - fullBiasNanos - receivedSvTimeNanos(elevationDeg)) / 1e9 * SPEED_OF_LIGHT
+    }
+
+    fun timeBase(rxNanos: Long, nowMillis: Long): GnssTimeBase {
+        val gpsNanos = (nowMillis / 1000L - GPS_EPOCH_OFFSET_SECONDS) * 1_000_000_000L
+        val gpsWeekNanos = gpsNanos % GPS_WEEK_NANOS
+        return GnssTimeBase(rxNanos, rxNanos - gpsWeekNanos, gpsWeekNanos)
+    }
 
     /** Geometric slant range for a satellite at this elevation, metres. */
     fun pathMeters(elevationDeg: Double): Double {
@@ -94,16 +115,13 @@ class GnssStream(
     private val measurementCallbacks = ArrayList<Sink>()
     private val nmeaListeners = ArrayList<Sink>()
 
-    /** Stable across epochs: a receiver that restarts its clock every second is its own tell. */
-    private val fullBiasNanos = -(gpsSecondsSinceEpoch() * 1_000_000_000L)
-
     /** ADR accumulates continuously; anchored at first delivery so it drifts, not jumps. */
     private val adrAnchorElapsed = SystemClock.elapsedRealtimeNanos()
 
     /** The probe prints one epoch's sentences so the format can be checked with a real parser. */
     private var sampled = false
 
-    private class Sink(val target: Any, val method: Method)
+    private class Sink(val target: Any, val method: Method, val executor: Executor? = null)
 
     fun init() {
         val lmClass = kit.findClass(classLoader, "android.location.LocationManager") ?: return
@@ -128,9 +146,11 @@ class GnssStream(
         kit.install(kit.methodsOf(lmClass, "registerGnssMeasurementsCallback")) { chain ->
             val cb = chain.args.firstOrNull { cbClass.isInstance(it) }
             if (cb != null && active()) {
+                // 回调要投到注册时给的那个 Executor 上：直接 invoke 会无视线程契约（P1-12）。
+                val executor = chain.args.firstOrNull { it is Executor } as? Executor
                 synchronized(measurementCallbacks) {
                     if (measurementCallbacks.none { it.target === cb })
-                        measurementCallbacks.add(Sink(cb, deliverMethod))
+                        measurementCallbacks.add(Sink(cb, deliverMethod, executor))
                 }
                 true
             } else {
@@ -156,8 +176,11 @@ class GnssStream(
                 it.name == "onNmeaMessage" || it.name == "onNmeaReceived"
             }
             if (listener != null && method != null && active()) {
+                val executor = chain.args.firstOrNull { it is Executor } as? Executor
                 synchronized(nmeaListeners) {
-                    if (nmeaListeners.none { it.target === listener }) nmeaListeners.add(Sink(listener, method))
+                    if (nmeaListeners.none { it.target === listener }) {
+                        nmeaListeners.add(Sink(listener, method, executor))
+                    }
                 }
                 true
             } else {
@@ -199,9 +222,13 @@ class GnssStream(
             val event = buildEvent()
             if (event != null) {
                 sinks.forEach { sink ->
-                    runCatching { sink.method.invoke(sink.target, event) }.onFailure {
-                        Diagnostics.note("$tag: 投递测量事件失败: ${it.javaClass.simpleName}")
+                    val action = Runnable {
+                        runCatching { sink.method.invoke(sink.target, event) }.onFailure {
+                            Diagnostics.note("$tag: 投递测量事件失败: ${it.javaClass.simpleName}")
+                        }
                     }
+                    val exec = sink.executor
+                    if (exec != null) exec.execute(action) else handler.post(action)
                 }
             }
         }
@@ -215,34 +242,44 @@ class GnssStream(
         }
         sentences.forEach { sentence ->
             listeners.forEach { sink ->
-                runCatching {
-                    if (sink.method.name == "onNmeaMessage") {
-                        sink.method.invoke(sink.target, sentence, now)
-                    } else {
-                        sink.method.invoke(sink.target, now, sentence)
-                    }
-                }.onFailure { Diagnostics.note("$tag: 投递 NMEA 失败: ${it.javaClass.simpleName}") }
+                val action = Runnable {
+                    runCatching {
+                        if (sink.method.name == "onNmeaMessage") {
+                            sink.method.invoke(sink.target, sentence, now)
+                        } else {
+                            sink.method.invoke(sink.target, now, sentence)
+                        }
+                    }.onFailure { Diagnostics.note("$tag: 投递 NMEA 失败: ${it.javaClass.simpleName}") }
+                }
+                val exec = sink.executor
+                if (exec != null) exec.execute(action) else handler.post(action)
             }
         }
     }
 
     private fun buildEvent(): Any? {
+        val rx = SystemClock.elapsedRealtimeNanos()
+        val nowMs = System.currentTimeMillis()
+        // 时间基准自洽（v1.3.0 走查 P1-12）：消费者按
+        //   pseudorange = (timeNanos - fullBiasNanos - biasNanos - receivedSvTimeNanos) * c
+        // 反推，三者必须落在同一基准。旧版 timeNanos=elapsedRealtime、
+        // fullBias=-gpsSecondsSinceEpoch*1e9、receivedSvTime=elapsedRealtime-travel，
+        // 反推出的伪距不是真实量级。
+        val timeBase = Sky.timeBase(rx, nowMs)
         val clock = build(GnssClock_NAME) {
-            put("setTimeNanos", SystemClock.elapsedRealtimeNanos())
-            put("setFullBiasNanos", fullBiasNanos)
+            put("setTimeNanos", timeBase.timeNanos)
+            put("setFullBiasNanos", timeBase.fullBiasNanos)
             put("setBiasNanos", 0.0)
             put("setBiasUncertaintyNanos", 5.0)
             put("setDriftNanosPerSecond", 0.0)
             put("setDriftUncertaintyNanosPerSecond", 2.0)
-            put("setElapsedRealtimeNanos", SystemClock.elapsedRealtimeNanos())
+            put("setElapsedRealtimeNanos", rx)
             put("setElapsedRealtimeUncertaintyNanos", 1000.0)
             put("setLeapSecond", LEAP_SECONDS)
         } ?: return null
 
         val measurements = Sky.SATS.map { sat ->
             build("android.location.GnssMeasurement") {
-                val rx = SystemClock.elapsedRealtimeNanos()
-                val nowMs = System.currentTimeMillis()
                 val rate = Sky.pseudorangeRateMps(
                     sat, nowMs, Config.currentSpeedMps, Config.currentBearingDeg,
                 )
@@ -262,7 +299,7 @@ class GnssStream(
                 put("setAutomaticGainControlLevelInDb", -32.0)
                 put("setState", STATE_LOCKED)
                 put("setTimeOffsetNanos", 0.0)
-                put("setReceivedSvTimeNanos", rx - Sky.travelNanos(sat.elevationDeg))
+                put("setReceivedSvTimeNanos", timeBase.receivedSvTimeNanos(sat.elevationDeg))
                 put("setReceivedSvTimeUncertaintyNanos", 10L)
                 put("setPseudorangeRateMetersPerSecond", rate)
                 put("setPseudorangeRateUncertaintyMetersPerSecond", 0.2)
@@ -322,9 +359,6 @@ class GnssStream(
         Config.currentSpeedMps, Config.currentBearingDeg,
     )
 
-    private fun gpsSecondsSinceEpoch(): Long =
-        (System.currentTimeMillis() / 1000L) - GPS_EPOCH_OFFSET_SECONDS
-
     private fun active() = Config.gnssSpoof && SpoofLogic.isActive(pkg)
 
     private companion object {
@@ -340,6 +374,5 @@ class GnssStream(
         const val STATE_LOCKED = 0x1 or 0x2 or 0x4 or 0x8 or (1 shl 16)
         const val HDOP = 0.9
         const val ALTITUDE_M = 4.0
-        const val GPS_EPOCH_OFFSET_SECONDS = 315_964_800L // 1980-01-06
     }
 }

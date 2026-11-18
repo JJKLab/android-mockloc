@@ -61,7 +61,13 @@ class TencentSdk(
             }
         }
         kit.install(requests, wrapped)
-        kit.log("$tag: 接管 ${manager.simpleName} 的 ${requests.size} 个请求方法")
+        // 没有 listener 的 getLastKnownLocation 也会返回真实 TencentLocation（P2-5）。
+        kit.install(kit.methodsOf(manager, "getLastKnownLocation")) { chain ->
+            if (!active()) return@install chain.proceed()
+            val real = chain.proceed()
+            Proxy.newProxyInstance(classLoader, arrayOf(location), Fake(real))
+        }
+        kit.log("$tag: 接管 ${manager.simpleName} 的 ${requests.size} 个请求方法 + getLastKnownLocation")
     }
 
     /** Replaces the SDK location object on its way to the app's listener. */
@@ -86,9 +92,10 @@ class TencentSdk(
             val argv = args ?: emptyArray()
             if (!active()) return passthrough(method, argv)
             return when (method.name) {
-                "getLatitude" -> Config.currentLat
-                "getLongitude" -> Config.currentLng
-                "getAccuracy" -> Config.accuracy
+                // 与系统 Location 层同源：走该 App 的输出坐标系与独立点位（v1.3.0 走查 P1-11）。
+                "getLatitude" -> Config.currentOutCoordsFor(pkg)[0]
+                "getLongitude" -> Config.currentOutCoordsFor(pkg)[1]
+                "getAccuracy" -> Config.accuracyFor(pkg)
                 "isMock" -> false
                 "getAddress", "getCity", "getDistrict", "getProvince" ->
                     if (Config.label.isNotEmpty()) Config.label else passthrough(method, argv)

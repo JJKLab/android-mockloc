@@ -224,17 +224,31 @@ class Sensors(
     private fun hookWifi() {
         val wifiClass = kit.findClass(classLoader, WifiManager::class.java.name) ?: return
         kit.install(kit.methodsOf(wifiClass, "getScanResults")) { chain ->
-            if (active()) emptyList<Any>() else chain.proceed()
+            if (!active()) return@install chain.proceed()
+            captureRawScan(chain)
+            emptyList<Any>()
         }
         // The connected AP alone is enough for a server-side lookup, so blanking only the scan list
         // leaves the answer intact - that is the hole the first blinding test fell into.
         // Empty strings rather than null: requestConnectionInfo() and friends hand back a WifiInfo
         // object and the SDKs dereference it without checking.
         val infoClass = kit.findClass(classLoader, "android.net.wifi.WifiInfo") ?: return
+        kit.install(kit.methodsOf(infoClass, "getBSSID")) { chain ->
+            if (!active()) return@install chain.proceed()
+            runCatching { chain.proceed() as? String }.getOrNull()?.let { SelfTest.RawEvidence.rawBssid = it }
+            ""
+        }
         val blank = { chain: XposedInterface.Chain -> if (active()) "" else chain.proceed() }
-        listOf("getBSSID", "getSSID", "getMacAddress").forEach { name ->
+        listOf("getSSID", "getMacAddress").forEach { name ->
             kit.install(kit.methodsOf(infoClass, name), blank)
         }
+    }
+
+    /** 记下钩子前的真实扫描数，给 SelfTest 的泄露反推当对照（P1-9）。 */
+    private fun captureRawScan(chain: XposedInterface.Chain) {
+        val raw = runCatching { chain.proceed() as? List<*> }.getOrNull()
+        SelfTest.RawEvidence.rawAps = raw?.size ?: -1
+        SelfTest.RawEvidence.capturedAt = System.currentTimeMillis()
     }
 
     /**
@@ -249,12 +263,15 @@ class Sensors(
         val wifiClass = kit.findClass(classLoader, WifiManager::class.java.name) ?: return
         kit.install(kit.methodsOf(wifiClass, "getScanResults")) { chain ->
             if (!active()) return@install chain.proceed()
+            captureRawScan(chain)
             runCatching { forgeScanResults() }.getOrElse { emptyList<Any>() }
         }
         // The connected-AP identity still has to move with the injection point.
         val infoClass = kit.findClass(classLoader, "android.net.wifi.WifiInfo") ?: return
         kit.install(kit.methodsOf(infoClass, "getBSSID")) { chain ->
-            if (active()) forgedBssid(chain) else chain.proceed()
+            if (!active()) return@install chain.proceed()
+            runCatching { chain.proceed() as? String }.getOrNull()?.let { SelfTest.RawEvidence.rawBssid = it }
+            forgedBssid(chain)
         }
         val blank = { chain: XposedInterface.Chain -> if (active()) "" else chain.proceed() }
         listOf("getSSID", "getMacAddress").forEach { name ->
@@ -404,7 +421,10 @@ class Sensors(
             if (active()) null else chain.proceed()
         }
         kit.install(kit.methodsOf(telephonyClass, "getAllCellInfo")) { chain ->
-            if (active()) emptyList<Any>() else chain.proceed()
+            if (!active()) return@install chain.proceed()
+            val raw = runCatching { chain.proceed() as? List<*> }.getOrNull()
+            SelfTest.RawEvidence.rawCells = raw?.size ?: -1
+            emptyList<Any>()
         }
         hookCellInfoUpdate(telephonyClass)
     }

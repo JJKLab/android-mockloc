@@ -2,6 +2,7 @@ package com.mockloc
 
 import java.util.Calendar
 import java.util.Locale
+import java.util.TimeZone
 
 /**
  * NMEA 0183 sentence construction, kept free of framework types so it can be run and checked on a
@@ -45,7 +46,10 @@ object Nmea {
         speedMps: Double = 0.0,
         courseDeg: Double = 0.0,
     ): List<String> {
-        val cal = Calendar.getInstance().apply { timeInMillis = utcMillis }
+        // NMEA 的时间是 UTC（$GPTM 与世界时钟对齐）；默认时区会整体偏 +8h，
+        // 与 GNSS/系统时间对不上（v1.3.0 走查 P1-7）。
+        val cal = Calendar.getInstance(TimeZone.getTimeZone("UTC"), Locale.ROOT)
+            .apply { timeInMillis = utcMillis }
         val time = String.format(
             Locale.ROOT, "%02d%02d%02d.5",
             cal.get(Calendar.HOUR_OF_DAY), cal.get(Calendar.MINUTE), cal.get(Calendar.SECOND),

@@ -68,6 +68,9 @@ class StackClean(
 
     private fun isDirtyFrame(name: String): Boolean {
         val lower = name.lowercase()
+        // libxposed 的 hook 分发帧类名就叫 k2（Probe 里打成 `k2.intercept`）；精确匹配，避免 "k2"
+        // 作为子串误伤正常类名。模块自身帧（com.mockloc.*）同样不该出现在目标栈里（P1-10）。
+        if (lower == "k2" || lower.endsWith(".k2")) return true
         return DIRTY_TOKENS.any { lower.contains(it) }
     }
 
@@ -76,6 +79,7 @@ class StackClean(
         val DIRTY_TOKENS = listOf(
             "de.robv.android.xposed", "io.github.libxposed", "org.lsposed", "org.meowcat",
             "edxposed", "sandhook", "dobby", "lsplant", "pine.kr", "topjohnwu",
+            "com.mockloc",
         )
     }
 }

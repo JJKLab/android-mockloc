@@ -120,7 +120,8 @@ fun main() {
     check("legacy blindWifi default", Config.blindWifi.render(), "false")
     check("legacy probe default", Config.probe, false)
     check("legacy alt default=-1 自动", Config.alt, -1.0)
-    check("legacy loopInterval default=1", Config.loopIntervalSec, 1)
+    // 只有旧键 INTERVAL 时它必须回退成 loopInterval，否则模块循环停在默认 1s（P2-3）。
+    check("legacy INTERVAL 回退 loopInterval", Config.loopIntervalSec, 20)
     check("legacy route 未激活", Config.routeActive, false)
     check("legacy per-app 点位为空", Config.appPoints.isEmpty(), true)
     check("legacy 阶段三默认", Config.stackClean && Config.gmsSpoof &&
@@ -173,7 +174,9 @@ fun main() {
             label = "杭州",
             targets = emptyList(),
             probe = true,
-            blind = com.mockloc.Scope.All,
+            blindWifi = com.mockloc.Scope.All,
+            blindCell = com.mockloc.Scope.All,
+            blindBle = com.mockloc.Scope.All,
         )
     )
     Config.refresh()
@@ -192,7 +195,9 @@ fun main() {
             lng = "120.1927132",
             label = "杭州",
             targets = emptyList(),
-            blind = com.mockloc.Scope.only(listOf("com.autonavi.minimap", "com.sankuai.meituan")),
+            blindWifi = com.mockloc.Scope.only(listOf("com.autonavi.minimap", "com.sankuai.meituan")),
+            blindCell = com.mockloc.Scope.only(listOf("com.autonavi.minimap", "com.sankuai.meituan")),
+            blindBle = com.mockloc.Scope.only(listOf("com.autonavi.minimap", "com.sankuai.meituan")),
         )
     )
     Config.refresh()
@@ -202,6 +207,28 @@ fun main() {
     check("按包致盲 不命中微信", Config.blindWifiFor("com.tencent.mm"), false)
     check("按包致盲 不命中 null", Config.blindWifiFor(null), false)
     check("空 targets 仍对任意包生效", Config.shouldSpoof("com.autonavi.minimap"), true)
+
+    // 三路致盲 + 掐网必须能独立表达（v1.3.0 走查 P1-1/P1-2）：旧渲染器把同一个作用域写进
+    // 三行 MOCKLOC_BLIND_*，App 无法只开基站/BLE；NETCUT 从致盲派生，开全局致盲会清掉掐网。
+    Thread.sleep(1100)
+    file.writeText(
+        com.mockloc.ModuleBridge.render(
+            enabled = true,
+            lat = "31.2304000",
+            lng = "121.4737000",
+            label = "独立",
+            targets = emptyList(),
+            blindWifi = com.mockloc.Scope.only(listOf("com.autonavi.minimap")),
+            blindCell = com.mockloc.Scope.All,
+            blindBle = com.mockloc.Scope.None,
+            netcut = listOf("com.sankuai.meituan"),
+        )
+    )
+    Config.refresh()
+    check("独立致盲 WiFi 按包", Config.blindWifi.render(), "com.autonavi.minimap")
+    check("独立致盲基站 全部", Config.blindCell.render(), "true")
+    check("独立致盲 BLE 关", Config.blindBle.render(), "false")
+    check("独立掐网名单", Config.netcutPkgs, setOf("com.sankuai.meituan"))
 
     // The new v2 keys must survive the same round trip: whatever render() emits, the parser reads
     // back - and LOOP_INTERVAL is the key the root module's boot loop now owns, so a renderer that

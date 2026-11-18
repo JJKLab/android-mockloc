@@ -61,10 +61,10 @@ class AmapSdk(
             // Aligning the fields here as well means the first read of an object also repairs the
             // two paths that never go through a getter: the gcj field reader and the native engine.
             if (alignGcj) alignFields(clazz, chain.thisObject)
-            Config.currentLat
+            out()[0]
         }
-        hits += stub(clazz, "getLongitude") { Config.currentLng }
-        hits += stub(clazz, "getAccuracy") { Config.accuracy }
+        hits += stub(clazz, "getLongitude") { out()[1] }
+        hits += stub(clazz, "getAccuracy") { Config.accuracyFor(pkg) }
         hits += stub(clazz, "getAltitude") { ALTITUDE_M }
         hits += stub(clazz, "getProvider") { GPS }
         hits += stub(clazz, "getSource") { GPS }
@@ -72,9 +72,9 @@ class AmapSdk(
 
         // Write side: the field has to hold the fake value too, or a copy-ctor, a log line or the
         // native engine's GetDoubleField reads the truth out from under the getters.
-        hits += forceArg(clazz, "setLatitude") { Config.currentLat }
-        hits += forceArg(clazz, "setLongitude") { Config.currentLng }
-        hits += forceArg(clazz, "setAccuracy") { Config.accuracy }
+        hits += forceArg(clazz, "setLatitude") { out()[0] }
+        hits += forceArg(clazz, "setLongitude") { out()[1] }
+        hits += forceArg(clazz, "setAccuracy") { Config.accuracyFor(pkg) }
         hits += forceArg(clazz, "setProvider") { GPS }
         hits += forceArg(clazz, "setSource") { GPS }
         if (alignGcj) {
@@ -137,7 +137,14 @@ class AmapSdk(
 
     private fun active() = SpoofLogic.isActive(pkg)
 
-    private fun gcj() = CoordTransform.wgs84ToGcj02(Config.currentLat, Config.currentLng)
+    /** 该 App 最终读到的坐标（含独立点位、抖动与输出坐标系换算）——与系统 Location 层同源（P1-11）。 */
+    private fun out(): DoubleArray = Config.currentOutCoordsFor(pkg)
+
+    /** Amap bean 的 WGS 字段语义：默认模式下就是 out()；GCJ/BD09 模式下仍给 WGS 等价点，
+     *  让 Amap 自己的 WGS→GCJ 转换与系统层不打架。 */
+    private fun wgs(): DoubleArray = doubleArrayOf(Config.currentLatFor(pkg), Config.currentLngFor(pkg))
+
+    private fun gcj(): DoubleArray = CoordTransform.wgs84ToGcj02(wgs()[0], wgs()[1])
 
     /**
      * `AmapLocation` carries both datums as plain fields: `latitude/longitude` (WGS-84, what the
@@ -146,7 +153,7 @@ class AmapSdk(
      */
     private fun alignFields(clazz: Class<*>, instance: Any?) {
         if (instance == null) return
-        val wgs = doubleArrayOf(Config.currentLat, Config.currentLng)
+        val wgs = out()
         val gcj = gcj()
         putField(clazz, instance, "latitude", wgs[0])
         putField(clazz, instance, "longitude", wgs[1])

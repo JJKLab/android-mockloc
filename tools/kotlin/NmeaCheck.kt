@@ -89,6 +89,13 @@ fun main() {
     check("GGA 读回坐标与写入一致（±1e-4°）", roundTripOk)
     check("RMC 有效位 A 且速度/航向 0（与静止自洽）", rmcValidOk)
 
+    // ---- 时间必须是 UTC（v1.3.0 走查 P1-7）----
+    // 2026-11-18T12:34:56Z == 1_795_005_296_000 ms；用默认时区（如 +8）会给出 203456.5。
+    val utcSentences = Nmea.sentences(lat, lon, 1_795_005_296_000L, Sky.SATS)
+    val utcTime = utcSentences.first { it.startsWith("\$GPGGA") }
+        .substringBefore('*').split(',')[1]
+    check("NMEA 时间是 UTC", utcTime == "123456.5", utcTime)
+
     // ---- geometry: slant range must follow elevation, and stay inside the GPS shell ----
     val overhead = Sky.travelNanos(90.0) / 1e6
     val low = Sky.travelNanos(8.0) / 1e6
@@ -99,6 +106,24 @@ fun main() {
         Sky.travelNanos(74.0) < Sky.travelNanos(41.0) && Sky.travelNanos(41.0) < Sky.travelNanos(8.0))
 
     // ---- the catalog must be internally consistent ----
+    // ---- GNSS 时间基准自洽（v1.3.0 走查 P1-12）----
+    val rxNanos = 4_321_000_000_000L
+    val timeBase = Sky.timeBase(rxNanos, now)
+    var pseudorangeOk = true
+    for (sat in Sky.SATS) {
+        val pr = timeBase.pseudorangeMeters(sat.elevationDeg)
+        if (abs(pr - Sky.pathMeters(sat.elevationDeg)) > 1.0) {
+            println("  卫星 ${sat.svid} 反推伪距 $pr 与几何斜距 ${Sky.pathMeters(sat.elevationDeg)} 不符")
+            pseudorangeOk = false
+        }
+    }
+    check("GNSS 反推伪距 = 几何斜距", pseudorangeOk)
+    check("fullBias 与 timeNanos 同量级", abs(timeBase.fullBiasNanos) < 1e15, "${timeBase.fullBiasNanos}")
+    check("receivedSvTime 在 GPS 周内", Sky.SATS.all {
+        val r = timeBase.receivedSvTimeNanos(it.elevationDeg)
+        r >= 0 && r < 604_800L * 1_000_000_000L
+    })
+
     check("星历 svid 不重复", Sky.SATS.map { it.svid }.distinct().size == Sky.SATS.size)
     check("星历 C/N0 随仰角递减",
         Sky.SATS.zipWithNext().all { (a, b) ->

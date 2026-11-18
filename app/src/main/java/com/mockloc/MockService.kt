@@ -21,7 +21,6 @@ import kotlin.math.cos
 import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.math.sqrt
-import kotlin.random.Random
 
 /**
  * In-app test provider: the tier that works without root, because the app-op is granted by the
@@ -51,6 +50,14 @@ class MockService : Service() {
 
     /** ROOT 巡检：注入经持久 su 会话（identity=0），不建 App 侧 test provider。 */
     private var patrolMode = false
+
+    /**
+     * 最近一次实际喂出的点。巡检与读回验收拿它当判据，而不是中心点：路线推进与抖动都会让
+     * provider 合法地离开中心，用中心当判据会把正常移动误判成漂移（v1.3.0 走查 P0-1/P0-2）。
+     */
+    @Volatile private var fedLat = 0.0
+
+    @Volatile private var fedLng = 0.0
 
     // Started-only service; the interface is mandatory on Service.
     override fun onBind(intent: Intent?) = null
@@ -108,9 +115,19 @@ class MockService : Service() {
         running = true
         paused = true
         handler.removeCallbacksAndMessages(null)
-        val lm = getSystemService(LOCATION_SERVICE) as? LocationManager ?: return
-        providerNames.forEach { name ->
-            runCatching { lm.setTestProviderEnabled(name, false) }
+        if (patrolMode) {
+            // root 注册的 provider 归 root 身份管，App 侧 setTestProviderEnabled 静默无效——
+            // 不经过 su 关，通知会写"目标 App 拿到真实位置"而实际还在喂（v1.3.0 走查 P1-4）。
+            RootInjector.SuSession.send(
+                providerNames.map { "cmd location providers set-test-provider-enabled $it false" },
+            )
+        } else {
+            val lm = getSystemService(LOCATION_SERVICE) as? LocationManager
+            if (lm != null) {
+                providerNames.forEach { name ->
+                    runCatching { lm.setTestProviderEnabled(name, false) }
+                }
+            }
         }
         getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_PAUSED, true).apply()
         notify(buildNotification())
@@ -218,18 +235,17 @@ class MockService : Service() {
     }
 
     /**
-     * Route mode (REFACTOR-PLAN 2.3): the route and its epoch anchor live in the bridge's prefs
-     * (same file), so the provider loop samples the same wall-clock position every tier sees.
-     * Speed and course ride in the fix, which is what makes the movement read as movement.
+     * 本 tick 要喂的点：路线推进 + 确定性抖动，算法与档 3 共用 [Config.feedPoint]。
+     * 路线状态与纪元锚点读 bridge prefs（与 root 模块/渲染器同源于 App 的选点），
+     * 中心点/半径用本服务的 spec——档 0 在无 root 时是唯一管线，不能依赖 conf 镜像。
      */
-    private fun routeSample(nowMs: Long): Route.Sample? {
+    private fun feedPoint(nowMs: Long): Config.FeedPoint {
         val p = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val waypoints = Route.decode(p.getString(ModuleBridge.KEY_ROUTE_WPTS, "").orEmpty())
         val started = p.getString(ModuleBridge.KEY_ROUTE_STARTED, "0").orEmpty().toLongOrNull() ?: 0L
         val speed = p.getString(ModuleBridge.KEY_SPEED, "1.4").orEmpty().toDoubleOrNull() ?: 1.4
         val loop = p.getBoolean(ModuleBridge.KEY_ROUTE_LOOP, false)
-        if (waypoints.size < 2 || started <= 0L) return null
-        return Route.sampleElapsed(waypoints, speed, loop, started, nowMs)
+        return Config.feedPoint(lat, lng, radius, waypoints, speed, loop, started, nowMs)
     }
 
     /** Great-circle distance in metres, good enough at the 200m threshold this guards. */
@@ -245,6 +261,9 @@ class MockService : Service() {
      * Read-back is no longer just a log line: a missing or drifted provider is healed on the spot
      * (re-register + immediate fix). Backoff after MAX_HEAL_FAILS consecutive failures keeps a
      * broken environment from churning a remove/add cycle every second.
+     *
+     * 判据是"最近一次应喂点"（[fedLat]/[fedLng]），不是中心点：路线与抖动都会让 provider 合法地
+     * 离开中心，用中心当判据会把正常移动当成漂移并每 5s 拉回起点（v1.3.0 走查 P0-1）。
      */
     private fun patrol(lm: LocationManager) {
         if (!running || paused) return
@@ -256,18 +275,18 @@ class MockService : Service() {
             val stale = loc != null &&
                 System.currentTimeMillis() - loc.time > HEAL_STALE_LIMIT_MS
             val bad = loc == null || stale ||
-                distanceMeters(loc.latitude, loc.longitude, lat, lng) > HEAL_DRIFT_LIMIT_M
+                distanceMeters(loc.latitude, loc.longitude, fedLat, fedLng) > HEAL_DRIFT_LIMIT_M
             if (bad) {
                 healed = true
                 if (patrolMode) {
                     // root 模式自愈同样走 root：重注册 + 立即首喂（App 侧写入进不去 root 的 provider）。
-                    RootInjector.apply(lat, lng, acc, listOf(name), altMeters)
+                    RootInjector.apply(fedLat, fedLng, acc, listOf(name), altMeters)
                 } else {
                     runCatching { lm.removeTestProvider(name) }
                     register(lm, name)
                     runCatching {
                         lm.setTestProviderEnabled(name, true)
-                        lm.setTestProviderLocation(name, buildFix(name, lat, lng, acc))
+                        lm.setTestProviderLocation(name, buildFix(name, fedLat, fedLng, acc))
                     }
                 }
             }
@@ -292,8 +311,8 @@ class MockService : Service() {
         val ages = ArrayList<String>()
         providerNames.forEach { name ->
             val loc = runCatching { lm.getLastKnownLocation(name) }.getOrNull()
-            if (loc != null && abs(loc.latitude - lat) < 1e-6 &&
-                abs(loc.longitude - lng) < 1e-6
+            if (loc != null && abs(loc.latitude - fedLat) < 1e-6 &&
+                abs(loc.longitude - fedLng) < 1e-6
             ) {
                 matched++
                 ages += "$name:${System.currentTimeMillis() - loc.time}ms"
@@ -319,6 +338,8 @@ class MockService : Service() {
         intervalMs = spec.intervalMs
         if (spec.providers.isNotEmpty()) providerNames = spec.providers
         if (spec.lat == 0.0 && spec.lng == 0.0) return stopEverything()
+        fedLat = lat
+        fedLng = lng
 
         val lm = getSystemService(LOCATION_SERVICE) as LocationManager
         patrolMode = spec.rootMode && RootInjector.SuSession.ensure()
@@ -372,19 +393,14 @@ class MockService : Service() {
                     }
                 }
                 lastTickAt = now
-                val sample = routeSample(now)
-                val (baseLat, baseLng) = if (sample != null) {
-                    sample.lat to sample.lng
-                } else if (radius > 0.0) {
-                    val dist = radius * sqrt(Random.nextDouble())
-                    val bearing = Random.nextDouble() * 2.0 * Math.PI
-                    lat + dist * cos(bearing) / 111132.0 to
-                        lng + dist * sin(bearing) / (111412.8 * cos(Math.toRadians(lat)))
-                } else {
-                    lat to lng
-                }
-                val speed = sample?.speedMps?.toFloat() ?: 0f
-                val bearing = sample?.bearingDeg?.toFloat() ?: 0f
+                // 应喂点由 Config.feedPoint 统一计算（路线推进 + 确定性抖动），档 0 与档 3 同源。
+                val p = feedPoint(now)
+                val baseLat = p.lat
+                val baseLng = p.lng
+                fedLat = baseLat
+                fedLng = baseLng
+                val speed = p.speedMps.toFloat()
+                val bearing = p.bearingDeg.toFloat()
                 if (patrolMode) {
                     // ROOT 巡检：每 tick 经持久 su 会话推新 fix（identity=0/android）。
                     val stamp = System.currentTimeMillis()

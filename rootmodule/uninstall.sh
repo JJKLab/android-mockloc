@@ -1,16 +1,14 @@
 #!/system/bin/sh
-PATH=/system/bin:/system/xbin:/sbin:$PATH
-cmd location providers set-test-provider-enabled gps false 2>/dev/null
-cmd location providers set-test-provider-enabled network false 2>/dev/null
-cmd location providers set-test-provider-enabled fused false 2>/dev/null
-cmd location providers remove-test-provider gps 2>/dev/null
-cmd location providers remove-test-provider network 2>/dev/null
-cmd location providers remove-test-provider fused 2>/dev/null
-appops set 2000 android:mock_location deny 2>/dev/null
-appops set 0 android:mock_location deny 2>/dev/null
-# Flush the per-uid DROP rules this module installed before the state file that names them is gone.
-iptables -S OUTPUT 2>/dev/null | grep 'mockloc-netcut' | sed 's/^-A/-D/' | while read -r rule; do
-  sh -c "iptables $rule" 2>/dev/null
-done
-rm -f /data/local/tmp/mockloc.conf
-rm -rf /data/adb/mockloc
+. "${MODDIR}/mockloc-lib.sh"
+
+# 按标记精确摘掉自己的规则（v4+v6 双栈）：旧版只刷 v4 会把 v6 的 DROP 留下来，
+# 卸载后目标 App 仍被断网。不再 blanket flush OUTPUT——那会连带清掉用户其他防火墙规则。
+netcut_teardown
+
+# 停掉可能在跑的开机循环，并清掉一次性 inbox：否则卸载后循环继续推 fix，
+# 重装时旧 inbox 又会把配置复活（v1.3.0 走查 P1-13）。
+if [ -f /data/adb/mockloc/loop.pid ]; then
+  kill "$(cat /data/adb/mockloc/loop.pid)" 2>/dev/null
+  rm -f /data/adb/mockloc/loop.pid
+fi
+rm -f "$INBOX"

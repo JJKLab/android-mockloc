@@ -23,6 +23,17 @@ import android.provider.Settings
  */
 object SelfTest {
 
+    /**
+     * 钩子**之前**的射频证据快照。泄露反推读的是被 Sensors 钩过的 API（永远看到伪造值），
+     * 没有这个快照就分不出"钩子生效"和"根本没装"（v1.3.0 走查 P1-9）。
+     */
+    object RawEvidence {
+        @Volatile var rawAps = -1
+        @Volatile var rawCells = -1
+        @Volatile var rawBssid = ""
+        @Volatile var capturedAt = 0L
+    }
+
     private val probeProviders = listOf(
         LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER, "fused",
     )
@@ -70,8 +81,10 @@ object SelfTest {
     /**
      * Leak probe (REFACTOR-PLAN 3.2): with the probe flag on, read the radio inputs a detecting
      * app would read and report how much real evidence survived. Runs in the *target's* process,
-     * so it answers the question from the detector's side, not ours - "AP=0 基站=0" means the
-     * blinding scope is closed; any count above zero is an open lane, named.
+     * so it answers the question from the detector's side, not ours.
+     *
+     * 必须同时报"钩子前原始值"与"当前读回值"：读回的是被 Sensors 钩过的面，单看它永远闭合，
+     * 分不出钩子生效与未装载（v1.3.0 走查 P1-9）。
      */
     private fun leakProbe(app: Application): String {
         if (!Config.probe) return ""
@@ -86,11 +99,16 @@ object SelfTest {
             @Suppress("DEPRECATION")
             wifi?.connectionInfo?.bssid
         }.getOrNull()
+        val rawAps = RawEvidence.rawAps
+        val rawCells = RawEvidence.rawCells
+        val forged = Config.forgeWifi && (aps ?: 0) > 0
         val verdict = when {
-            (aps ?: 0) == 0 && (cells ?: 0) == 0 -> "致盲面闭合"
-            else -> "有真实射频证据泄露"
+            rawAps <= 0 && rawCells <= 0 -> "无真实射频证据可泄露"
+            forged || ((aps ?: 0) == 0 && (cells ?: 0) == 0) -> "致盲面闭合（钩子已生效）"
+            else -> "有真实射频证据泄露（钩子可能未生效）"
         }
-        return " | 泄露反推: AP=$aps 基站=$cells 已连BSSID=$bssid → $verdict"
+        return " | 泄露反推: 原始AP=$rawAps 当前AP=$aps 原始基站=$rawCells 当前基站=$cells " +
+            "原始BSSID=${RawEvidence.rawBssid} 当前BSSID=$bssid → $verdict"
     }
 
     private fun fmt(value: Double) = "%.4f".format(value)

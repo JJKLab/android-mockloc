@@ -5,6 +5,7 @@ import android.location.LocationManager
 import java.io.File
 import kotlin.math.cos
 import kotlin.math.sin
+import kotlin.math.sqrt
 import kotlin.random.Random
 
 /**
@@ -16,6 +17,12 @@ import kotlin.random.Random
 object Config {
     const val DEFAULT_PATH = "/data/local/tmp/mockloc.conf"
     private const val TTL_MS = 1000L
+
+    /**
+     * 抖动的时间窗：同一窗口内两次取样给出逐位相同的偏移。档 0（MockService 的 provider 循环）
+     * 与档 3（本对象的 hook 取样）因此算出同一个点，而不是各跑一套随机（v1.3.0 走查 P0-3）。
+     */
+    private const val JITTER_WINDOW_MS = 1000L
 
     @Volatile
     var enabled: Boolean = false
@@ -220,6 +227,7 @@ object Config {
         var nextAccuracy = 5f
         var nextAlt = -1.0
         var nextLoopInterval = 1
+        var sawLoopInterval = false
         var nextSpeed = 1.4
         var nextRoute = emptyList<Route.Pt>()
         var nextRouteStarted = 0L
@@ -256,8 +264,15 @@ object Config {
                 "MOCKLOC_RADIUS" -> nextRadius = value.toDoubleOrNull() ?: nextRadius
                 "MOCKLOC_ACC" -> nextAccuracy = value.toFloatOrNull() ?: nextAccuracy
                 "MOCKLOC_ALT" -> nextAlt = value.toDoubleOrNull() ?: nextAlt
-                "MOCKLOC_LOOP_INTERVAL" -> nextLoopInterval = value.toIntOrNull()?.coerceAtLeast(1)
-                    ?: nextLoopInterval
+                "MOCKLOC_LOOP_INTERVAL" -> {
+                    nextLoopInterval = value.toIntOrNull()?.coerceAtLeast(1) ?: nextLoopInterval
+                    sawLoopInterval = true
+                }
+                // 旧键回退：service.sh 也是先 LOOP_INTERVAL 后 INTERVAL，这里保持同一优先级，
+                // 否则只写 INTERVAL 的旧 conf 会让模块循环停在默认 1s（v1.3.0 走查 P2-3）。
+                "MOCKLOC_INTERVAL" -> if (!sawLoopInterval) {
+                    nextLoopInterval = value.toIntOrNull()?.coerceAtLeast(1) ?: nextLoopInterval
+                }
                 "MOCKLOC_PROVIDERS" -> value.split(',').map { it.trim() }.filter { it.isNotEmpty() }
                     .takeIf { it.isNotEmpty() }?.let { nextProviders = it }
                 "MOCKLOC_LABEL" -> nextLabel = value
@@ -382,40 +397,74 @@ object Config {
     @Volatile
     private var jitterDLng = 0.0
 
-    private fun applyJitter() {
+    /** 一个 tick 要喂给 provider 的点：路线推进后的基准 + 确定性抖动。 */
+    data class FeedPoint(
+        val lat: Double,
+        val lng: Double,
+        val speedMps: Double,
+        val bearingDeg: Double,
+        val jitterLat: Double = 0.0,
+        val jitterLng: Double = 0.0,
+    )
+
+    /**
+     * 抖动偏移，按时间窗确定性取种子。真实接收机的坐标不会每毫秒都跳；按 1s 窗口取一次种子，
+     * 既让档 0 与档 3 逐位一致，也避免"同一秒两次抖动相同"的重复 tell。
+     */
+    fun jitterOffset(radius: Double, centerLat: Double, nowMs: Long): Pair<Double, Double> {
+        if (radius <= 0.0) return 0.0 to 0.0
+        val rng = Random(nowMs / JITTER_WINDOW_MS)
+        // sqrt keeps the sample uniform over the disc instead of piling up at the centre.
+        val dist = radius * sqrt(rng.nextDouble())
+        val bearing = rng.nextDouble() * 2.0 * Math.PI
+        return (dist * cos(bearing) / 111132.0) to
+            (dist * sin(bearing) / (111412.8 * cos(Math.toRadians(centerLat))))
+    }
+
+    /**
+     * 唯一的"当前应喂点"算法。档 0（MockService 的 provider 循环）与档 3（本对象的 hook 取样）
+     * 共用同一份实现，消除"两套随机"（v1.3.0 走查 P0-3）。
+     */
+    fun feedPoint(
+        centerLat: Double,
+        centerLng: Double,
+        radius: Double,
+        routeWaypoints: List<Route.Pt>,
+        routeSpeedMps: Double,
+        routeLoop: Boolean,
+        routeStartedMs: Long,
+        nowMs: Long,
+    ): FeedPoint {
         var baseLat = centerLat
         var baseLng = centerLng
+        var speed = 0.0
+        var bearing = 0.0
         // Route mode replaces the centre with the position along the route (REFACTOR-PLAN 2.1);
         // the anchor is wall-clock, so tier-0/2/3 all land on the same spot at the same second.
-        if (routeActive) {
-            val s = Route.sampleElapsed(
-                routeWaypoints, speedMps, routeLoop, routeStartedMs, System.currentTimeMillis(),
-            )
+        if (routeWaypoints.size >= 2 && routeStartedMs > 0L) {
+            val s = Route.sampleElapsed(routeWaypoints, routeSpeedMps, routeLoop, routeStartedMs, nowMs)
             if (s != null) {
                 baseLat = s.lat
                 baseLng = s.lng
-                currentSpeedMps = s.speedMps
-                currentBearingDeg = s.bearingDeg
-            } else {
-                currentSpeedMps = 0.0
-                currentBearingDeg = 0.0
+                speed = s.speedMps
+                bearing = s.bearingDeg
             }
-        } else {
-            currentSpeedMps = 0.0
-            currentBearingDeg = 0.0
         }
-        if (radius <= 0.0) {
-            jitterDLat = 0.0
-            jitterDLng = 0.0
-        } else {
-            // sqrt keeps the sample uniform over the disc instead of piling up at the centre.
-            val dist = radius * kotlin.math.sqrt(Random.nextDouble())
-            val bearing = Random.nextDouble() * 2.0 * Math.PI
-            jitterDLat = dist * cos(bearing) / 111132.0
-            jitterDLng = dist * sin(bearing) / (111412.8 * cos(Math.toRadians(centerLat)))
-        }
-        currentLat = baseLat + jitterDLat
-        currentLng = baseLng + jitterDLng
+        val (jLat, jLng) = jitterOffset(radius, centerLat, nowMs)
+        return FeedPoint(baseLat + jLat, baseLng + jLng, speed, bearing, jLat, jLng)
+    }
+
+    /** 委托给 [feedPoint]，`nowMs` 显式传入以便 JVM 断言与刷新路径逐位对齐。 */
+    fun applyJitter(nowMs: Long = System.currentTimeMillis()) {
+        val p = feedPoint(
+            centerLat, centerLng, radius, routeWaypoints, speedMps, routeLoop, routeStartedMs, nowMs,
+        )
+        currentLat = p.lat
+        currentLng = p.lng
+        currentSpeedMps = p.speedMps
+        currentBearingDeg = p.bearingDeg
+        jitterDLat = p.jitterLat
+        jitterDLng = p.jitterLng
     }
 
     /** A per-app fixed point overrides the global one entirely (REFACTOR-PLAN 2.2). */

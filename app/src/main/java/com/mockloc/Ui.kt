@@ -199,7 +199,8 @@ class Ui(private val context: Context) {
     fun chip(label: String, state: State) = TextView(context).apply {
         val (mark, fg, bg) = when (state) {
             State.OK -> Triple("✓", Md.scheme.onTertiaryContainer, Md.scheme.tertiaryContainer)
-            State.WARN -> Triple("!", 0xFF6B4E00.toInt(), 0xFFFFEFC4.toInt())
+            // 走 secondary 容器而不是写死的浅暖色：暗色下硬编码浅色会变成一块白（P2-6）。
+            State.WARN -> Triple("!", Md.scheme.onSecondaryContainer, Md.scheme.secondaryContainer)
             State.OFF -> Triple("–", Md.scheme.onSurfaceVariant, Md.scheme.surfaceHigh)
             State.BAD -> Triple("✗", Md.scheme.onErrorContainer, Md.scheme.errorContainer)
         }

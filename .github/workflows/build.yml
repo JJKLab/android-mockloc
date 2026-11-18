@@ -34,6 +34,11 @@ jobs:
       - name: Manifest and resource XML checks
         run: python tools/tests/test_manifest.py
 
+      # 渲染器 ↔ Config 键契约：漏一个键就是"App 设了、模块当没设"的静默重置（P1-1/P1-2 类）。
+      # 用文本解析而不是 Kotlin 编译，因为 CI 没有本仓库 .toolchain 里的 android.jar/kotlinc。
+      - name: Renderer/Config key contract
+        run: python tools/tests/test_renderer_contract.py
+
 
   apk:
     needs: logic
@@ -99,8 +104,10 @@ jobs:
           cp -r rootmodule/. "$STAGE/"
           mkdir -p "$STAGE/META-INF/com/google/android"
           # The installer glue is owned by Magisk; KernelSU/APatch read the same module format.
+          # 固定在具体 commit（P1-15）：master 是移动目标，构建不可复现、也无法审查供应链。
+          # 该文件自 2020-10-28 起未再改动（GitHub API 核对），所以这个 pin 事实上是稳定的。
           curl -fsSL -o "$STAGE/META-INF/com/google/android/update-binary" \
-            https://raw.githubusercontent.com/topjohnwu/Magisk/master/scripts/module_installer.sh
+            https://raw.githubusercontent.com/topjohnwu/Magisk/cf47214ee4912ed1538fbea3d09ba9dd9b5746b0/scripts/module_installer.sh
           chmod 755 "$STAGE/META-INF/com/google/android/update-binary"
           printf '#MAGISK\n' > "$STAGE/META-INF/com/google/android/updater-script"
           for f in "$STAGE"/*.sh; do chmod 755 "$f"; done

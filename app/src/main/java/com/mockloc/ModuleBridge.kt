@@ -68,23 +68,55 @@ class ModuleBridge(context: Context) {
     fun probe(): Boolean = prefs.getBoolean(KEY_PROBE, false)
 
     /**
-     * Blinding WiFi/cell is the switch that actually moves 高德地图's blue dot (2026-10-27: with it
-     * on, the dot held at the injected point through a fresh locate, a pull-to-refresh and two
+     * Blinding WiFi/cell/BLE is the switch that actually moves 高德地图's blue dot (2026-10-27: with
+     * it on, the dot held at the injected point through a fresh locate, a pull-to-refresh and two
      * minutes; with it off the engine re-derived the real place from its own server lookup). It
      * breaks the host app's own WiFi features, so it is scoped per package - and either way it has
      * to survive a sync, which means it belongs in the renderer.
+     *
+     * 三路独立（v1.3.0 走查 P1-1）：旧版只有一个合并键，渲染器把同一个值写进
+     * MOCKLOC_BLIND_WIFI/CELL/BLE 三行，App 无法只开基站或 BLE。现在每路一个键，
+     * 旧配置（只有 `module_blind`）继续作为三路的回退值，行为不变。
      */
-    fun blindScope(): Scope = Scope.parse(prefs.getString(KEY_BLIND, "false").orEmpty())
+    private fun legacyBlind(): Scope = Scope.parse(prefs.getString(KEY_BLIND, "false").orEmpty())
 
-    fun setBlindScope(scope: Scope) {
-        prefs.edit().putString(KEY_BLIND, scope.render()).apply()
+    private fun blindKeyScope(key: String): Scope =
+        prefs.getString(key, null)?.let { Scope.parse(it) } ?: legacyBlind()
+
+    fun blindWifiScope(): Scope = blindKeyScope(KEY_BLIND_WIFI)
+    fun blindCellScope(): Scope = blindKeyScope(KEY_BLIND_CELL)
+    fun blindBleScope(): Scope = blindKeyScope(KEY_BLIND_BLE)
+
+    fun setBlindWifiScope(scope: Scope) {
+        prefs.edit().putString(KEY_BLIND_WIFI, scope.render()).apply()
         store()
     }
 
-    /** Convenience for the "blind everything in scope" case. */
-    fun setBlind(on: Boolean) = setBlindScope(if (on) Scope.All else Scope.None)
+    fun setBlindCellScope(scope: Scope) {
+        prefs.edit().putString(KEY_BLIND_CELL, scope.render()).apply()
+        store()
+    }
 
-    fun blind(): Boolean = blindScope().enabled
+    fun setBlindBleScope(scope: Scope) {
+        prefs.edit().putString(KEY_BLIND_BLE, scope.render()).apply()
+        store()
+    }
+
+    /**
+     * 掐网名单独立于致盲（v1.3.0 走查 P1-2）：旧版从合并致盲键派生，导致开全局致盲会静默清掉
+     * 已配的掐网名单。现在单独一个键；旧配置仍从 `module_blind` 回退。
+     */
+    fun netcutScope(): Scope {
+        val raw = prefs.getString(KEY_NETCUT, null) ?: return legacyBlind()
+        return Scope.parse(raw)
+    }
+
+    fun netcutPkgs(): List<String> = netcutScope().packages.toList()
+
+    fun setNetcutPkgs(list: List<String>) {
+        prefs.edit().putString(KEY_NETCUT, Scope.only(list).render()).apply()
+        store()
+    }
 
     // ---------------------------------------------------------------- route (REFACTOR-PLAN 2.1/2.3)
 
@@ -247,9 +279,11 @@ class ModuleBridge(context: Context) {
         targets = targets(),
         providers = prefs.getString(KEY_PROVIDERS, DEFAULT_PROVIDERS).orEmpty(),
         probe = prefs.getBoolean(KEY_PROBE, false),
-        blind = blindScope(),
-        // ROOT-only 管线的"抽空输入"=按 uid 掐网，名单与 LSP 致盲同源（策略页一次保存两用）。
-        netcut = blindScope().packages.toList(),
+        blindWifi = blindWifiScope(),
+        blindCell = blindCellScope(),
+        blindBle = blindBleScope(),
+        // ROOT-only 管线的"抽空输入"=按 uid 掐网，名单独立于致盲（策略页/状态页分开配）。
+        netcut = netcutPkgs(),
         global = prefs.getBoolean(KEY_GLOBAL, false),
         acc = prefs.getString(KEY_ACC, DEFAULT_ACC).orEmpty(),
         radius = prefs.getString(KEY_RADIUS, DEFAULT_RADIUS).orEmpty(),
@@ -282,7 +316,11 @@ class ModuleBridge(context: Context) {
         const val KEY_PROVIDERS = "module_providers"
         const val KEY_CONF = "module_conf"
         const val KEY_PROBE = "module_probe"
-        const val KEY_BLIND = "module_blind"
+        const val KEY_BLIND = "module_blind" // 旧版合并键，仅作三路回退
+        const val KEY_BLIND_WIFI = "module_blind_wifi"
+        const val KEY_BLIND_CELL = "module_blind_cell"
+        const val KEY_BLIND_BLE = "module_blind_ble"
+        const val KEY_NETCUT = "module_netcut"
         const val KEY_GLOBAL = "module_global"
         const val KEY_ACC = "module_acc"
         const val KEY_RADIUS = "module_radius"
@@ -319,7 +357,9 @@ class ModuleBridge(context: Context) {
             targets: List<String>,
             providers: String = DEFAULT_PROVIDERS,
             probe: Boolean = false,
-            blind: Scope = Scope.None,
+            blindWifi: Scope = Scope.None,
+            blindCell: Scope = Scope.None,
+            blindBle: Scope = Scope.None,
             netcut: List<String> = emptyList(),
             global: Boolean = false,
             acc: String = DEFAULT_ACC,
@@ -351,9 +391,9 @@ class ModuleBridge(context: Context) {
             appendLine("MOCKLOC_TARGETS=${targets.joinToString(",")}")
             appendLine("MOCKLOC_LABEL=$label")
             appendLine("MOCKLOC_GNSS=true")
-            appendLine("MOCKLOC_BLIND_WIFI=${blind.render()}")
-            appendLine("MOCKLOC_BLIND_CELL=${blind.render()}")
-            appendLine("MOCKLOC_BLIND_BLE=${blind.render()}")
+            appendLine("MOCKLOC_BLIND_WIFI=${blindWifi.render()}")
+            appendLine("MOCKLOC_BLIND_CELL=${blindCell.render()}")
+            appendLine("MOCKLOC_BLIND_BLE=${blindBle.render()}")
             appendLine("MOCKLOC_NETCUT=${netcut.joinToString(",")}")
             appendLine("MOCKLOC_PROBE=${if (probe) "true" else "false"}")
             appendLine("MOCKLOC_SPEED_MPS=${if (speed.isBlank()) DEFAULT_SPEED else speed}")

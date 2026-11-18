@@ -291,7 +291,20 @@ def app_readback(t):
     return (out or "").strip()
 
 
+def validated_interval(args):
+    """interval 进的是 shell 的 `while [ $LOOP_INTERVAL -gt 0 ]`，<=0/NaN 会让守护空转不注入；
+    负值还能过 argparse 的 float，所以必须显式校验（v1.3.0 走查 P1-17）。"""
+    try:
+        iv = float(args.interval)
+    except (TypeError, ValueError):
+        raise DeviceError(f"--interval 必须是秒数，收到 {args.interval!r}")
+    if iv != iv or not iv > 0.0:  # NaN 或 0/负数都会让模块循环停摆
+        raise DeviceError(f"--interval 必须 > 0，收到 {args.interval!r}")
+    return iv
+
+
 def cmd_set(t, args):
+    validated_interval(args)
     if args.place:
         lat, lng, label = resolve_place(args.place, args.city or "", load_key(args.key), args.datum, args.first)
     elif args.coord:
@@ -362,12 +375,17 @@ def cmd_watch(t, args):
         return
     if args.dry_run:
         return
-    print(f"[watch] {label} 半径 {args.radius:.0f}m 每 {args.interval:.0f}s 刷新，Ctrl-C 停")
+    # 用 provider_list 而不是 args.provider：后者默认 None，直接传会拼出
+    # `set-test-provider-location None ...` 而必失败（v1.3.0 走查 P1-17）。
+    providers = provider_list(args)
+    print(f"[watch] {label} 半径 {args.radius:.0f}m 每 {args.interval:.0f}s "
+          f"刷新 providers={providers}，Ctrl-C 停")
     try:
         while True:
             time.sleep(args.interval)
             jlat, jlng = jitter(lat, lng, args.radius)
-            inject(t, args.provider, jlat, jlng, args.accuracy)
+            for name in providers:
+                inject(t, name, jlat, jlng, args.accuracy)
     except KeyboardInterrupt:
         print("\n[watch] stopped")
 

@@ -28,6 +28,9 @@ import org.osmdroid.views.overlay.Marker
 import kotlin.concurrent.thread
 import kotlin.math.abs
 
+/** 致盲三路：策略页的三个独立开关（v1.3.0 走查 P1-1）。 */
+private enum class BlindKind { WIFI, CELL, BLE }
+
 /**
  * Five tabs: search, pick on the map, favourites, which apps are affected, and what the device is
  * actually reporting. Views rather than Compose on purpose - this file is compiled and type-checked
@@ -65,6 +68,10 @@ class MainActivity : Activity() {
     private lateinit var diagToggleBtn: Button
     private var diagExpanded = false
     private lateinit var statusDetailText: TextView
+    private lateinit var riskSummary: TextView
+    private lateinit var riskRows: LinearLayout
+    private lateinit var riskToggleBtn: Button
+    private var riskExpanded = false
     private lateinit var keyField: EditText
     private lateinit var queryField: EditText
     private lateinit var pasteField: EditText
@@ -104,6 +111,9 @@ class MainActivity : Activity() {
     private val policyChecked = linkedSetOf<String>()
     private var policyIncludeSystem = false
     private var policyLoaded = false
+    private lateinit var blindWifiBtn: Button
+    private lateinit var blindCellBtn: Button
+    private lateinit var blindBleBtn: Button
 
     /** The route page carries a whole second MapView; built lazily on first tab show. */
     private var routePageBuilt = false
@@ -180,6 +190,16 @@ class MainActivity : Activity() {
         super.onPause()
     }
 
+    private fun isDebuggable(): Boolean =
+        (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+
+    override fun onDestroy() {
+        // osmdroid 的 MapView 持有瓦片下载线程与位图缓存，页面重建时不 onDetach 会泄漏（P2-7）。
+        runCatching { map.onDetach() }
+        if (routePageBuilt) runCatching { routeMap.onDetach() }
+        super.onDestroy()
+    }
+
     // ---------------------------------------------------------------- ui
 
     private fun buildUi(): View {
@@ -227,7 +247,8 @@ class MainActivity : Activity() {
                 renderAppOpChips()
                 if (!policyLoaded) {
                     policyLoaded = true
-                    policyChecked.addAll(bridge.blindScope().packages)
+                    // 勾选框现在只管掐网名单；致盲三路由上方三个按钮单独设（P1-1/P1-2）。
+                    policyChecked.addAll(bridge.netcutPkgs())
                     loadPolicyList()
                 }
             },
@@ -268,76 +289,6 @@ class MainActivity : Activity() {
         } to column
     }
 
-    private fun searchPage(): View {
-        val (scroll, column) = scrollColumn()
-
-        val keyCard = ui.card()
-        keyCard.addView(ui.title("高德 Web服务 key"))
-        keyField = EditText(this).apply {
-            hint = "只存本机私有 prefs，不写 world-readable 配置"
-            setText(prefs.getString(KEY_AMAP, ""))
-            isSingleLine = true
-        }
-        keyCard.addView(keyField)
-        keyCard.addView(ui.button("保存 key") {
-            prefs.edit().putString(KEY_AMAP, keyField.text.toString().trim()).apply()
-            toast("key 已存到本机私有配置")
-        })
-        column.addView(keyCard)
-
-        val searchCard = ui.card()
-        searchCard.addView(ui.title("搜地点"))
-        val goRow = ui.row()
-        queryField = EditText(this).apply { hint = "地点，如 东方明珠"; isSingleLine = true }
-        goRow.addView(queryField, ui.fill())
-        goRow.addView(ui.button("搜索", Ui.Btn.PRIMARY) { runSearch() })
-        searchCard.addView(goRow)
-        // Same reason as the policy list: a ListView inside this ScrollView cannot scroll, so
-        // anything past the first screenful of results was unreachable.
-        hitRows = ui.column()
-        searchCard.addView(hitRows)
-        searchCard.addView(ui.hint("点一条即注入；高德给的是 GCJ-02，注入前自动反算 WGS-84"))
-        column.addView(searchCard)
-
-        val pasteCard = ui.card()
-        pasteCard.addView(ui.title("粘贴坐标"))
-        val pasteRow = ui.row()
-        pasteField = EditText(this).apply {
-            hint = "31.239703,121.499733"
-            isSingleLine = true
-            addTextChangedListener(object : android.text.TextWatcher {
-                override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
-                override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
-                override fun afterTextChanged(s: android.text.Editable?) = updatePastePreview()
-            })
-        }
-        pasteRow.addView(pasteField, ui.fill())
-        val pasteToggle = Button(this)
-        pasteToggle.setOnClickListener {
-            pasteGcj = !pasteGcj
-            prefs.edit().putBoolean(KEY_PASTE_GCJ, pasteGcj).apply()
-            ui.styleSegment(pasteToggle, selected = false)
-            pasteToggle.text = if (pasteGcj) "GCJ-02" else "WGS-84"
-            updatePastePreview()
-        }
-        pasteGcj = prefs.getBoolean(KEY_PASTE_GCJ, true)
-        pasteToggle.text = if (pasteGcj) "GCJ-02" else "WGS-84"
-        ui.styleSegment(pasteToggle, selected = false)
-        pasteRow.addView(pasteToggle)
-        pasteCard.addView(pasteRow)
-        // 双坐标实时预览：贴错坐标系（WGS 当 GCJ）会差 ~500m，看着它贴就不会错。
-        pastePreview = TextView(this).apply {
-            textSize = 12f
-            setTextColor(ui.bodyColor())
-            setPadding(0, ui.dp(6), 0, 0)
-        }
-        pasteCard.addView(pastePreview)
-        pasteCard.addView(ui.button("按这组坐标注入", Ui.Btn.PRIMARY) { injectPasted() })
-        pasteCard.addView(ui.hint("国内网页地图上抄下来的一般是 GCJ-02；Google Earth/GPS 工具抄的是 WGS-84，贴前看一眼预览行"))
-        column.addView(pasteCard)
-        return scroll
-    }
-
     private fun mapPage(): View {
         // Google Maps 式布局：全屏地图 + 顶部悬浮搜索条 + 底部选点面板/搜索浮层。
         val page = FrameLayout(this)
@@ -347,8 +298,10 @@ class MainActivity : Activity() {
         org.osmdroid.config.Configuration.getInstance().apply {
             userAgentValue =
                 "Mozilla/5.0 (Linux; Android 16) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Mobile Safari/537.36"
-            isDebugTileProviders = true
-            isDebugMapTileDownloader = true
+            // 只在 debug 构建开：release 里开着会往 logcat 刷瓦片 provider/下载器细节（P2-2）。
+            // 用 FLAG_DEBUGGABLE 而不是 BuildConfig：本地 kotlinc 检查没有 AGP 生成的 BuildConfig。
+            isDebugTileProviders = isDebuggable()
+            isDebugMapTileDownloader = isDebuggable()
         }
         mapSrc = MapSource.entries.firstOrNull {
             it.name == prefs.getString(KEY_MAP_SOURCE, "AMAP")
@@ -617,6 +570,18 @@ class MainActivity : Activity() {
             }
         })
         page.addView(filterRow)
+
+        // 致盲三路独立开关：关 → 全部 → 按所选（勾选的包）。
+        val blindRow = ui.row().apply { setPadding(ui.dp(12), ui.dp(4), ui.dp(12), 0) }
+        blindWifiBtn = ui.button("致盲WiFi") { cycleBlind(BlindKind.WIFI) }
+        blindCellBtn = ui.button("致盲基站") { cycleBlind(BlindKind.CELL) }
+        blindBleBtn = ui.button("致盲BLE") { cycleBlind(BlindKind.BLE) }
+        blindRow.addView(blindWifiBtn, ui.fill())
+        blindRow.addView(blindCellBtn, ui.fill())
+        blindRow.addView(blindBleBtn, ui.fill())
+        page.addView(blindRow)
+        renderBlindChips()
+
         policyCount = TextView(this).apply {
             textSize = 12f
             setTextColor(ui.hintColor())
@@ -632,9 +597,9 @@ class MainActivity : Activity() {
         val intro = ui.card()
         intro.addView(ui.title("哪些 App 要抽空输入"))
         intro.addView(ui.body(
-            "勾上的包会屏蔽自己的 WiFi/基站/BLE 扫描结果，逼它落回系统定位——实测只有高德这类" +
-                "「自己算路」的 App 需要。没勾的 App 不受影响。「位置」按钮给它设独立点位与输出坐标系" +
-                "（默认 WGS84；瓦片直读型 App 选 GCJ02）。",
+            "勾上的包会被 ROOT 守护按 uid 掐网（实测对高德这类「自己算路」的 App 有效）；" +
+                "致盲 WiFi/基站/BLE 用上方三个按钮单独设（关 → 全部 → 按所选）。" +
+                "「位置」按钮给它设独立点位与输出坐标系（默认 WGS84；瓦片直读型 App 选 GCJ02）。",
         ))
         policyList.addHeaderView(listHeader(intro))
         val legend = ui.card()
@@ -723,14 +688,14 @@ class MainActivity : Activity() {
             needle.isEmpty() || label.lowercase().contains(needle) || pkg.lowercase().contains(needle)
         })
         policyCount.text = buildString {
-            append("共 ${policyAdapter.shown.size} 个可选项，已选 ${policyChecked.size} 个致盲")
+            append("共 ${policyAdapter.shown.size} 个可选项，已选 ${policyChecked.size} 个掐网")
             if (policyPointed.isNotEmpty()) append("，${policyPointed.size} 个独立点位")
             if (!policyIncludeSystem) append("（已隐藏系统 App）")
             if (policyLoadMs > 0) append(" · 列表加载 ${policyLoadMs}ms")
             // "作用域内全部" is not expressible as a ticked list, so saving from here would quietly
             // narrow it. Say so instead of letting the write look like a no-op that lost their setting.
-            if (bridge.blindScope().mode == com.mockloc.Scope.Mode.ALL) {
-                append("\n当前生效的是「作用域内全部」；在这里保存会改成只致盲勾上的包")
+            if (bridge.netcutScope().mode == com.mockloc.Scope.Mode.ALL) {
+                append("\n当前生效的是「作用域内全部」；在这里保存会改成只掐网勾上的包")
             }
         }
     }
@@ -792,13 +757,18 @@ class MainActivity : Activity() {
 
     private fun saveBlindScope() {
         val picked = policyChecked.toList()
-        bridge.setBlindScope(Scope.only(picked))
+        bridge.setNetcutPkgs(picked)
         toast(
-            if (picked.isEmpty()) "已清空：没有 App 需要抽空输入"
-            else "已选 ${picked.size} 个（ROOT 守护=掐网；LSP=进程内致盲）"
+            if (picked.isEmpty()) "已清空掐网名单"
+            else "已选 ${picked.size} 个掐网（ROOT 守护=按 uid 断网；致盲请用上方三个按钮）"
         )
         // ROOT 守护运行时，conf 一发布循环就在下一个 tick 应用（掐网即时生效，无需重启目标 App）；
         // LSP 路径的致盲钩子仍按进程启动时装，改动后要重启目标 App。
+        publishBridge()
+    }
+
+    /** 把 bridge 的渲染体发布到模块通道，并在读回窗口后刷新状态。 */
+    private fun publishBridge() {
         thread {
             runCatching {
                 if (RootInjector.rootAvailable()) {
@@ -806,7 +776,43 @@ class MainActivity : Activity() {
                 }
             }
         }
-        refreshStatus()
+        thread {
+            runCatching { Thread.sleep(1200) }
+            runOnUiThread { refreshStatus() }
+        }
+    }
+
+    /** 致盲三路循环：关 → 全部 → 按所选（策略页勾选的包）。 */
+    private fun cycleBlind(kind: BlindKind) {
+        val cur = when (kind) {
+            BlindKind.WIFI -> bridge.blindWifiScope()
+            BlindKind.CELL -> bridge.blindCellScope()
+            BlindKind.BLE -> bridge.blindBleScope()
+        }
+        val next = when (cur.mode) {
+            Scope.Mode.NONE -> Scope.All
+            Scope.Mode.ALL -> Scope.only(policyChecked)
+            else -> Scope.None
+        }
+        when (kind) {
+            BlindKind.WIFI -> bridge.setBlindWifiScope(next)
+            BlindKind.CELL -> bridge.setBlindCellScope(next)
+            BlindKind.BLE -> bridge.setBlindBleScope(next)
+        }
+        renderBlindChips()
+        publishBridge()
+    }
+
+    private fun renderBlindChips() {
+        blindWifiBtn.text = "致盲WiFi：" + blindLabel(bridge.blindWifiScope())
+        blindCellBtn.text = "致盲基站：" + blindLabel(bridge.blindCellScope())
+        blindBleBtn.text = "致盲BLE：" + blindLabel(bridge.blindBleScope())
+    }
+
+    private fun blindLabel(scope: Scope): String = when (scope.mode) {
+        Scope.Mode.NONE -> "关"
+        Scope.Mode.ALL -> "全部"
+        else -> "所选 ${scope.packages.size}"
     }
 
     private fun statusPage(): View {
@@ -846,6 +852,25 @@ class MainActivity : Activity() {
         ).apply { topMargin = ui.dp(10) })
         page.addView(statusCard)
 
+        // ---- 暴露风险卡（16 维）----
+        // README 阶段四 ⑭ 声称已落地但代码里没有，这里补齐。评的是暴露面不是效果。
+        val riskCard = ui.card()
+        riskSummary = TextView(this).apply {
+            textSize = 14f
+            setTextColor(ui.bodyColor())
+            setPadding(0, 0, 0, ui.dp(4))
+        }
+        riskCard.addView(riskSummary)
+        riskToggleBtn = ui.button("16 维明细 ▼") { toggleRisk() }
+        riskCard.addView(riskToggleBtn)
+        riskRows = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
+        }
+        riskCard.addView(riskRows)
+        riskCard.addView(ui.hint("评的是暴露面（这条面收口了没有），不是效果（目标 App 认不认）"))
+        page.addView(riskCard)
+
         // ---- 目标 App 快捷控制 ----
         val appCard = ui.card()
         appCard.addView(ui.title("目标 App"))
@@ -878,6 +903,62 @@ class MainActivity : Activity() {
         return ScrollView(this).apply { addView(page); isFillViewport = true }
     }
 
+    private fun toggleRisk() {
+        riskExpanded = !riskExpanded
+        riskToggleBtn.text = if (riskExpanded) "16 维明细 ▲" else "16 维明细 ▼"
+        riskRows.visibility = if (riskExpanded) View.VISIBLE else View.GONE
+        if (riskExpanded) {
+            // 展开时才重建明细，避免每次刷新都重建 16 行。
+            lastRiskReport?.let { renderRiskRows(it) }
+        }
+    }
+
+    private var lastRiskReport: RiskScore.Report? = null
+
+    private fun buildRiskSnapshot(fixes: List<String>, confMatch: Boolean): RiskScore.Snapshot {
+        return RiskScore.Snapshot(
+            confEnabled = Config.enabled,
+            mockProviders = fixes.count { "mock=true" in it },
+            mockTotal = fixes.size,
+            confMatch = confMatch,
+            loopIntervalSec = Config.loopIntervalSec,
+            blindWifi = bridge.blindWifiScope().enabled,
+            blindCell = bridge.blindCellScope().enabled,
+            blindBle = bridge.blindBleScope().enabled,
+            netcutCount = bridge.netcutPkgs().size,
+            forgeWifi = Config.forgeWifi,
+            sensorFreeze = Config.sensorFreeze,
+            hidePkgsCount = Config.hidePkgs.size,
+            stackClean = Config.stackClean,
+            gmsSpoof = Config.gmsSpoof,
+            gnssSpoof = Config.gnssSpoof,
+            hasSatellites = Sky.SATS.isNotEmpty(),
+            dopplerNonZero = Config.gnssSpoof,
+            hookLedger = Diagnostics.snapshot().size,
+            leakClosed = null, // 反推在目标进程里跑，App 进程拿不到结论；探针未开时就是 OFF
+        )
+    }
+
+    private fun renderRiskCard(report: RiskScore.Report) {
+        lastRiskReport = report
+        riskSummary.text = "暴露面 ${report.level}（BAD ${report.bad} / WARN ${report.warn} / 共 16 维）"
+        if (riskExpanded) renderRiskRows(report)
+    }
+
+    private fun renderRiskRows(report: RiskScore.Report) {
+        riskRows.removeAllViews()
+        report.dims.forEach { d ->
+            val state = when (d.state) {
+                RiskScore.State.OK -> Ui.State.OK
+                RiskScore.State.WARN -> Ui.State.WARN
+                RiskScore.State.BAD -> Ui.State.BAD
+                RiskScore.State.OFF -> Ui.State.OFF
+            }
+            riskRows.addView(ui.chip("${d.name} · ${d.state}", state))
+            riskRows.addView(ui.hint(d.note))
+        }
+    }
+
     private fun toggleDiag() {
         diagExpanded = !diagExpanded
         diagSection.visibility = if (diagExpanded) View.VISIBLE else View.GONE
@@ -899,13 +980,11 @@ class MainActivity : Activity() {
         KnownApp("饿了么", "me.ele"),
     )
 
-    private fun renderAppRows() {
+    private fun renderAppRows(installed: Set<String>) {
         appRows.removeAllViews()
         for (app in KNOWN_APPS) {
-            val installed = runCatching {
-                packageManager.getPackageInfo(app.pkg, 0)
-            }.isSuccess
-            if (!installed) continue
+            // installed 集合由 refreshStatus 在后台线程算好（P1-16），这里只做 UI。
+            if (app.pkg !in installed) continue
             val row = ui.row().apply { setPadding(0, ui.dp(6), 0, ui.dp(6)) }
             row.addView(TextView(this).apply {
                 text = app.label
@@ -966,16 +1045,14 @@ class MainActivity : Activity() {
     }
 
     /**
-     * 切换单个 App 的 NETCUT。名单的唯一真源是致盲作用域（策略页一次选择 = 掐网 + 进程内致盲双用，
-     * 渲染器从同一份名单派生 MOCKLOC_NETCUT 与 MOCKLOC_BLIND_*），所以这里必须**合并**进现有
-     * 作用域——整体覆盖会把策略页选的其他 App 抹掉（2026-11-06 实锤：掐网一关，高德致盲随之丢失，
-     * 高德自有定位引擎立刻回跳真实位置）。
+     * 切换单个 App 的 NETCUT。名单独立于致盲（v1.3.0 走查 P1-2）：旧版与致盲共用一个作用域，
+     * 掐网一关会把高德致盲一起抹掉（2026-11-06 实锤）。现在只写 module_netcut。
      */
     private fun toggleNetcut(pkg: String) {
-        val current = bridge.blindScope().packages.toMutableSet()
+        val current = bridge.netcutPkgs().toMutableSet()
         if (pkg in current) { current.remove(pkg); toast("已关闭 $pkg 掐网") }
         else { current.add(pkg); toast("已开启 $pkg 掐网") }
-        bridge.setBlindScope(Scope.only(current.toList()))
+        bridge.setNetcutPkgs(current.toList())
         thread {
             runCatching {
                 if (RootInjector.rootAvailable()) {
@@ -1037,10 +1114,27 @@ class MainActivity : Activity() {
     private fun refreshStatus() {
         val last = prefs.getString(KEY_LAST, "无")
         val label = prefs.getString(KEY_LAST_LABEL, "")
-        val fixes = readback()
-        Config.refresh()
-        val mockActive = fixes.any { "mock=true" in it }
-        renderStatusBar(mockActive, label ?: "")
+        // 重活挪到后台：readback 的 4 次 getLastKnownLocation、Config.refresh 读文件、
+        // renderAppRows 的逐个 getPackageInfo——onResume/每次注入都跑，主线程做会掉帧（P1-16）。
+        thread {
+            val fixes = readback()
+            Config.refresh()
+            val installed = KNOWN_APPS.mapNotNull { a ->
+                runCatching { packageManager.getPackageInfo(a.pkg, 0) }.getOrNull()?.let { a.pkg }
+            }.toSet()
+            val mockActive = fixes.any { "mock=true" in it }
+            runOnUiThread { applyStatus(last ?: "无", label ?: "", fixes, mockActive, installed) }
+        }
+    }
+
+    private fun applyStatus(
+        last: String,
+        label: String,
+        fixes: List<String>,
+        mockActive: Boolean,
+        installed: Set<String>,
+    ) {
+        renderStatusBar(mockActive, label)
 
         val mismatch = Config.enabled && last != "无" &&
             (abs(Config.centerLat - lastLat()) > 1e-3 || abs(Config.centerLng - lastLng()) > 1e-3)
@@ -1068,7 +1162,8 @@ class MainActivity : Activity() {
         }
         stopBtn.visibility = if (mockActive || serviceRunning()) View.VISIBLE else View.GONE
 
-        renderAppRows()
+        renderAppRows(installed)
+        renderRiskCard(RiskScore.score(buildRiskSnapshot(fixes, mismatch)))
 
         // ---- 诊断详情：技术细节收进折叠区，默认不展开 ----
         statusDetailText.text = buildString {
@@ -1105,7 +1200,7 @@ class MainActivity : Activity() {
             // 高德机制：自有融合 SDK（真实 WiFi/基站/服务器定位）优先级高于系统 LocationManager，
             // 不盲化它就直接拿真数据定位覆盖注入点——2026-11-05 实机复现（关盲化即回跳真实位置）。
             append("\n高德提示：高德自带定位引擎优先用自己的真实 WiFi/基站数据，系统注入点会被它覆盖；" +
-                "所以高德必须开「致盲 WiFi/基站」（策略页选高德即自动开）+ 掐网，改动后要重启高德。" +
+                "所以高德必须开「致盲 WiFi/基站」（策略页上方三个按钮）+ 掐网，改动后要重启高德。" +
                 "微信等 App 读系统定位，LSP 挂上就稳。\n")
             val notes = Diagnostics.snapshot()
             if (notes.isNotEmpty()) {
