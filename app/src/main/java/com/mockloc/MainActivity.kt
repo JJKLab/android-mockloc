@@ -214,6 +214,13 @@ class MainActivity : Activity() {
         Md.resolve(this)
         Configuration.getInstance().load(applicationContext, prefs)
         Configuration.getInstance().setUserAgentValue(packageName)
+        // 悬浮摇杆与主进程的桥（同进程，静态委托够用）。
+        com.mockloc.JoystickBridge.point = {
+            val la = lastLat()
+            val ln = lastLng()
+            if (la == 0.0 && ln == 0.0) doubleArrayOf(31.2304, 121.4737) else doubleArrayOf(la, ln)
+        }
+        com.mockloc.JoystickBridge.apply = { lat, lng -> inject(lat, lng, "摇杆微调") }
         setContentView(buildUi())
         map.setTileSource(mapSrc.tileSource())
         map.setMultiTouchControls(true)

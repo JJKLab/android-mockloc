@@ -121,6 +121,11 @@ internal class StatusPage(private val a: MainActivity) {
         actions.addView(a.diagToggleBtn, ui.fill())
         page.addView(actions)
 
+        // 悬浮摇杆：拖圆盘微调当前注入点（阶段五）。
+        val joyRow = ui.row().apply { setPadding(ui.dp(10), 0, ui.dp(10), ui.dp(4)) }
+        joyRow.addView(ui.button("\uD83C\uDFF9 摇杆") { toggleJoystick() }, ui.fill())
+        page.addView(joyRow)
+
         // ---- 诊断详情（折叠）----
         a.diagSection = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL }
         a.statusDetailText = TextView(a).apply {
@@ -307,6 +312,35 @@ internal class StatusPage(private val a: MainActivity) {
             a.riskRows.addView(ui.hint(d.note))
         }
     }
+
+    /** 开关悬浮摇杆。首次用要用户去设置里授「显示在其他应用上层」。 */
+    internal fun toggleJoystick() {
+        if (joystickRunning()) {
+            a.startService(
+                Intent(a, com.mockloc.JoystickService::class.java)
+                    .setAction(com.mockloc.JoystickService.ACTION_STOP),
+            )
+            a.toast("摇杆已关闭")
+            return
+        }
+        if (!android.provider.Settings.canDrawOverlays(a)) {
+            a.toast("需要「显示在其他应用上层」授权")
+            runCatching {
+                a.startActivity(
+                    Intent(
+                        android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        android.net.Uri.parse("package:" + a.packageName),
+                    ),
+                )
+            }.onFailure { a.toast("这个 ROM 不给跳授权页，请手动到设置里开") }
+            return
+        }
+        a.prefs.edit().putBoolean(KEY_JOYSTICK, true).apply()
+        a.startForegroundService(Intent(a, com.mockloc.JoystickService::class.java))
+        a.toast("摇杆已开启：拖圆盘微调注入点（松手回中）")
+    }
+
+    private fun joystickRunning(): Boolean = a.prefs.getBoolean(KEY_JOYSTICK, false)
 
     internal fun toggleDiag() {
         a.diagExpanded = !a.diagExpanded
@@ -541,5 +575,6 @@ internal class StatusPage(private val a: MainActivity) {
         const val KEY_LAST = "last_injected"
         const val KEY_LAST_LABEL = "last_label"
         val TABS = listOf("地图", "路线", "收藏", "策略", "状态")
+        const val KEY_JOYSTICK = "joystick_running"
     }
 }

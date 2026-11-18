@@ -11,6 +11,9 @@
     <uses-permission android:name="android.permission.ACCESS_MOCK_LOCATION" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <!-- 悬浮摇杆：TYPE_APPLICATION_OVERLAY 需要用户单独授权（设置里「显示在其他应用上层」）。 -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Replays the last injection after a reboot; the spec is stored by MockService on every
          start, so the receiver itself only decides "restore or stay quiet". -->
@@ -43,6 +46,16 @@
             android:exported="true"
             android:foregroundServiceType="location"
             android:permission="android.permission.DUMP" />
+
+        <!-- 悬浮摇杆：前台服务（specialUse + 子类型声明，Android 14+ 要求）。 -->
+        <service
+            android:name=".JoystickService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="floating_joystick" />
+        </service>
 
         <!-- BOOT_COMPLETED is a protected broadcast: only the system can send it, so exported
              exposes no spoofable surface. -->
