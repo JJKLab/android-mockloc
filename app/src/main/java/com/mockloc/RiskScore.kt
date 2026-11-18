@@ -47,7 +47,8 @@ object RiskScore {
         val gnssSpoof: Boolean = true,
         val hasSatellites: Boolean = false,
         val dopplerNonZero: Boolean = false,
-        val hookLedger: Int = 0,
+        /** 模块守护循环是否还在跑：看发布出来的 conf 的 mtime 是否够新。 */
+        val guardianFresh: Boolean? = null,
         val leakClosed: Boolean? = null,
     )
 
@@ -67,7 +68,7 @@ object RiskScore {
         dims += flagDim("GNSS 伪造", "无痕面", s.gnssSpoof, "测量/时钟/星历整链")
         dims += flagDim("卫星视图", "无痕面", s.hasSatellites, "星历非空且自洽")
         dims += flagDim("多普勒/ADR", "无痕面", s.dopplerNonZero, "伪距率非零、ADR 积分漂移")
-        dims += ledgerDim(s)
+        dims += guardianDim(s)
         dims += leakDim(s)
 
         val bad = dims.count { it.state == State.BAD }
@@ -114,12 +115,18 @@ object RiskScore {
     private fun countDim(name: String, cat: String, count: Int, note: String): Dim =
         if (count > 0) Dim(name, cat, State.OK, "$count 项 · $note") else Dim(name, cat, State.OFF, "空 · $note")
 
-    private fun ledgerDim(s: Snapshot): Dim =
-        if (s.hookLedger > 0) {
-            Dim("挂钩台账", "可观测", State.OK, "${s.hookLedger} 条 · Diagnostics 有记账")
+    /**
+     * 模块守护是否存活。不能用 Diagnostics 台账：那些钩子装在**目标进程**里，App 进程里
+     * 永远是 0 条（初版这么写过，真机上恒为 WARN）。改成看发布出来的 conf 的 mtime。
+     */
+    private fun guardianDim(s: Snapshot): Dim {
+        val fresh = s.guardianFresh ?: return Dim("模块守护", "可观测", State.OFF, "没有模块/未发布过 conf")
+        return if (fresh) {
+            Dim("模块守护", "可观测", State.OK, "conf 最近被循环刷新过")
         } else {
-            Dim("挂钩台账", "可观测", State.WARN, "0 条 · 无法自证挂钩装上了")
+            Dim("模块守护", "可观测", State.WARN, "conf 已陈旧，守护循环可能停了")
         }
+    }
 
     private fun leakDim(s: Snapshot): Dim {
         val closed = s.leakClosed ?: return Dim("泄露反推", "可观测", State.OFF, "探针未开")

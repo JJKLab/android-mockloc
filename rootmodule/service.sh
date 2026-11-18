@@ -27,6 +27,14 @@ case "$INTERVAL" in ''|*[!0-9]*) INTERVAL=1 ;; esac
 UP=0
 echo $$ > /data/adb/mockloc/loop.pid 2>/dev/null
 
+# 早期启动时 toybox 的 sleep/printf 可能还不可用（ENOENT），循环会空转并把 service.log 刷到几十 MB
+# （真机实测 43 万条 cmd 失败）。启动时先给日志设上限，只留尾部。
+if [ -f /data/adb/mockloc/service.log ] && \
+   [ "$(wc -c < /data/adb/mockloc/service.log)" -gt 1048576 ]; then
+  tail -n 200 /data/adb/mockloc/service.log > /data/adb/mockloc/service.log.tmp 2>/dev/null
+  mv /data/adb/mockloc/service.log.tmp /data/adb/mockloc/service.log 2>/dev/null
+fi
+
 # Two independent layers, so "global" and "per-app" can coexist:
 #   MOCKLOC_GLOBAL  -> this loop maintains the system test provider (every app, isMock()=true)
 #   MOCKLOC_ENABLED -> the Xposed module spoofs TARGETS in-process (isMock()=false)
@@ -38,7 +46,7 @@ while :; do
   if [ "$(cfg_get MOCKLOC_ENABLED)" = "true" ] && [ "$(cfg_get MOCKLOC_GLOBAL)" = "true" ]; then
     appops set 0 android:mock_location allow 2>/dev/null
     appops set 2000 android:mock_location allow 2>/dev/null
-    cmd location set-location-enabled true
+    cmd location set-location-enabled true 2>/dev/null
     # Route mode wins over the static point when a route and its anchor are configured; both
     # layers sample the same epoch anchor, so App-side and shell-side never split apart.
     WPTS=$(cfg_get MOCKLOC_ROUTE_WAYPOINTS)
@@ -57,8 +65,8 @@ while :; do
     if [ -n "$JLAT" ] && [ -n "$JLNG" ]; then
       for p in $(printf '%s' "$PROVIDERS" | tr ',' ' '); do
         if [ "$UP" != 1 ]; then
-          cmd location providers add-test-provider "$p"
-          cmd location providers set-test-provider-enabled "$p" true
+          cmd location providers add-test-provider "$p" 2>/dev/null
+          cmd location providers set-test-provider-enabled "$p" true 2>/dev/null
         fi
         apply_once "$p" "$JLAT" "$JLNG" "$ACC"
       done
@@ -71,8 +79,8 @@ while :; do
     fi
   elif [ "$UP" = 1 ]; then
     for p in $(printf '%s' "$PROVIDERS" | tr ',' ' '); do
-      cmd location providers set-test-provider-enabled "$p" false
-      cmd location providers remove-test-provider "$p"
+      cmd location providers set-test-provider-enabled "$p" false 2>/dev/null
+      cmd location providers remove-test-provider "$p" 2>/dev/null
     done
     UP=0
     echo "mockloc: global providers torn down" >> /data/adb/mockloc/service.log
@@ -80,5 +88,12 @@ while :; do
   # Per-uid network cut is independent of GLOBAL: it is lever ② on its own (A15).
   netcut_apply "$(cfg_get MOCKLOC_NETCUT)"
   publish
-  sleep "$INTERVAL"
+  # sleep 不可用时（早期启动 toybox applets 缺失）直接返回会让循环空转；退到 date 轮询，
+  # 至少保证每轮有真实间隔，不靠空转拖垮 CPU。
+  if sleep 0 2>/dev/null; then
+    sleep "$INTERVAL"
+  else
+    _t=$(date +%s)
+    while [ "$(date +%s)" -lt $((_t + INTERVAL)) ]; do :; done
+  fi
 done &

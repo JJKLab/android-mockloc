@@ -28,7 +28,7 @@ fun main() {
         gnssSpoof = true,
         hasSatellites = true,
         dopplerNonZero = true,
-        hookLedger = 12,
+        guardianFresh = true,
         leakClosed = true,
     )
     val all = RiskScore.score(closed)
@@ -54,9 +54,12 @@ fun main() {
     )
     check("可选面全关仍是低", optionalOff.level == "低", optionalOff.level)
 
-    // 台账为 0 是可观测性缺口 → 中。
-    val noLedger = RiskScore.score(closed.copy(hookLedger = 0))
-    check("无台账 → 中", noLedger.level == "中", noLedger.level)
+    // 守护循环停了（conf 陈旧）→ 中。
+    val staleGuardian = RiskScore.score(closed.copy(guardianFresh = false))
+    check("守护陈旧 → 中", staleGuardian.level == "中", staleGuardian.level)
+    // 没有模块/没发布过 conf → OFF，不拉高评级。
+    val noGuardian = RiskScore.score(closed.copy(guardianFresh = null))
+    check("无守护信息 → 低", noGuardian.level == "低", noGuardian.level)
 
     // 配置不一致是 BAD。
     val mismatch = RiskScore.score(closed.copy(confMatch = false))

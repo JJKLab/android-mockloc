@@ -39,6 +39,10 @@ jobs:
       - name: Renderer/Config key contract
         run: python tools/tests/test_renderer_contract.py
 
+      # root 模块 sync_app_prefs 的提取写法（真机 toybox sed 判据的本地替代）。
+      - name: Root-module sync guards
+        run: python tools/tests/test_rootmodule_sync.py
+
 
   apk:
     needs: logic

@@ -148,9 +148,19 @@ sync_app_prefs() {
   [ -r "$_prefs" ] || return 1
   # Compare against CFG (the authority), not PUB: PUB is rewritten by publish() every tick, so a
   # PUB-based check let stale App prefs re-publish over a fresh PC inbox apply.
-  [ "$_prefs" -nt "$CFG" ] || return 0
+  # 但损坏的 CFG 必须修：旧版本会留下带 &#10;/XML 残尾的坏文件，而 mtime 守卫会让它永远不被
+  # 修复（真机实测：tier-3 读到一行式 conf，spoofing 直接关）。所以先测"是否已损坏"。
+  # 注意：toybox grep 不支持 `\|` 交替（实测 NOMATCH），必须拆成两条。
+  if [ "$_prefs" -nt "$CFG" ] || grep -q '&#10;' "$CFG" 2>/dev/null \
+     || grep -q '<string' "$CFG" 2>/dev/null; then
+    :
+  else
+    return 0
+  fi
   _tmp=$(mktemp "/data/local/tmp/mockloc.app.XXXXXX") || return 1
-  sed -n '/name="module_conf"/,/<\/string>/p' "$_prefs"     | sed '1s|.*name="module_conf"[^>]*>||; $s|<\/string>.*||' >"$_tmp"
+  # 单行替换而不是范围地址：toybox sed 的 `/start/,/end/` 在 start 与 end 同行时不会当场收敛
+  # （真机实测多带一行 <string name="osmdroid.basePath">… 进 CFG）。值本身就在一行里。
+  sed -n 's/.*name="module_conf">\(.*\)<.string>.*/\1/p' "$_prefs" >"$_tmp"
   [ -s "$_tmp" ] || { rm -f "$_tmp"; return 1; }
   # Android's XmlUtils writes a newline as &#10;, so without this the whole config lands on one
   # line and the module's parser reads ENABLED's value as "true&#10;GLOBAL=..." - i.e. spoofing off.

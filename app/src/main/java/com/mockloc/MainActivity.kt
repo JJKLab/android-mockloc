@@ -934,9 +934,20 @@ class MainActivity : Activity() {
             gnssSpoof = Config.gnssSpoof,
             hasSatellites = Sky.SATS.isNotEmpty(),
             dopplerNonZero = Config.gnssSpoof,
-            hookLedger = Diagnostics.snapshot().size,
+            guardianFresh = guardianFresh(),
             leakClosed = null, // 反推在目标进程里跑，App 进程拿不到结论；探针未开时就是 OFF
         )
+    }
+
+    /**
+     * 守护循环每 tick 都会 publish() 一次，所以 conf 的 mtime 就是心跳。App 进程能读这个文件
+     * （Config 本身就靠它），不需要 root。
+     */
+    private fun guardianFresh(): Boolean? {
+        val f = java.io.File(Config.DEFAULT_PATH)
+        if (!f.exists()) return null
+        val age = System.currentTimeMillis() - f.lastModified()
+        return age in 0..15_000L
     }
 
     private fun renderRiskCard(report: RiskScore.Report) {
