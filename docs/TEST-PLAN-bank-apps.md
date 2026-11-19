@@ -113,3 +113,36 @@ adb shell su -c 'ls -t /data/tombstones/ | head'                 # 原生崩溃�
 - 对**检查 `isMock()`** 的 App：`SystemWash` 是通用解（已验证）。
 - 对**走厂商定位服务**的 App（如阳光惠生活）：Android 定位路线无效；要么 hook OLS
   （它跑在 `android` 进程里，可在 system_server 层 hook），要么接受。
+
+---
+
+## 2026-11-19 深夜 · 挖到厂商定位引擎这一层
+
+### 链路
+```
+阳光惠生活 → ColorOS「系统定位」(OLS, com.oplus.location) → 高通 IZat (com.qualcomm.location, 原生引擎)
+```
+- OLS 是独立应用（uid 10222，`NetworkLocationService`），对外暴露
+  `OplusLocationService` / `NetworkLocationService` / `GeocoderService`。
+- 它通过 `.oplus.OplusLbsConnection` 连到 `com.qualcomm.location` 的 IZat 引擎。
+
+### 已排除
+| 尝试 | 结果 |
+|---|---|
+| 注入 Android gps/network/fused + SystemWash 洗 mock 位 | App **确实收到**（`gps provider delivered location[1]`，`mock=false`），城市不变 |
+| 把模块挂进 OLS 进程（钩子全部命中：`getAllCellInfo ×80`、`getNetworkOperator ×160`、`isMock ×300`） | 城市不变 → OLS 的 Java Wi-Fi/基站面不是它的数据源 |
+| 把模块挂进 `com.qualcomm.location` | **LSPosed 从不挂钩它**（0 条记录，进程重启也没用）→ 原生/常驻服务，Java 模块进不去 |
+
+### 结论
+银行 App 的「系统定位」来自 **ColorOS OLS → 高通 IZat 原生引擎**。Android 定位这条线
+（档 0/2/3 + SystemWash）到此为止；再往下是原生 hook，超出本模块（Java 层）的能力。
+
+### 最后一条 Java 级线索（未试）
+OLS 对外服务里有 `getCoarseLocation` / `getCurrentLocation` / `getLastKnownLocation`
+等返回 Location 的方法。如果银行 App 是直接调 OLS 的 service，可以在 **OLS 进程**里拦这些
+方法返回我们的点。前提是它确实走 service 而不是框架 `android.location.OplusLocationManager`
+（后者在 App 自己进程里，挂钩=档3=被加固壳打崩）。
+
+### 设备状态
+- 作用域已还原（`com.android.phone` / `com.autonavi.minimap` / `com.tencent.mm` / `system`）。
+- conf `MOCKLOC_ENABLED=false`。
