@@ -29,6 +29,7 @@ class ModuleEntry : XposedModule() {
         if (!param.isFirstPackage) return
         val pkg = param.packageName
         if (pkg == SYSTEM_UI_PKG) {
+            log(Log.INFO, tag, "[sys] onPackageReady 被调用（诊断用）")
             // system_server：唯一"不碰目标进程就能让 App 读到非 mock 定位"的地方——
             // Location 跨 Binder 给 App 时是这里写 parcel 的。默认开，且只洗 isMock 的位置；
             // 出错回退原位置，最坏情况只是没洗掉。（在这个进程里出错会拖垮系统，所以整套
