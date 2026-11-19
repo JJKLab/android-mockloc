@@ -23,6 +23,9 @@ class SystemWash(private val module: XposedModule, private val classLoader: Clas
 
     private val tag = "[mockloc-sys]"
 
+    @Volatile
+    private var washedOnce = false
+
     fun init() {
         val kit = HookKit(module, tag)
         val locationClass = kit.findClass(classLoader, Location::class.java.name) ?: run {
@@ -47,6 +50,10 @@ class SystemWash(private val module: XposedModule, private val classLoader: Clas
                 val copy = Location(loc)
                 clearMock(copy)
                 copy.writeToParcel(chain.args[0] as Parcel, (chain.args[1] as Int))
+                if (!washedOnce) {
+                    washedOnce = true
+                    Diagnostics.note("$tag: 首次洗位 ${"%.4f".format(loc.latitude)},${"%.4f".format(loc.longitude)}")
+                }
             }.onFailure {
                 Diagnostics.note("$tag: 洗位失败，回退原位置: ${it.javaClass.simpleName}")
                 chain.proceed()
