@@ -52,9 +52,9 @@ android {
 
 dependencies {
     implementation(libs.osmdroid.android)
-    // 注意：**不要**打包 hiddenapibypass。它创建的 org.lsposed.hiddenapibypass.CoreOjClassLoader
-    // 会被加固壳（梆梆/爱加密一类）枚举 ClassLoader 时抓到 → 进程 SIGSEGV（真机实测）。
-    // 清 mock 位改用公开 Location.setMock(false)（API 31+）。
+    // Ships inside the APK: this runs in the target app's process, where it is the only way to
+    // reflect on Location.mMock / Location.readFromParcel without a greylist exception.
+    implementation(libs.hiddenapibypass)
     // Provided by the framework at load time; bundling it would collide with the host's copy.
     compileOnly(libs.libxposed.api)
 }

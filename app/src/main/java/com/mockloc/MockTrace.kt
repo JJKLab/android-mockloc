@@ -9,19 +9,17 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Parcel
 import io.github.libxposed.api.XposedInterface
+import org.lsposed.hiddenapibypass.HiddenApiBypass
+import java.lang.reflect.Field
 import java.util.function.Consumer
 
 /**
  * Removes the traces a mock provider leaves inside the target app's own process.
  *
- * Why the flag matters: hooking `isMock()` only covers the method path. WeChat's mini-program
+ * Why the field matters: hooking `isMock()` only covers the method path. WeChat's mini-program
  * location arrives as a Parcel-deserialised Location and its SDK can read the backing field
- * directly, so the flag itself has to be cleared too.
- *
- * 实现上**不能**用 hiddenapibypass（v1.3.1 真机实测）：它创建的
- * `org.lsposed.hiddenapibypass.CoreOjClassLoader` 会被加固壳（梆梆/爱加密一类）的
- * ClassLoader 枚举抓到，进程当场 SIGSEGV（阳光惠生活/光大云缴费都崩）。改用公开
- * `Location.setMock(false)`（API 31+）；低版本退回反射，失败就只靠方法层 hook。
+ * directly, so the field itself has to be cleared - and clearing it needs hidden-API access,
+ * which is why HiddenApiBypass is initialised first.
  */
 class MockTrace(
     private val module: XposedInterface,
@@ -32,6 +30,7 @@ class MockTrace(
     private val kit = HookKit(module, tag)
 
     fun init() {
+        exemptHiddenApi()
         val locationClass = kit.findClass(classLoader, Location::class.java.name) ?: return
         val lmClass = kit.findClass(classLoader, LocationManager::class.java.name) ?: return
 
@@ -46,6 +45,16 @@ class MockTrace(
     }
 
     private fun active() = SpoofLogic.isActive(pkg)
+
+    /**
+     * The return value is the whole point here: HiddenApiBypass reports failure as `false` instead
+     * of throwing, and if it failed then every reflection below silently stops working - which is
+     * exactly the trap AnyWhere's empty catch walks into.
+     */
+    private fun exemptHiddenApi() {
+        val ok = runCatching { HiddenApiBypass.addHiddenApiExemptions("") }.getOrNull() == true
+        if (!ok) Diagnostics.note("$tag: HiddenApiBypass 未生效，反射清 mock 位会失败（改走 setter hook）")
+    }
 
     private fun hookFlagReaders(clazz: Class<*>) {
         val on = { chain: XposedInterface.Chain -> if (active()) false else chain.proceed() }
@@ -193,23 +202,39 @@ class MockTrace(
             .forEach { name -> kit.install(kit.methodsOf(opsClass, name), allowed) }
     }
 
+    private var mockField: Field? = null
+    private var maskField: Field? = null
+    private var fieldsResolved = false
+
     /**
-     * 清掉 Location 上的 mock 标记。API 31+ 用公开 `setMock(false)`（同时清 mFieldsMask 位）；
-     * 低版本退回反射隐藏字段——没有 hiddenapibypass 的豁免，这一步在 API 29-30 上可能抛，
-     * 那就只靠上面的方法层 hook（绝大多数 App 读的是 isFromMockProvider）。
+     * Android has moved this between a boolean field and a bit in a mask across releases, so both
+     * are attempted. Anything that fails is recorded rather than swallowed.
      */
     private fun clearMockField(location: Location?) {
         location ?: return
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            runCatching { location.setMock(false) }
-                .onFailure { Diagnostics.note("$tag: setMock(false) 失败: ${it.javaClass.simpleName}") }
-            return
+        if (!fieldsResolved) {
+            fieldsResolved = true
+            mockField = sequenceOf("mMock", "mIsFromMockProvider")
+                .mapNotNull { name -> runCatching { Location::class.java.getDeclaredField(name) }.getOrNull() }
+                .firstOrNull()
+                ?.also { runCatching { it.isAccessible = true } }
+            if (mockField == null) {
+                Diagnostics.note("$tag: 未找到 mMock / mIsFromMockProvider 字段，反射清标记不可用")
+            }
+            maskField = runCatching {
+                Location::class.java.getDeclaredField("mFieldsMask").apply { isAccessible = true }
+            }.getOrNull()
         }
+
+        mockField?.let { field ->
+            runCatching { field.setBoolean(location, false) }
+                .onFailure { Diagnostics.note("$tag: 写回 ${field.name} 失败: ${it.javaClass.simpleName} ${it.message}") }
+        }
+        val mask = maskField ?: return
         runCatching {
-            Location::class.java.getDeclaredField("mIsFromMockProvider")
-                .apply { isAccessible = true }
-                .setBoolean(location, false)
-        }.onFailure { Diagnostics.note("$tag: 反射清 mIsFromMockProvider 失败: ${it.javaClass.simpleName}") }
+            val value = mask.getInt(location) and HAS_MOCK_PROVIDER_MASK.inv()
+            mask.setInt(location, value)
+        }.onFailure { Diagnostics.note("$tag: 清 mFieldsMask 位失败: ${it.javaClass.simpleName}") }
     }
 
     private companion object {
@@ -217,5 +242,6 @@ class MockTrace(
         val MOCK_EXTRA_KEYS = listOf("mockLocation", "mock_location", "android.location.extra.MOCK_LOCATION")
         const val MOCK_LOCATION_SETTING = "mock_location"
         const val MOCK_LOCATION_OP = "android:mock_location"
+        const val HAS_MOCK_PROVIDER_MASK = 1 shl 4
     }
 }
