@@ -29,19 +29,17 @@ class ModuleEntry : XposedModule() {
         if (!param.isFirstPackage) return
         val pkg = param.packageName
         if (pkg == SYSTEM_UI_PKG) {
+            // system_server 在 LSPosed 里走 onSystemServerStarting，这个分支通常不会被调用；
+            // 保留它是为了兼容把它当普通包调用的实现（同样装 SystemWash，已去重）。
             log(Log.INFO, tag, "[sys] onPackageReady 被调用（诊断用）")
-            // system_server：唯一"不碰目标进程就能让 App 读到非 mock 定位"的地方——
-            // Location 跨 Binder 给 App 时是这里写 parcel 的。默认开，且只洗 isMock 的位置；
-            // 出错回退原位置，最坏情况只是没洗掉。（在这个进程里出错会拖垮系统，所以整套
-            // 逻辑必须 fail-safe。）
+            Diagnostics.attach { message -> log(Log.ERROR, tag, message) }
             runCatching { Config.refresh() }
-            if (Config.systemWash) {
-                Diagnostics.attach { message -> log(Log.ERROR, tag, message) }
-                log(Log.INFO, tag, "attached to $pkg (system_server, wash=${Config.systemWash})")
+            if (!Config.systemWash) {
+                log(Log.INFO, tag, "skipped system package scope (systemWash off)")
+            } else if (!systemWashInstalled) {
+                systemWashInstalled = true
                 runCatching { SystemWash(this, param.classLoader).init() }
                     .onFailure { log(Log.WARN, tag, "system_server wash init failed: $it") }
-            } else {
-                log(Log.INFO, tag, "skipped system package scope (systemWash off)")
             }
             return
         }
@@ -87,6 +85,35 @@ class ModuleEntry : XposedModule() {
                 "gnss=${Config.gnssSpoof} blind=${Config.blindWifi}/${Config.blindCell}/${Config.blindBle} " +
                 "probe=${Config.probe} notes=${Diagnostics.snapshot().size}"
         )
+    }
+
+    /**
+     * system_server 走的是**这个**回调（不是 [onPackageReady]——实测后者在 system_server 里
+     * 从不被调用）。在这里装"洗 mock 位"的 [SystemWash]：Location 跨 Binder 给 App 时是
+     * system_server 写 parcel 的，把 `HAS_MOCK_PROVIDER_MASK` 位洗掉后，目标进程里不会
+     * 有任何 Xposed 痕迹，也就不会被加固壳（梆梆 DexP 等）检测到而打崩。
+     *
+     * 风险：这里出错会拖垮 system_server。所以整套逻辑 fail-safe：初始化失败就不装，
+     * hook 本身失败回退原位置；并用 [systemWashInstalled] 防重复安装。
+     */
+    @Volatile
+    private var systemWashInstalled = false
+
+    override fun onSystemServerStarting(param: io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam) {
+        Diagnostics.attach { message -> log(Log.ERROR, tag, message) }
+        runCatching { Config.refresh() }
+        if (!Config.systemWash) {
+            log(Log.INFO, tag, "skipped system_server (systemWash off)")
+            return
+        }
+        if (systemWashInstalled) return
+        systemWashInstalled = true
+        log(Log.INFO, tag, "system_server: 安装洗位 hook")
+        runCatching { SystemWash(this, param.classLoader).init() }
+            .onFailure {
+                log(Log.WARN, tag, "system_server wash init failed: $it")
+                Diagnostics.note("$tag: 初始化失败，已放弃：${it.javaClass.simpleName}")
+            }
     }
 
     /**
