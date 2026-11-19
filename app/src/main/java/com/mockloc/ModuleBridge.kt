@@ -285,6 +285,7 @@ class ModuleBridge(context: Context) {
         // ROOT-only 管线的"抽空输入"=按 uid 掐网，名单独立于致盲（策略页/状态页分开配）。
         netcut = netcutPkgs(),
         global = prefs.getBoolean(KEY_GLOBAL, false),
+        systemWash = Config.systemWash,
         acc = prefs.getString(KEY_ACC, DEFAULT_ACC).orEmpty(),
         radius = prefs.getString(KEY_RADIUS, DEFAULT_RADIUS).orEmpty(),
         interval = prefs.getString(KEY_INTERVAL, DEFAULT_INTERVAL).orEmpty(),
@@ -377,9 +378,11 @@ class ModuleBridge(context: Context) {
             sensorFreeze: Boolean = false,
             forgeWifi: Boolean = false,
             gms: Boolean = true,
+            systemWash: Boolean = true,
         ): String = buildString {
             appendLine("MOCKLOC_ENABLED=${if (enabled) "true" else "false"}")
             appendLine("MOCKLOC_GLOBAL=${if (global) "true" else "false"}")
+            appendLine("MOCKLOC_SYSTEM_WASH=${if (systemWash) "true" else "false"}")
             appendLine("MOCKLOC_PROVIDERS=$providers")
             appendLine("MOCKLOC_LAT=$lat")
             appendLine("MOCKLOC_LNG=$lng")

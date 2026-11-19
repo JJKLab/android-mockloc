@@ -28,6 +28,14 @@ object Config {
     var enabled: Boolean = false
         private set
 
+    /**
+     * 是否在 system_server 里洗掉 mock 位（默认开）。仅影响 `isMock()==true` 的位置，
+     * 真实定位不受影；详型见 [SystemWash]。
+     */
+    @Volatile
+    var systemWash: Boolean = true
+        private set
+
     @Volatile
     var centerLat: Double = 0.0
         private set
@@ -246,6 +254,7 @@ object Config {
         var nextLabel = ""
         var nextTargets = emptySet<String>()
         var nextGlobal = false
+        var nextSystemWash = true
         var nextGnss = true
         var nextBlindWifi = Scope.None
         var nextBlindCell = Scope.None
@@ -259,6 +268,7 @@ object Config {
             when (key) {
                 "MOCKLOC_ENABLED" -> nextEnabled = value == "true" || value == "1"
                 "MOCKLOC_GLOBAL" -> nextGlobal = value == "true" || value == "1"
+                "MOCKLOC_SYSTEM_WASH" -> nextSystemWash = value == "true" || value == "1"
                 "MOCKLOC_LAT" -> nextLat = value.toDoubleOrNull() ?: nextLat
                 "MOCKLOC_LNG" -> nextLng = value.toDoubleOrNull() ?: nextLng
                 "MOCKLOC_RADIUS" -> nextRadius = value.toDoubleOrNull() ?: nextRadius
@@ -328,6 +338,7 @@ object Config {
             }
         }
         enabled = nextEnabled
+        systemWash = nextSystemWash
         centerLat = nextLat
         centerLng = nextLng
         radius = nextRadius

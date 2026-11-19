@@ -29,7 +29,19 @@ class ModuleEntry : XposedModule() {
         if (!param.isFirstPackage) return
         val pkg = param.packageName
         if (pkg == SYSTEM_UI_PKG) {
-            log(Log.INFO, tag, "skipped system package scope")
+            // system_server：唯一"不碰目标进程就能让 App 读到非 mock 定位"的地方——
+            // Location 跨 Binder 给 App 时是这里写 parcel 的。默认开，且只洗 isMock 的位置；
+            // 出错回退原位置，最坏情况只是没洗掉。（在这个进程里出错会拖垮系统，所以整套
+            // 逻辑必须 fail-safe。）
+            runCatching { Config.refresh() }
+            if (Config.systemWash) {
+                Diagnostics.attach { message -> log(Log.ERROR, tag, message) }
+                log(Log.INFO, tag, "attached to $pkg (system_server, wash=${Config.systemWash})")
+                runCatching { SystemWash(this, param.classLoader).init() }
+                    .onFailure { log(Log.WARN, tag, "system_server wash init failed: $it") }
+            } else {
+                log(Log.INFO, tag, "skipped system package scope (systemWash off)")
+            }
             return
         }
         // Anything that fails from now on has to reach logcat, not only an in-memory list that
