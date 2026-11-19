@@ -82,3 +82,34 @@ adb shell su -c 'ls -t /data/tombstones/ | head'                 # 原生崩溃�
 ### 结论
 对这类「梆梆加固 + 不用系统定位」的银行 App，本工具（无论档 0/2/3）都改不动它的城市。
 建议：**别对它勾 LSPosed**（会崩），改用 VPN 试 IP 归属地。
+
+---
+
+## 2026-11-19 夜 · SystemWash 落地 + 「清远」真凶
+
+### 已实现并真机验证：system_server 洗 mock 位（`SystemWash`，默认开）
+- `setTestProviderLocation` 必然打 mock 位（官方文档），银行/支付类 App 读到就丢弃。
+- 之前一直挂不上 system_server，是因为 **system_server 走 `onSystemServerStarting` 回调**，
+  而我们只重写了 `onPackageReady`（实测后者在 system_server 里从不被调用）。
+- 现在在 system_server 拦 `Location.writeToParcel`：只把 `isMock()==true` 的位置写成
+  **去掉 `HAS_MOCK_PROVIDER_MASK` 位**的副本再跨 Binder；真实定位原样放行；失败回退原位置。
+- **真机验证**：注入 45.8038,126.5349（哈尔滨），mockloc App 读回：
+  `gps/fused/network/passive : 45.803800,126.534900 acc=5.0 mock=false`。
+
+### 但阳光惠生活的城市仍不跟——真凶是 ColorOS OLS
+- `dumpsys location` 证明 App **确实收到了**我们的定位：
+  `gps provider delivered location[1] to 10414/com.ebank.creditcard`（且已洗成 mock=false）。
+- 但界面仍弹「系统定位到您在**清远**」。
+- **对照实验**：`pm disable-user com.oplus.location`（+ locationproxy）→ 「系统定位到清远」
+  提示**消失**；`pm enable` 复启 → 提示**回来**。
+  → 它的「系统定位」= **ColorOS 系统定位服务（OLS，`com.oplus.location`）**，不是 Android
+  LocationManager。OLS 用自己的基站/Wi-Fi/IP 引擎，我们改不动。
+
+### 由此解释「模拟器可用」
+模拟器上没有 OLS，App 回退到 Android LocationManager → 我们（或任何虚拟定位）就能生效。
+真机（ColorOS）优先走 OLS，所以注入没用。
+
+### 结论与选项
+- 对**检查 `isMock()`** 的 App：`SystemWash` 是通用解（已验证）。
+- 对**走厂商定位服务**的 App（如阳光惠生活）：Android 定位路线无效；要么 hook OLS
+  （它跑在 `android` 进程里，可在 system_server 层 hook），要么接受。
