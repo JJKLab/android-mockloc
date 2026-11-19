@@ -60,3 +60,25 @@ adb shell su -c 'ls -t /data/tombstones/ | head'                 # 原生崩溃�
 ## 设备状态
 - 作用域已还原：`com.android.phone` / `com.autonavi.minimap` / `com.tencent.mm` / `system`。
 - 银行 App 已从作用域移除（避免每次启动都崩）。
+
+---
+
+## 补充：那「清远」到底是哪来的（2026-11-19 夜）
+
+| 实验 | 结果 |
+|---|---|
+| 注入点 = 哈尔滨 / 乌鲁木齐 | App 城市始终是「清远」，不变 |
+| 关掉 Wi-Fi（走移动数据） | 仍是「清远」 |
+| App 的 gps 注册 | 只持续 876ms，`locations = 0`（没从 provider 拿到定位） |
+
+→ 「系统定位」**不读 Android LocationManager**（既不读 test provider，也不随网络切换变）。
+最可能是 **IP 归属地**（ISP 注册地），其次是 OPPO OLS 的基站/IP 引擎。
+
+### 由此的可行替代
+- **VPN / 代理**：用目标城市出口 IP，看它的「系统定位」是否跟着变。这是目前唯一
+  不需要 root/Xposed 的路子（也是唯一可能奏效的）。
+- 若它走的是**基站**归属地，则普通 VPN 也没用。
+
+### 结论
+对这类「梆梆加固 + 不用系统定位」的银行 App，本工具（无论档 0/2/3）都改不动它的城市。
+建议：**别对它勾 LSPosed**（会崩），改用 VPN 试 IP 归属地。
