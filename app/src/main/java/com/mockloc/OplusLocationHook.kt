@@ -39,40 +39,59 @@ class OplusLocationHook(private val module: XposedModule, private val classLoade
             applyCityExtras(fake, original, Config.olsCity)
             fake
         }
-        kit.log("OLS Location 输出改写: ${hooked}/${methods.size} 个重载")
+        // OLS 的 city 也可能被缓存进 Location 对象本身；同步改写 getLatitude/getLongitude/getExtras，
+        // 避免“坐标变了但城市仍是默认”的假阳性。
+        val locationClass = kit.findClass(classLoader, Location::class.java.name) ?: return hooked
+        var locationHooks = 0
+        locationHooks += kit.install(kit.methodsOf(locationClass, "getLatitude")) { chain ->
+            if (SpoofLogic.isActive(pkg)) Config.currentOutCoordsFor(pkg)[0] else chain.proceed()
+        }
+        locationHooks += kit.install(kit.methodsOf(locationClass, "getLongitude")) { chain ->
+            if (SpoofLogic.isActive(pkg)) Config.currentOutCoordsFor(pkg)[1] else chain.proceed()
+        }
+        locationHooks += kit.install(kit.methodsOf(locationClass, "getExtras")) { chain ->
+            if (SpoofLogic.isActive(pkg)) cityExtras(Config.olsCity) else chain.proceed()
+        }
+        kit.log("OLS Location 输出改写: ${hooked}/${methods.size} 个重载 + Location ${locationHooks}/3")
         Diagnostics.note("$tag: 已挂钩 ${hooked}/${methods.size} 个 Location 返回方法")
         return hooked
     }
 
     /** AMap encodes city/adcode in Location extras; replacing only lat/lng leaves a default city. */
     private fun applyCityExtras(out: Location, original: Location?, city: String) {
-        val (province, citycode, adcode, district) = cityInfo(city)
-        val extras = original?.extras ?: Bundle()
-        extras.putInt("amap_location_resultCode", 0)
-        extras.putString("amap_location_result_info", city)
-        extras.putInt("amap", 1)
-        extras.putString("country", "中国")
-        extras.putString("province", province)
-        extras.putString("city", city)
-        extras.putString("district", district)
-        extras.putString("citycode", citycode)
-        extras.putString("adcode", adcode)
-
-        val address = Address(Locale.CHINA).apply {
-            countryName = "中国"
-            adminArea = province
-            locality = city
-            subLocality = district
-            latitude = out.latitude
-            longitude = out.longitude
-            val addrExtras = Bundle().apply {
-                putString("citycode", citycode)
-                putString("adcode", adcode)
-            }
-            this.extras = addrExtras
-        }
-        extras.putParcelable("address", address)
+        val extras = cityExtras(city)
+        original?.extras?.let { extras.putAll(it) }
+        cityExtras(city).let { fresh -> extras.putAll(fresh) }
         out.extras = extras
+    }
+
+    private fun cityExtras(city: String): Bundle {
+        val (province, citycode, adcode, district) = cityInfo(city)
+        return Bundle().apply {
+            putInt("amap_location_resultCode", 0)
+            putString("amap_location_result_info", city)
+            putInt("amap", 1)
+            putString("country", "中国")
+            putString("province", province)
+            putString("city", city)
+            putString("district", district)
+            putString("citycode", citycode)
+            putString("adcode", adcode)
+            putParcelable(
+                "address",
+                Address(Locale.CHINA).apply {
+                    countryName = "中国"
+                    adminArea = province
+                    locality = city
+                    subLocality = district
+                    val addrExtras = Bundle().apply {
+                        putString("citycode", citycode)
+                        putString("adcode", adcode)
+                    }
+                    this.extras = addrExtras
+                },
+            )
+        }
     }
 
     private fun cityInfo(city: String): Array<String> = when (city) {
