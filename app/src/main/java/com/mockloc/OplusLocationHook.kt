@@ -52,7 +52,35 @@ class OplusLocationHook(private val module: XposedModule, private val classLoade
         locationHooks += kit.install(kit.methodsOf(locationClass, "getExtras")) { chain ->
             if (SpoofLogic.isActive(pkg)) cityExtras(Config.olsCity) else chain.proceed()
         }
-        kit.log("OLS Location 输出改写: ${hooked}/${methods.size} 个重载 + Location ${locationHooks}/3")
+        // AMap 结果在进入缓存前由 b0.b.b 构造、b0.a.c 写 city extras；只改 getter 太晚。
+        var builderHooks = 0
+        kit.findClass(classLoader, "b0.b")?.let { b ->
+            val builders = b.declaredMethods.filter {
+                it.name == "b" && it.returnType == Location::class.java
+            }
+            builderHooks += kit.install(builders) { chain ->
+                if (!SpoofLogic.isActive(pkg)) return@install chain.proceed()
+                val original = runCatching { chain.proceed() }.getOrNull() as? Location
+                val fake = SpoofLogic.fakeLocation(original, "network", pkg)
+                applyCityExtras(fake, original, Config.olsCity)
+                fake
+            }
+        }
+        kit.findClass(classLoader, "b0.a")?.let { a ->
+            val writers = a.declaredMethods.filter {
+                it.name == "c" && it.parameterTypes.firstOrNull() == Location::class.java
+            }
+            builderHooks += kit.install(writers) { chain ->
+                if (!SpoofLogic.isActive(pkg)) return@install chain.proceed()
+                val args = chain.args.toTypedArray()
+                if (args.size >= 3) {
+                    args[1] = 0
+                    args[2] = Config.olsCity
+                }
+                chain.proceed(args)
+            }
+        }
+        kit.log("OLS Location 输出改写: ${hooked}/${methods.size} + Location ${locationHooks}/3 + builder ${builderHooks}")
         Diagnostics.note("$tag: 已挂钩 ${hooked}/${methods.size} 个 Location 返回方法")
         return hooked
     }
