@@ -56,6 +56,16 @@ class ModuleEntry : XposedModule() {
         }
 
         Config.refresh()
+        if (pkg == OPLUS_LOCATION_PKG) {
+            // ColorOS「系统定位」走 OLS → 高通 IZat，不经过 Android LocationManager。
+            // 只在这个系统进程里改写 OLS 的 Location 输出；银行 App 不进作用域，避免加固壳崩溃。
+            runCatching { OplusLocationHook(this, param.classLoader).init() }
+                .onFailure {
+                    Diagnostics.note("$pkg: OLS 定位改写异常(已跳过): ${it.message ?: it.javaClass.simpleName}")
+                    log(Log.WARN, tag, "$pkg: OLS hook failed: $it")
+                }
+            return
+        }
         val kit = HookKit(this, tag)
         val locationClass = kit.findClass(param.classLoader, Location::class.java.name) ?: return
         // 组件级隔离：任何一个 hooker 的异常只丢它自己的钩子，绝不带崩宿主进程——
@@ -156,5 +166,6 @@ class ModuleEntry : XposedModule() {
     private companion object {
         const val SYSTEM_UI_PKG = "android"
         const val SELF_PKG = "com.mockloc"
+        const val OPLUS_LOCATION_PKG = "com.oplus.location"
     }
 }
