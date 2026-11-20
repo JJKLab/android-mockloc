@@ -143,3 +143,22 @@ registerForSessionStatus(int, ISessionStatusCallback)
 **所以**：能影响 IZat 的两个口子（输出 `IFlpService`、输入 `IWWANAd*/IWiFiDB*`）都在
 `com.qualcomm.location` 进程里，而 **LSPosed 不挂钩它**——Java 层到此为止。
 要么让 LSPosed 能挂它（框架层），要么做 native 注入。
+
+
+## 8. 为什么 LSPosed 进不去 `com.qualcomm.location`（已确认）
+`rea inspect-android-package com.qualcomm.location.apk` 的 manifest 里：
+```
+android:persistent="true"
+android:directBootAware="true"
+```
+**persistent 应用由系统在开机最早期拉起，Xposed 框架（含 LSPosed）默认不挂钩它们**
+（避免把系统关键进程带崩）。实测：把作用域勾上、`kill -9` 重启进程，LSPosed 仍然 0 条加载记录。
+
+→ 这不是「LSPosed 漏了」，而是框架的既定边界。
+
+## 9. 到此的边界
+- 可挂钩：OLS（`com.oplus.location`）及其 Java 面；
+- **不可挂钩**：`com.qualcomm.location`（persistent）——而 IZat 的输入/输出口子都在这里；
+- 结论：**Java 层（本仓库模块）影响不了 IZat**。要继续只有两条：
+  1. 让 `com.qualcomm.location` 不再 persistent（改系统包，需替换 /system_ext 里的 APK，风险高）；
+  2. native 注入（Dobby/inline hook）——超出本仓库能力。
