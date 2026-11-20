@@ -146,3 +146,27 @@ OLS 对外服务里有 `getCoarseLocation` / `getCurrentLocation` / `getLastKnow
 ### 设备状态
 - 作用域已还原（`com.android.phone` / `com.autonavi.minimap` / `com.tencent.mm` / `system`）。
 - conf `MOCKLOC_ENABLED=false`。
+
+---
+
+## 2026-11-20 · 最终边界：IZat 进程是 persistent，LSPosed 挂不进去
+
+REA（`npx rea-agents`，已配 JDK 21 + `jadx-headless-mcp-0.7.1`）把 OLS 与 IZat 的反编译结果对齐后，
+链路和边界都确定了：
+
+### IZat 的接口面（反编译）
+- 输出：`com.qti.flp.IFlpService`（`registerCallback` / `pullLocations` / `startFlpSession` …）
+- 输入：`IWWANAdReceiver`（`pushWWANAssistanceData`）、`IWiFiDBProvider`（`requestAPObsLocData`）
+- OLS 侧：`NetworkLocationService`（Android network provider）、`OplusLocationService`
+
+### 硬边界（已确认，非推测）
+`com.qualcomm.location` 的 manifest 带 **`android:persistent="true"`**（还有 `directBootAware`）。
+persistent 应用由系统在开机最早期拉起，**LSPosed 按设计不挂钩它们**——实测：勾上作用域、
+`kill -9` 重启进程，LSPosed 仍然 0 条加载记录。
+
+→ 能影响 IZat 的两个口子（输出 `IFlpService`、输入 `IWWANAd*/IWiFiDB*`）都在这个进程里，
+**Java 层（本仓库模块）到此为止**。继续只有两条：
+1. 让 `com.qualcomm.location` 不再 persistent（改系统包，需替换 `/system_ext/priv-app` 里的 APK）；
+2. native 注入（Dobby/inline hook）——超出本仓库能力。
+
+（详见 `docs/COLOROS-OLS-IZAT.md`。）
