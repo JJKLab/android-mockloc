@@ -107,9 +107,39 @@ OLS（com.oplus.location）
 **含义**：IZat 引擎的「网络定位」输入就是 **Wi-Fi 库 + 蜂窝（WWAN）**，这两条都是
 独立于 Android `WifiManager`/`TelephonyManager` 的通道（所以钩 Android 的 Java 面没用）。
 
-## 6. 还没做的
-- 反编译 `OplusLbsConnection` 与 `IFlpService` 的具体方法，确认 OLS 与 IZat 之间传的
-  到底是「原始数据」还是「已解算的位置」。
-- 确认 IZat native 库清单（`libizatCore.so` 等）与入口。
-- 评估从 `IWiFiDBProvider` / `IWWANAdReceiver` 喂假数据的可行性（这是目前唯一
-  看起来能影响 IZat 的 Java 级入口）。
+## 6. IZat 的服务面（REA 反编译结果）
+
+### 6.1 输出面（引擎 → 客户端）
+`com.qti.flp.IFlpService`（FLP = Fused Location Provider）：
+```
+registerCallback(int, int, ILocationCallback, long)   // 注册取位置
+pullLocations(ILocationCallback, long, int): int      // 拉位置
+startFlpSession(int, int, long, int, long): int       // 起会话
+startFlpSessionWithPower(...) / updateFlpSession(...) / stopFlpSession(int)
+registerForSessionStatus(int, ISessionStatusCallback)
+```
+→ 这是 IZat 引擎**对外供位置**的接口。客户端（OLS / 框架）从这里取位置。
+
+### 6.2 数据面（喂给引擎）
+| 接口 | 方法 | 方向 |
+|---|---|---|
+| `com.qti.wifidbprovider.IWiFiDBProvider` | `requestAPObsLocData()`；`registerResponseListener(IWiFiDBProviderResponseListener, PendingIntent)` | IZat 向客户端**要** AP 观测数据 |
+| `…IWiFiDBProviderResponseListener` | `onApObsLocDataAvailable(List<APObsLocData>, int)` | 客户端**回** AP 观测 |
+| `com.qti.wwanadreceiver.IWWANAdReceiver` | `registerRequestListener(IWWANAdRequestListener)`；`pushWWANAssistanceData(int, boolean, int, byte[])` | 双向：IZat 请求/推送 WWAN 辅助数据 |
+| `…IWWANAdRequestListener` | `onWWANAdRequest(int, byte[])` | IZat **向客户端要** WWAN 数据 |
+
+### 6.3 OLS 侧的 binder
+- `com.oplus.location.nlp.NetworkLocationService.onBind` → `e.c().getBinder()`（Android 的
+  `network` provider 实现）。
+- 高通侧 `com.qualcomm.location.oplus.OplusLbsConnection.onBind` → `mIOplusLbs`（连到 OLS）。
+
+## 7. 结论：口子在哪、能不能用
+| 口子 | 位置 | 可 hook？ |
+|---|---|---|
+| `IFlpService.registerCallback/pullLocations`（拿位置） | `com.qualcomm.location` 进程 | **LSPosed 从不挂钩该进程**（实测 0 条）→ Java 模块进不去 |
+| `IWWANAdReceiver` / `IWiFiDBProvider`（喂数据） | 同上 | 同上 |
+| OLS `NetworkLocationService`（Android network provider） | `com.oplus.location`（可挂钩） | 可挂钩，但实测钩它的 Java 面不影响城市 |
+
+**所以**：能影响 IZat 的两个口子（输出 `IFlpService`、输入 `IWWANAd*/IWiFiDB*`）都在
+`com.qualcomm.location` 进程里，而 **LSPosed 不挂钩它**——Java 层到此为止。
+要么让 LSPosed 能挂它（框架层），要么做 native 注入。
