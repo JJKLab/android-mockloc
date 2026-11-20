@@ -170,3 +170,27 @@ persistent 应用由系统在开机最早期拉起，**LSPosed 按设计不挂�
 2. native 注入（Dobby/inline hook）——超出本仓库能力。
 
 （详见 `docs/COLOROS-OLS-IZAT.md`。）
+
+---
+
+## 2026-11-20 · 光大信用卡 App（阳光惠生活）实测成效
+
+**结论：基本不生效。** 它的「系统定位」不来自 Android LocationManager。
+
+| 注入点 | App「系统定位」提示 |
+|---|---|
+| 北京 39.90,116.41 | 北京（唯一一次吻合，疑为首次读到的缓存被粘住） |
+| 哈尔滨 45.80,126.53 | 清远（真实位置） |
+| 乌鲁木齐 43.83,87.62 | 清远 |
+| 三亚 18.25,109.51 | 清远 |
+
+**证据**：
+- App 确实收到注入：`dumpsys location` → `gps provider delivered location[1] to 10414/com.ebank.creditcard`；
+- `SystemWash` 已生效（跨 Binder 后 `isMock()=false`），仍不改变它的城市；
+- 等 45s、冷启动多次，提示都不刷新（粘在「清远」）。
+
+**判读**：城市由 **ColorOS OLS → 高通 IZat** 决定（见 `docs/COLOROS-OLS-IZAT.md`），
+Android 定位路线（档 0/2/3 + SystemWash）**到顶，无效**。那次「北京」是它首次读到的值被缓存，
+不是跟随。
+
+**归档**：整体交接见 `docs/HANDOFF.md`。
