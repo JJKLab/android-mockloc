@@ -301,6 +301,7 @@ class ModuleBridge(context: Context) {
         },
         appCoordsNoPoint = coordApps().filterKeys { it !in appPoints() },
         stackClean = prefs.getBoolean(KEY_STACK_CLEAN, true),
+        olsCity = Config.olsCity,
         hidePkgs = hidePkgs(),
         sensorFreeze = prefs.getBoolean(KEY_SENSOR_FREEZE, false),
         forgeWifi = prefs.getBoolean(KEY_FORGE_WIFI, false),
@@ -374,6 +375,7 @@ class ModuleBridge(context: Context) {
             appPoints: List<Pair<String, String>> = emptyList(),
             appCoordsNoPoint: Map<String, String> = emptyMap(),
             stackClean: Boolean = true,
+            olsCity: String = "杭州",
             hidePkgs: List<String> = emptyList(),
             sensorFreeze: Boolean = false,
             forgeWifi: Boolean = false,
@@ -404,6 +406,7 @@ class ModuleBridge(context: Context) {
             appendLine("MOCKLOC_ROUTE_STARTED=${if (routeStarted.isBlank()) "0" else routeStarted}")
             appendLine("MOCKLOC_ROUTE_LOOP=$routeLoop")
             appendLine("MOCKLOC_STACK_CLEAN=$stackClean")
+            appendLine("MOCKLOC_OLS_CITY=$olsCity")
             appendLine("MOCKLOC_HIDE_PKGS=${hidePkgs.joinToString(",")}")
             appendLine("MOCKLOC_SENSOR_FREEZE=$sensorFreeze")
             appendLine("MOCKLOC_FORGE_WIFI=$forgeWifi")

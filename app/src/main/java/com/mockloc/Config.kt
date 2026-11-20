@@ -86,6 +86,11 @@ object Config {
     var stackClean: Boolean = true
         private set
 
+    /** City name carried in OLS/AMap Location extras; defaults to Hangzhou. */
+    @Volatile
+    var olsCity: String = "杭州"
+        private set
+
     /** Packages hidden from PackageManager enumeration inside hooked processes. Empty = no hooks. */
     @Volatile
     var hidePkgs: Set<String> = emptySet()
@@ -243,6 +248,7 @@ object Config {
         val nextAppPoints = HashMap<String, DoubleArray>()
         val nextAppCoord = HashMap<String, String>()
         var nextStackClean = true
+        var nextOlsCity = "杭州"
         val nextHide = LinkedHashSet<String>()
         val nextNetcut = LinkedHashSet<String>()
         var nextSensorFreeze = false
@@ -298,6 +304,7 @@ object Config {
                 "MOCKLOC_ROUTE_STARTED" -> nextRouteStarted = value.toLongOrNull() ?: nextRouteStarted
                 "MOCKLOC_ROUTE_LOOP" -> nextRouteLoop = value == "true" || value == "1"
                 "MOCKLOC_STACK_CLEAN" -> nextStackClean = value != "false" && value != "0"
+                "MOCKLOC_OLS_CITY" -> if (value.isNotBlank()) nextOlsCity = value.trim()
                 "MOCKLOC_SENSOR_FREEZE" -> nextSensorFreeze = value == "true" || value == "1"
                 "MOCKLOC_FORGE_WIFI" -> nextForgeWifi = value == "true" || value == "1"
                 "MOCKLOC_GMS" -> nextGms = value != "false" && value != "0"
@@ -352,6 +359,7 @@ object Config {
         appPoints = nextAppPoints
         appCoord = nextAppCoord
         stackClean = nextStackClean
+        olsCity = nextOlsCity
         hidePkgs = nextHide
         netcutPkgs = nextNetcut
         sensorFreeze = nextSensorFreeze
