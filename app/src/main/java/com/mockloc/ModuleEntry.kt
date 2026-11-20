@@ -31,7 +31,7 @@ class ModuleEntry : XposedModule() {
         if (pkg == SYSTEM_UI_PKG) {
             // system_server 在 LSPosed 里走 onSystemServerStarting，这个分支通常不会被调用；
             // 保留它是为了兼容把它当普通包调用的实现（同样装 SystemWash，已去重）。
-            log(Log.INFO, tag, "[sys] onPackageReady 被调用（诊断用）")
+            log(Log.INFO, tag, "attached to $pkg (system_server via onPackageReady)")
             Diagnostics.attach { message -> log(Log.ERROR, tag, message) }
             runCatching { Config.refresh() }
             if (!Config.systemWash) {

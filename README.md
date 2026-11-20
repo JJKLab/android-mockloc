@@ -84,15 +84,21 @@ python tools/mockloc.py tiers
 | **1** Shizuku/Rish | 以 shell uid 调系统 API（`cmd location ...`） | 需要 shell 的 mock app-op 已在位（本机由 root 授过一次；近 AOSP ROM 上 adb 就能授） | ❌ 同上，**与档 0 同一数据面** | **true** | 不留 | ✅ `--mode adb`（2026-10-27 本机实测可用，见 A15） |
 | **2** root | `cmd location providers ...` + **只有这档能按 uid 断网/关射频** | KernelSU/Magisk 给 su | ❌ 读数不能，但②可以按 uid | **true** | 不留 | ✅ `--mode su`（identity `0/android[LocationService]`） |
 | **3** LSP/libxposed 模块 | 进目标进程改它读的每一个值 | root + LSPosed + 在管理器里勾作用域 | ✅ 按包 | **false**（压根没有测试 provider） | **留**（栈帧/maps/classloader） | ✅ 装 APK 即生效 |
-| — 全局·无痕 | 在 system_server 里就地改写 `LocationResult` | root + LSPosed，且作用域要加 `system` | ❌ 全体 | false | 不留 | ⚠️ 未实现，见下 |
+| — 全局·无痕 | 在 system_server 里拦 `Location.writeToParcel`，只把 `isMock` 位置的 mock 位洗掉 | root + LSPosed，且作用域要加 `system` | ❌ 全体 | **false**（洗后） | 不留 | ✅ `SystemWash`（默认开，`MOCKLOC_SYSTEM_WASH`） |
 
 **读这张表最重要的一句**：档 0/1/2 给目标 App 的是同一个 mock provider，所以它们不是"权限越高越能过"
 的阶梯——**档 0 推不动的 App，档 1、档 2 也推不动**。真正决定成败的是三个杠杆（①系统 provider、
 ②抽空它的输入、③进它进程改读数），完整矩阵与每档实测在 A15。
 
-最后一行没写的原因不是能力不够，而是风险不对等：它要改 `LocationProviderManager.onReportLocation`
-并按调用方 uid 分流，写错的后果是 **system_server 软重启**（XposedFakeLocation 的 issue #50/#49 就是这类）。
-在还没有真机可测的现在，我不会把它盲编盲推。参考实现的位置已记在附录 A3。
+最后一行（`SystemWash`）已落地，但**没有**去改 `LocationProviderManager.onReportLocation`——
+那样按调用方 uid 分流，写错的后果是 system_server 软重启（XposedFakeLocation 的 issue #50/#49
+就是这类）。改成更窄的一招：Location 跨 Binder 传给 App 时是 **system_server 写 parcel**，
+在那里只把 `isMock()==true` 的位置写成抹掉 `HAS_MOCK_PROVIDER_MASK` 位的副本。
+- 只影响 mock 位置，真实定位原样放行；
+- hook 本身失败就回退原位置（最坏只是没洗掉）；
+- 初始化失败就不装（不进 system_server 的热点）。
+真机验证（2026-11-19）：注入 45.8038,126.5349，App 读回 `mock=false`。
+开关：`MOCKLOC_SYSTEM_WASH`（默认 true）。
 
 
 `--mode adb` 只用 shell 权限（uid 2000）就够了，**不需要 root**（本机 2026-10-27 实测：能建
