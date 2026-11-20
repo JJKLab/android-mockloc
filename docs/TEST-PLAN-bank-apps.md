@@ -1,7 +1,7 @@
 # 银行类 App（阳光惠生活 / 买单吧）闪退：结论与方案
 
 > 目标：让「阳光惠生活」吃假位置。
-> 设备：PJF110 / Android 16 / KernelSU + Stellar(Shizuku) + QAuxiliary(LSPosed)。
+> 设备：PJF110 / Android 16 / KernelSU + Stellar(Shizuku) + LSPosed。
 
 ---
 

@@ -38,8 +38,8 @@ python tools/tests/test_rootmodule_sync.py     # root 脚本写法守卫
 
 ## 4. 真机验收（PJF110 / Android 16 / KernelSU + Stellar + LSPosed）
 
-**环境**：管理器是 **QAuxiliary**（`io.github.qauxv`，LSPosed 2.2.1）。**Stellar 不是 LSPosed 管理器**，
-它带的 Shizuku 兼容层是 Rish（`moe.nb4a`）。
+**环境**：LSPosed 管理器是 **LSPosed 本体**（**不是 Momo，也不是 QAuxiliary**）。
+**Stellar 也不是 LSPosed 管理器**，它带的 Shizuku 兼容层是 Rish（`moe.nb4a`）。
 
 **已验通过**（2026-11-19/20）：
 - 路线推进（不再被自愈拉回）、注入三 provider `[mock]`、NETCUT 双栈、暂停/继续、
