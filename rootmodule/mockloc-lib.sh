@@ -16,6 +16,9 @@ sync_inbox() {
   mkdir -p $(dirname "$CFG") 2>/dev/null
   cp "$INBOX" "$CFG" && rm -f "$INBOX"
   chmod 600 "$CFG" 2>/dev/null
+  # 一次性 inbox 必须压过 App 的稳态偏好：打上标记，让同一轮的 sync_app_prefs 让路，
+  # 否则 App 偏好会把它冲掉（真机实测过：inbox 的点被应用后又被 App 偏好覆盖回去）。
+  touch "$CFG.inbox"
 }
 
 # Sourcing config.prop would break on a LABEL containing spaces, so read one key at a time.
@@ -151,6 +154,11 @@ netcut_apply() {
 sync_app_prefs() {
   _prefs=/data/data/com.mockloc/shared_prefs/settings.xml
   [ -r "$_prefs" ] || return 1
+  # 本轮刚消费过 PC inbox：一次性配置优先，App 的稳态偏好让路（见 sync_inbox 的 touch）。
+  if [ -f "$CFG.inbox" ]; then
+    rm -f "$CFG.inbox"
+    return 0
+  fi
   # Compare against CFG (the authority), not PUB: PUB is rewritten by publish() every tick, so a
   # PUB-based check let stale App prefs re-publish over a fresh PC inbox apply.
   # 但损坏的 CFG 必须修：旧版本会留下带 &#10;/XML 残尾的坏文件，而 mtime 守卫会让它永远不被
