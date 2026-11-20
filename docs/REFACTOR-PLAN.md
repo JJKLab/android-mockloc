@@ -6,9 +6,11 @@
 > v1.1.1/v1.2.0 版本历史与附录 G）。原则与 README 一致：**判据先行、配置渲染器唯一、本地可验证、
 > 真机实测才标"通过"**。每一项工作都带验收判据；没有判据的条目不排期。
 >
-> **状态（2026-11-07）**：本计划阶段 1–4 全部实施完毕并真机验证（v1.2.0：ROOT 巡检自包含、
-> BLE 盲化、按 App 坐标系、状态页三卡、冻结检测）；下一阶段 = v1.2.1 app_process root 巡检
-> worker（ColorOS 冻结根治）+ system_server 投递面 hook。
+> **状态（2026-11-20）**：阶段 1–4 全部实施完毕；**阶段四 pages 拆分已完成**（MainActivity
+> 2027→534 行，页面拆到 `pages/`）；**阶段五已完成 3/4**（悬浮摇杆、16 维评分、SystemWash）。
+> 新增一条硬边界：**ColorOS OLS → 高通 IZat（persistent 进程）LSPosed 挂不进去**，
+> 详见 §10 与 `docs/COLOROS-OLS-IZAT.md`。
+> 仍未做：Shizuku 档 1 App 内客户端、getRemotePreferences 通道（均需真机可验证路径）。
 
 ---
 
@@ -460,25 +462,27 @@ SharedPreferences 里的裸键迁到私有目录 JSON 文件（带 `version` 字
 
 ### 阶段四 · UI 全量重做（P1.5，可与阶段二并行推进）
 
-> **进度（2026-10-28，v0.8.0，有界版）**：暗色模式（DayNight 主题双套 + Ui 全 token 化）、风险评分卡
-> （全域 16 维的可观测子集）、状态页配置区扩展已落地。**页拆分（pages/*）未做**——MainActivity 仍是
-> 单文件（现 ~1200 行），拆分与底部导航重排属纯机械重构，放在路线/per-App 真机验收之后，避免在
-> 未验证的交互上叠二次重构。装机判据见 README C32 j。
+> **进度（2026-11-20，已完成）**：暗色模式、风险评分卡（后升级为 **16 维 RiskScore**）、状态页配置区
+> 均已落地；**页拆分已完成**——`MainActivity` 2027 → **534 行**，拆出 `pages/StatusPage.kt`(545)、
+> `pages/MapPage.kt`(538)、`pages/PolicyPage.kt`(339)、`pages/RoutePage.kt`(305)，真机五页验证通过。
+> 装机判据见 README C32 j 与 `docs/AUDIT-2026-11-18.md`。
 
 ### 阶段五 · 扩展（P2+，视真机余量）
 
-> **进度（2026-10-28，v0.8.0）**：本阶段**有意未开工**，理由与各条现状：
-> - **Shizuku 档 1 App 内客户端**：README C29 结论不变——本机 Rish 服务未运行、`dev.rikka.shizuku:api`
->   13.1.5 的 `newProcess` 已包内可见（要走 AIDL/user-service），没有可验证路径不盲编；
-> - **getRemotePreferences 通道**：需真机验 LSPosed 远程偏好的可靠性后再切，文件通道实测可靠，
->   实验开关形态保留在方案里；
-> - **悬浮摇杆**：路线引擎已覆盖其主场景（沿路径移动），摇杆是交互增强，待 UI 拆分后评估；
-> - **16 维风险评分完整版**：可观测子集已随阶段四落地（状态页风险卡），完整版依赖装机遥测。
+> **进度（2026-11-20）**：4 项里 **3 项已落地**，1 项受阻：
+> - ✅ **悬浮摇杆**：`JoystickView` + `JoystickService`（TYPE_APPLICATION_OVERLAY + 前台服务
+>   specialUse），状态页「摇杆」按钮，未授权时跳系统授权页；真机验证拖拽改点成功。
+> - ✅ **16 维风险评分**：`RiskScore`（纯 Kotlin + `RiskScoreCheck` 11 项 JVM 断言）+ 状态页风险卡。
+> - ✅ **SystemWash（系统层）**：在 system_server 拦 `Location.writeToParcel` 抹掉 mock 位（见 §10.3）。
+> - ❌ **Shizuku 档 1 App 内客户端**：仍受阻——本机 Shizuku 兼容层是 Stellar 带的 Rish
+>   （`moe.nb4a`），`Shizuku.newProcess` 要走 AIDL/user-service，**没有可验证路径不盲编**；
+> - ❌ **getRemotePreferences 通道**：文件通道（conf）实测可靠，远程偏好需真机验可靠性后再切。
 
 ### 明确不做（写死，防 scope creep）
 
-- system_server 源头改写（`onReportLocation`）：风险不对等（软重启），维持 README 决定；
-  AnyDoor 已验证的类名与思路记录在案，等有可快照的测试机再评估。
+- ~~system_server 源头改写（`onReportLocation`）~~ → **已用更窄的方式实现**（`SystemWash`）：
+  不改 `LocationProviderManager`，而是拦 `Location.writeToParcel` 只抹 `isMock` 位置的 mock 位
+  （见 §10.3）。原「按调用方 uid 分流」的写法确实风险不对等，未采纳。
 - 高德地图本体 native 引擎改写：Java 钩子结构上够不到（A14 已定性），路数就是①+②。
 - IP 属地/收货地址/厂商基站库：定位层改不了，策略页已如实标注。
 - 天下游路线（特权 helper 进程，腾讯乐固）：死路，不碰。
@@ -495,3 +499,47 @@ SharedPreferences 里的裸键迁到私有目录 JSON 文件（带 `version` 字
 | per-App 点位键被旧版 root 模块丢弃 | 旧脚本按行读不认识的键会忽略，但 publish 是整文件拷贝——无风险；CLI 侧 mockloc.py 的白名单写入需同步加键（write_config 白名单） |
 | 伪造射频环境的检测反噬 | 默认关 + 判别性实测后再考虑反转默认值（与致盲当初的引入路径相同） |
 | UI 重做引入回归 | 每页拆分独立 + `tools/tests/test_manifest.py` 扩展断言（主题/权限/服务声明），UI 结构性错误 20ms 内暴露 |
+
+---
+
+## 9. 真机走查（2026-11-18/19）已修的东西
+
+`docs/AUDIT-2026-11-18.md` 是完整报告。摘要：全量走查修掉 3×P0 + 17×P1 + 10×P2，
+其中真机才抓得到的 6 个（toybox sed 范围地址、坏 conf 不自愈、toybox grep 不支持 `\|`、
+16 维台账维恒 WARN、早期启动 sleep 失效空转、sync 反转义偶发失效）全部已修并复验。
+阶段四 pages 拆分（§7 阶段四）与 16 维评分（§7 阶段五）也在此轮完成。
+
+## 10. 系统层边界：ColorOS OLS → 高通 IZat
+
+### 10.1 链路
+```
+App ──① Android LocationManager ──► 档 0/2/3 能改
+    └─② ColorOS「系统定位」──► OLS(com.oplus.location) ──► 高通 IZat(com.qualcomm.location, 原生引擎)
+```
+OLS 组件：`nlp.NetworkLocationService`（Android 的 network provider）、`fused.FusedLocationService`、
+`OplusLocationService`（对外 binder）、`geofence.*`、`gnsstoolbox.*`（工程工具）。
+IZat 组件：`LocationService`、`izat.IzatService`（AIDL `com.qti.izat.IIzatService`）。
+
+### 10.2 真机判据（PJF110 / Android 16 / KernelSU）
+- 注入 Android provider + 洗 mock 位后，银行类 App **确实收到**（`gps provider delivered location[1]`），
+  但走 OLS 的 App 城市不变；
+- `pm disable-user com.oplus.location` → 「系统定位到清远」提示消失；复启 → 回来；
+- 模块挂进 OLS 进程（`getAllCellInfo ×80`、`getNetworkOperator ×160`、`isMock ×300` 全部命中）→ 城市不变；
+- 模块挂进 `com.qualcomm.location` → **LSPosed 从不挂钩它**。
+
+### 10.3 已实现：`SystemWash`（默认开，`MOCKLOC_SYSTEM_WASH`）
+不改 `LocationProviderManager.onReportLocation`（风险不对等），改成在 **system_server** 拦
+`Location.writeToParcel`：只把 `isMock()==true` 的位置写成抹掉 `HAS_MOCK_PROVIDER_MASK`
+位的副本再跨 Binder；真实定位原样放行；hook 失败回退原位置。
+- 关键坑：system_server 走 **`onSystemServerStarting`** 回调，不是 `onPackageReady`
+  （实测后者在 system_server 里从不被调用）；
+- 真机验证：注入 45.8038,126.5349，App 读回 `mock=false`。
+
+### 10.4 硬边界（写死）
+`com.qualcomm.location` 带 **`android:persistent="true"`**，LSPosed 按设计不挂钩 persistent
+应用 → IZat 的输入/输出口子（`IFlpService` 输出、`IWWANAd*/IWiFiDB*` 输入）都在这个进程里，
+**Java 层（本仓库模块）到此为止**。继续只有两条：
+1. 让 `com.qualcomm.location` 不再 persistent（改系统包，需替换 `/system_ext/priv-app` 里的 APK）；
+2. native 注入（Dobby/inline hook）——超出本仓库能力。
+
+详见 `docs/COLOROS-OLS-IZAT.md`。
