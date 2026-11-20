@@ -114,7 +114,12 @@ netcut_teardown() {
 netcut_apply() {
   _pkgs=$1
   _prev=$(cat "$NETCUT_STATE" 2>/dev/null)
-  [ "$_prev" = "$_pkgs" ] && return 0
+  # 除了比对名单，还要确认规则还在：名单没变但规则被外部清掉（卸载脚本/其他防火墙/ROM 重置）时，
+  # 旧逻辑会直接返回，规则再也建不回来（真机实测过）。
+  if [ "$_prev" = "$_pkgs" ] && [ -n "$_pkgs" ] && \
+     iptables -S OUTPUT 2>/dev/null | grep -q mockloc-netcut; then
+    return 0
+  fi
   netcut_teardown
   mkdir -p "$(dirname "$NETCUT_STATE")" 2>/dev/null
   printf '%s' "$_pkgs" > "$NETCUT_STATE"
